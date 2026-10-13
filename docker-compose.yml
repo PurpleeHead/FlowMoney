@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: flowmoney
+      POSTGRES_PASSWORD: flowmoney_local
+      POSTGRES_DB: flowmoney
+    ports:
+      - "5433:5432"
+    volumes:
+      - flowmoney_pg:/var/lib/postgresql/data
+volumes:
+  flowmoney_pg:

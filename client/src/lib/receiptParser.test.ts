@@ -1,0 +1,2 @@
+import {describe,it,expect} from 'vitest'; import {parseReceiptLines} from './receiptParser';
+describe('parseReceiptLines',()=>{it('extracts item and price from OCR lines',()=>{expect(parseReceiptLines('BANH MI 25,000 VND')).toEqual([{name:'BANH MI',price:25000,quantity:1}]);});it('ignores headings and non-item lines',()=>{expect(parseReceiptLines('THANK YOU\nSTORE #12')).toEqual([]);});});
