@@ -11,3 +11,51 @@
 .language-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 12px;border:1px solid var(--border,#d9dfe7);border-radius:999px;background:var(--surface,#fff);color:var(--text,#182230);font:inherit;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .2s,border-color .2s,transform .2s}
 .language-toggle:hover{transform:translateY(-1px);border-color:var(--accent,#7c5cff)}
 .auth-brand{position:relative}
+
+
+/* FLOWMONEY motion system: subtle depth, staggered entrances and tactile feedback. */
+@keyframes fm-rise-in{from{opacity:0;transform:translate3d(0,16px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+@keyframes fm-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes fm-float{0%,100%{transform:translate3d(0,0,0) rotate(0deg)}50%{transform:translate3d(0,-9px,0) rotate(1.5deg)}}
+@keyframes fm-orbit{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes fm-shimmer{0%{background-position:180% 0}100%{background-position:-180% 0}}
+@keyframes fm-pulse-soft{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--purple) 0%,transparent)}50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--purple) 10%,transparent)}}
+@keyframes fm-loading-sweep{0%{transform:translateX(-140%)}100%{transform:translateX(320%)}}
+@keyframes fm-dot-breathe{0%,100%{opacity:.55;transform:scale(.88)}50%{opacity:1;transform:scale(1.12)}}
+@media(prefers-reduced-motion:no-preference){
+  .main-content{animation:fm-fade-in .48s ease both}
+  .topbar{animation:fm-rise-in .52s cubic-bezier(.2,.7,.2,1) both}
+  .hero-card{animation:fm-rise-in .62s .05s cubic-bezier(.2,.7,.2,1) both}
+  .stats-grid>.stat-card{animation:fm-rise-in .55s cubic-bezier(.2,.7,.2,1) both}
+  .stats-grid>.stat-card:nth-child(2){animation-delay:.06s}
+  .stats-grid>.stat-card:nth-child(3){animation-delay:.12s}
+  .stats-grid>.stat-card:nth-child(4){animation-delay:.18s}
+  .content-grid>.panel,.bottom-grid>.panel,.bottom-grid>.receipt-panel,.exchange-layout>.panel,.expenses-layout>.panel,.expenses-layout>.receipt-panel{animation:fm-rise-in .58s .12s cubic-bezier(.2,.7,.2,1) both}
+  .hero-graphic{animation:fm-float 7s ease-in-out infinite}
+  .graphic-ring.ring-a{animation:fm-orbit 42s linear infinite}
+  .graphic-ring.ring-b{animation:fm-orbit 32s linear infinite reverse}
+  .auth-coin{animation:fm-float 5s ease-in-out infinite}
+  .orbit-one{animation:fm-orbit 24s linear infinite}
+  .orbit-two{animation:fm-orbit 32s linear infinite reverse}
+  .loading-symbol{animation:fm-float 3.4s ease-in-out infinite,fm-pulse-soft 3.4s ease-in-out infinite}
+  .loading-track span{position:relative;overflow:hidden}
+  .loading-track span:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);animation:fm-loading-sweep 1.8s ease-in-out infinite}
+  .live-pill>span{animation:fm-dot-breathe 2.4s ease-in-out infinite}
+  .panel,.stat-card,.button,.icon-button,.nav-item,.expense-row,.language-toggle,.delete-button{transition:transform .24s cubic-bezier(.2,.7,.2,1),box-shadow .24s ease,border-color .24s ease,background-color .24s ease}
+  .panel:hover,.stat-card:hover{transform:translateY(-3px);box-shadow:0 18px 46px color-mix(in srgb,var(--text) 8%,transparent)}
+  .button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 10px 24px color-mix(in srgb,var(--purple) 22%,transparent)}
+  .button:active:not(:disabled),.icon-button:active,.nav-item:active{transform:scale(.97)}
+  .icon-button:hover,.nav-item:hover,.language-toggle:hover{transform:translateY(-1px)}
+  .expense-row:hover{transform:translateX(3px);background:color-mix(in srgb,var(--purple) 4%,var(--surface))}
+  .field-label input,.field-label select,.field-label textarea{transition:border-color .2s ease,box-shadow .2s ease,background-color .2s ease}
+  .field-label input:focus,.field-label select:focus,.field-label textarea:focus{box-shadow:0 0 0 4px color-mix(in srgb,var(--purple) 12%,transparent)}
+  .progress-track>span{transition:width .8s cubic-bezier(.2,.7,.2,1)}
+  .brand-mark{transition:transform .35s cubic-bezier(.2,.7,.2,1),box-shadow .35s ease}
+  .brand:hover .brand-mark,.auth-brand:hover .brand-mark,.loading-brand:hover .brand-mark{transform:rotate(-8deg) scale(1.06);box-shadow:0 8px 24px color-mix(in srgb,var(--purple) 28%,transparent)}
+  .primary{background-image:linear-gradient(110deg,transparent 25%,rgba(255,255,255,.14) 45%,transparent 65%);background-size:220% 100%;background-position:100% 0}
+  .primary:hover:not(:disabled){background-position:0 0}
+  .result-currency{animation:fm-float 4s ease-in-out infinite}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}
+}
