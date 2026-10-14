@@ -278,3 +278,12 @@
   .atom-token:first-of-type{transform:translate(235.36px,74.30px)}
   .atom-token:nth-of-type(2){transform:translate(192.19px,182.97px)}
 }
+
+
+/* Final hero atom correction: smooth elliptical tracks and a static VND core. */
+.atom-orbit{stroke-linecap:round;stroke-linejoin:round}
+.atom-core-glow,.atom-core,.atom-country,.atom-currency{animation:none!important;transform:none!important}
+.atom-core-glow{filter:none!important}
+@media(prefers-reduced-motion:reduce){
+  .atom-token animateMotion{display:none!important}
+}
