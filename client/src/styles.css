@@ -298,3 +298,13 @@
 .atom-core-labels{pointer-events:none}
 .atom-country,.atom-currency{text-anchor:middle;dominant-baseline:central}
 @media(max-width:480px){.result-rate-grid{gap:7px}.result-rate-card{padding:12px 9px}.result-rate-card>strong{font-size:15px}}
+
+/* Editable receipt rows make OCR corrections possible before saving. */
+.detected-row{align-items:center}
+.receipt-edit-name,.receipt-edit-price{min-width:0;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--text);font:inherit;padding:7px 8px;outline-offset:2px}
+.receipt-edit-name{flex:1;width:100%;font-weight:500}
+.receipt-edit-amount{display:grid;justify-items:end;gap:4px}
+.receipt-edit-amount label{display:flex;align-items:center;gap:4px;white-space:nowrap;color:var(--text);font-weight:700}
+.receipt-edit-price{width:100px;text-align:right;font-weight:700}
+.receipt-edit-amount .receipt-conversions{white-space:nowrap}
+@media(max-width:480px){.detected-row{gap:7px}.receipt-edit-price{width:82px}.receipt-edit-name{font-size:10px;padding:7px 5px}}
