@@ -26,8 +26,11 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const totalRub=exchanges.reduce((sum,x)=>sum+Number(x.rubSpent),0);
     const totalUsdt=exchanges.reduce((sum,x)=>sum+Number(x.usdtReceived),0);
     const effectiveRubPerUsdt=totalUsdt>0?totalRub/totalUsdt:null;
+    const exchangeVnd=exchanges.filter(x=>x.vndReceived!=null).reduce((sum,x)=>sum+Number(x.vndReceived),0);
+    const exchangeRub=exchanges.filter(x=>x.vndReceived!=null).reduce((sum,x)=>sum+Number(x.rubSpent),0);
+    const exchangeVndPerRub=exchangeRub>0?exchangeVnd/exchangeRub:null;
     const effectiveVndPerRub=observedVndPerUsdt!=null && effectiveRubPerUsdt!=null && effectiveRubPerUsdt>0
-      ? observedVndPerUsdt/effectiveRubPerUsdt : null;
+      ? observedVndPerUsdt/effectiveRubPerUsdt : exchangeVndPerRub;
 
     res.json({
       totalVnd,monthVnd,
