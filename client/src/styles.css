@@ -59,3 +59,30 @@
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}
 }
+
+/* Country selector and orbital currency tokens */
+.brand{border:0;background:transparent;color:inherit;text-align:left;padding:0;cursor:pointer;flex-shrink:0}
+.brand:focus-visible{outline:3px solid #9a8df8;outline-offset:5px;border-radius:8px}
+.country-picker{display:flex;align-items:center;gap:7px;padding:0 10px;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);min-width:0}
+.country-picker>span{font-size:16px}
+.country-picker select{max-width:175px;min-width:0;border:0;outline:0;background:transparent;color:inherit;font-size:11px;font-weight:700;padding:7px 0;cursor:pointer}
+.country-picker select option{color:#202438;background:#fff}
+.hero-graphic{isolation:isolate}
+.graphic-ring{display:grid;place-items:start center;transform-origin:center;will-change:transform}
+.graphic-ring.ring-a{width:215px;height:215px;border-style:solid}
+.graphic-ring.ring-b{width:160px;height:160px;border-style:dashed}
+.graphic-ring .graphic-chip{position:absolute;top:-15px;left:50%;right:auto;bottom:auto;transform:translateX(-50%);white-space:nowrap;box-shadow:0 8px 22px #17112e25}
+.graphic-center{position:relative;z-index:2;border:1px solid #ffffff65;outline:7px solid #ffffff0b;box-shadow:0 15px 40px #15102e55,0 0 42px #b4a9ff35;animation:fm-country-glow 4.8s ease-in-out infinite}
+.graphic-center>span{line-height:1.05;font-size:32px;letter-spacing:-1px}
+.graphic-center small{margin-top:5px;font-size:10px;letter-spacing:1.3px}
+@keyframes fm-country-glow{0%,100%{box-shadow:0 15px 40px #15102e55,0 0 24px #b4a9ff22}50%{box-shadow:0 15px 40px #15102e55,0 0 42px #b4a9ff55}}
+@media(prefers-reduced-motion:no-preference){
+ .hero-graphic{animation:none}
+ .graphic-ring.ring-a{animation:fm-orbit 34s linear infinite}
+ .graphic-ring.ring-b{animation:fm-orbit 44s linear infinite}
+ .graphic-ring .graphic-chip{animation:fm-orbit-counter 34s linear infinite}
+ .graphic-ring.ring-b .graphic-chip{animation-duration:44s}
+}
+@keyframes fm-orbit-counter{from{transform:translateX(-50%) rotate(0deg)}to{transform:translateX(-50%) rotate(-360deg)}}
+@media(max-width:820px){.country-picker{height:34px;padding:0 7px;gap:4px}.country-picker select{max-width:112px;font-size:10px}.topbar-actions{gap:7px}}
+@media(max-width:480px){.country-picker select{max-width:84px}.country-picker>span{font-size:14px}.topbar-actions{gap:5px}}
