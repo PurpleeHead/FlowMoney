@@ -117,3 +117,20 @@
   appearance:auto;
   vertical-align:middle;
 }
+
+
+/* Keep currency tokens upright while their orbital paths rotate. */
+@media(prefers-reduced-motion:no-preference){
+  .graphic-ring.ring-a{animation:fm-orbit 38s linear infinite reverse}
+  .graphic-ring.ring-b{animation:fm-orbit 32s linear infinite}
+  .graphic-ring.ring-a .graphic-chip{animation:fm-orbit-counter 38s linear infinite}
+  .graphic-ring.ring-b .graphic-chip{animation:fm-orbit-counter 32s linear infinite reverse}
+  .graphic-center{animation:fm-center-breathe 4.2s ease-in-out infinite}
+}
+@keyframes fm-center-breathe{
+  0%,100%{transform:scale(1);box-shadow:0 15px 40px #15102e55,0 0 24px #b4a9ff22}
+  50%{transform:scale(1.045);box-shadow:0 17px 42px #15102e55,0 0 38px #b4a9ff48}
+}
+@media(prefers-reduced-motion:reduce){
+  .graphic-ring.ring-a,.graphic-ring.ring-b,.graphic-ring .graphic-chip,.graphic-center{animation:none!important}
+}
