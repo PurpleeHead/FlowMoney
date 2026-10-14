@@ -5,12 +5,14 @@ import { parseReceiptLines, type ReceiptItem } from '../lib/receiptParser';
 import { api } from '../lib/api';
 
 type Props = {
+  locale: 'en' | 'ru';
   onSave: (items: ReceiptItem[], rawText: string) => Promise<void>;
   vndPerUsdt: number;
   vndPerRub: number;
 };
 
-export default function ReceiptScanner({ onSave, vndPerUsdt, vndPerRub }: Props) {
+export default function ReceiptScanner({ locale, onSave, vndPerUsdt, vndPerRub }: Props) {
+  const t = (en: string, ru: string) => locale === 'ru' ? ru : en;
   const [originalText, setOriginalText] = useState('');
   const [translatedText, setTranslatedText] = useState('');
   const [items, setItems] = useState<ReceiptItem[]>([]);
@@ -21,21 +23,21 @@ export default function ReceiptScanner({ onSave, vndPerUsdt, vndPerRub }: Props)
   async function scan(file?: File) {
     if (!file) return;
     setBusy(true);
-    setStatus('Loading OCR language data…');
+    setStatus(t('Loading OCR language data…','Загрузка языковых данных OCR…'));
     try {
       const worker = await createWorker(ocrLanguage);
       try {
-        setStatus('Reading receipt locally…');
+        setStatus(t('Reading receipt locally…','Читаем чек локально…'));
         const result = await worker.recognize(file);
         setOriginalText(result.data.text);
         setTranslatedText('');
         setItems(parseReceiptLines(result.data.text));
-        setStatus(`OCR finished. Review ${parseReceiptLines(result.data.text).length} detected item(s).`);
+        setStatus(locale === 'ru' ? `OCR завершён. Найдено позиций: ${parseReceiptLines(result.data.text).length}.` : `OCR finished. Review ${parseReceiptLines(result.data.text).length} detected item(s).`);
       } finally {
         await worker.terminate();
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'OCR failed');
+      setStatus(error instanceof Error ? error.message : t('OCR failed','Не удалось распознать чек'));
     } finally {
       setBusy(false);
     }
@@ -52,9 +54,9 @@ export default function ReceiptScanner({ onSave, vndPerUsdt, vndPerRub }: Props)
       setTranslatedText(result.translatedText);
       const translatedItems = parseReceiptLines(result.translatedText);
       if (translatedItems.length) setItems(translatedItems);
-      setStatus('Translation complete. Original Vietnamese text is preserved; check names and amounts.');
+      setStatus(t('Translation complete. Original Vietnamese text is preserved; check names and amounts.','Перевод готов. Оригинальный вьетнамский текст сохранён; проверьте названия и суммы.'));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Translation service unavailable');
+      setStatus(error instanceof Error ? error.message : t('Translation service unavailable','Сервис перевода недоступен'));
     } finally {
       setBusy(false);
     }
@@ -68,9 +70,9 @@ export default function ReceiptScanner({ onSave, vndPerUsdt, vndPerRub }: Props)
     <section className="panel receipt-panel">
       <div className="section-heading">
         <div>
-          <span className="eyebrow">SMART RECEIPT</span>
-          <h3>Scan a receipt</h3>
-          <p>OCR runs in your browser. Original text is kept separately from its Russian translation.</p>
+          <span className="eyebrow">{t('SMART RECEIPT','УМНЫЙ ЧЕК')}</span>
+          <h3>{t('Scan a receipt','Сканировать чек')}</h3>
+          <p>{t('OCR runs in your browser. Original text is kept separately from its Russian translation.','OCR работает в браузере. Оригинал хранится отдельно от русского перевода.')}</p>
         </div>
         <Camera size={22} />
       </div>
@@ -80,9 +82,9 @@ export default function ReceiptScanner({ onSave, vndPerUsdt, vndPerRub }: Props)
           <input type="file" accept="image/*" capture="environment" onChange={event => scan(event.target.files?.[0])} />
         </label>
         <select value={ocrLanguage} onChange={event => setOcrLanguage(event.target.value)} aria-label="OCR language">
-          <option value="vie+eng">Vietnamese + English</option>
-          <option value="eng">English</option>
-          <option value="rus">Russian</option>
+          <option value="vie+eng">{t('Vietnamese + English','Вьетнамский + английский')}</option>
+          <option value="eng">{t('English','Английский')}</option>
+          <option value="rus">{t('Russian','Русский')}</option>
         </select>
       </div>
       {busy && <p className="status"><LoaderCircle className="spin" size={16} />{status}</p>}
@@ -93,7 +95,7 @@ export default function ReceiptScanner({ onSave, vndPerUsdt, vndPerRub }: Props)
           setOriginalText(event.target.value);
           setTranslatedText('');
           setItems(parseReceiptLines(event.target.value));
-        }} placeholder="Upload a receipt or paste its original Vietnamese text here…" />
+        }} placeholder={t('Upload a receipt or paste its original Vietnamese text here…','Загрузите чек или вставьте сюда оригинальный вьетнамский текст…')} />
       </label>
       {translatedText && (
         <label className="field-label translated-receipt">
@@ -111,15 +113,15 @@ export default function ReceiptScanner({ onSave, vndPerUsdt, vndPerRub }: Props)
       </div>
       {items.length > 0 && (
         <div className="detected-items">
-          <strong>Detected items — review and edit before saving</strong>
+          <strong>{t('Detected items — review and edit before saving','Найденные позиции — проверьте и отредактируйте перед сохранением')}</strong>
           {items.map((item, index) => (
             <div className="detected-row receipt-edit-row" key={`${item.name}-${index}`}>
               <label className="receipt-item-name">
-                <span className="sr-only">Item name</span>
+                <span className="sr-only">{t('Item name','Название позиции')}</span>
                 <input value={item.name} onChange={event => updateItem(index, { name: event.target.value })} />
               </label>
               <label className="receipt-item-price">
-                <span className="sr-only">Price in VND</span>
+                <span className="sr-only">{t('Price in VND','Цена в VND')}</span>
                 <input type="number" min="1" step="any" value={item.price} onChange={event => updateItem(index, { price: Number(event.target.value) })} />
                 <small>₫</small>
                 <small className="receipt-conversions">
