@@ -181,3 +181,59 @@
   .graphic-ring.ring-b{transform:rotate(34deg)}
   .graphic-ring .graphic-chip{animation:none!important}
 }
+
+
+/* Corrected atom illustration: visible tilted ellipses, always-horizontal currency labels. */
+@keyframes fm-atom-rub{
+  from{transform:rotate(0deg) translateX(107px) rotate(0deg)}
+  to{transform:rotate(360deg) translateX(107px) rotate(-360deg)}
+}
+@keyframes fm-atom-usdt{
+  from{transform:rotate(0deg) translateX(80px) rotate(0deg)}
+  to{transform:rotate(-360deg) translateX(80px) rotate(360deg)}
+}
+@media(prefers-reduced-motion:no-preference){
+  .hero-graphic{width:280px;height:250px}
+  .graphic-ring.ring-a{
+    width:214px;height:100px;
+    border:1px solid #ffffff70;
+    border-radius:50%;
+    position:absolute;
+    display:block;
+    transform:rotate(-28deg);
+    animation:none;
+  }
+  .graphic-ring.ring-b{
+    width:214px;height:100px;
+    border:1px solid #ffffff55;
+    border-radius:50%;
+    position:absolute;
+    display:block;
+    transform:rotate(52deg);
+    animation:none;
+  }
+  .graphic-ring.ring-a .graphic-chip,
+  .graphic-ring.ring-b .graphic-chip{
+    position:absolute;
+    top:50%;left:50%;right:auto;bottom:auto;
+    margin:0;
+    transform:translate(-50%,-50%);
+    offset-path:none;
+    animation:none;
+    white-space:nowrap;
+    z-index:3;
+  }
+  .graphic-ring.ring-a .graphic-chip{
+    animation:fm-atom-rub 32s linear infinite;
+  }
+  .graphic-ring.ring-b .graphic-chip{
+    animation:fm-atom-usdt 38s linear infinite;
+  }
+  .graphic-center{z-index:4;animation:fm-center-breathe 4.2s ease-in-out infinite}
+}
+@media(prefers-reduced-motion:reduce){
+  .graphic-ring.ring-a,.graphic-ring.ring-b{display:block;border-radius:50%}
+  .graphic-ring.ring-a{width:214px;height:100px;transform:rotate(-28deg)}
+  .graphic-ring.ring-b{width:214px;height:100px;transform:rotate(52deg)}
+  .graphic-ring .graphic-chip{animation:none!important;transform:translate(-50%,-50%)}
+}
