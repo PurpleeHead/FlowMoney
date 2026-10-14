@@ -1,4 +1,4 @@
-export type ReceiptItem={name:string;price:number;quantity:number};
+export type ReceiptItem={name:string;price:number;quantity:number;originalName?:string;translatedName?:string};
 // Heuristic parser: handles common receipt lines ending in a price; always review OCR output.
 export function parseReceiptLines(text:string):ReceiptItem[]{
  return text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean).map(line=>{
