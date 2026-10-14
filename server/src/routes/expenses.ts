@@ -11,7 +11,7 @@ const schema = z.object({
   title: z.string().trim().min(1).max(140),
   category: z.string().trim().min(1).max(80),
   amount: z.number().positive().finite(),
-  currency: z.enum(['RUB', 'USDT', 'VND']),
+  currency: z.string().trim().min(3).max(8),
   amountVnd: z.number().positive().finite(),
   usdtCharged: z.number().positive().finite().optional(),
   date: z.string().datetime().optional(),
