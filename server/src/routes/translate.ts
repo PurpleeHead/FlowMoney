@@ -15,7 +15,7 @@ async function translateWithConfiguredProvider(text:string,source:string,target:
 }
 
 async function translateWithFreeFallback(text:string,source:string,target:string):Promise<string>{
- const lines=text.split(/\\r?\\n/);
+ const lines=text.split(/\r?\n/);
  const translated=await Promise.all(lines.map(async line=>{
   if(!line.trim())return line;
   const url=new URL('https://api.mymemory.translated.net/get');
@@ -26,9 +26,9 @@ async function translateWithFreeFallback(text:string,source:string,target:string
   const data=await response.json() as {responseStatus?:number;responseData?:{translatedText?:string}};
   const value=data.responseData?.translatedText;
   if(response.status!==200||!value||data.responseStatus!==200)throw new Error('Free translation fallback returned no translation');
-  return value.replace(/\\r?\\n/g,' ').trim();
+  return value.replace(/\r?\n/g,' ').trim();
  }));
- return translated.join('\\n');
+ return translated.join('\n');
 }
 
 router.post('/',async(req,res)=>{
