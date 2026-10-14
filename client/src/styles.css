@@ -134,3 +134,50 @@
 @media(prefers-reduced-motion:reduce){
   .graphic-ring.ring-a,.graphic-ring.ring-b,.graphic-ring .graphic-chip,.graphic-center{animation:none!important}
 }
+
+
+/* Atom-inspired orbit: tilted elliptical paths, currency labels stay upright. */
+@keyframes fm-atom-travel{
+  from{offset-distance:0%}
+  to{offset-distance:100%}
+}
+@media(prefers-reduced-motion:no-preference){
+  .graphic-ring.ring-a{
+    animation:none;
+    transform:rotate(-28deg);
+    border-radius:50%;
+  }
+  .graphic-ring.ring-b{
+    animation:none;
+    transform:rotate(34deg);
+    border-radius:50%;
+  }
+  .graphic-ring .graphic-chip{
+    top:auto;
+    left:auto;
+    right:auto;
+    bottom:auto;
+    transform:none;
+    offset-path:ellipse(50% 39% at 50% 50%);
+    offset-anchor:center;
+    offset-rotate:0deg;
+    offset-distance:0%;
+    animation:fm-atom-travel 38s linear infinite;
+  }
+  .graphic-ring.ring-a .graphic-chip{
+    animation-name:fm-atom-travel;
+    animation-duration:38s;
+    animation-direction:reverse;
+  }
+  .graphic-ring.ring-b .graphic-chip{
+    animation-name:fm-atom-travel;
+    animation-duration:32s;
+    animation-direction:normal;
+  }
+  .graphic-center{animation:fm-center-breathe 4.2s ease-in-out infinite}
+}
+@media(prefers-reduced-motion:reduce){
+  .graphic-ring.ring-a{transform:rotate(-28deg)}
+  .graphic-ring.ring-b{transform:rotate(34deg)}
+  .graphic-ring .graphic-chip{animation:none!important}
+}
