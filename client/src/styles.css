@@ -287,3 +287,14 @@
 @media(prefers-reduced-motion:reduce){
   .atom-token animateMotion{display:none!important}
 }
+
+
+/* Result panel: paired, live exchange-rate indicators. */
+.result-rate-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:22px 0 4px}
+.result-rate-card{min-width:0;padding:14px 12px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--purple) 5%,var(--surface))}
+.result-rate-card>span{display:block;font-size:10px;letter-spacing:.7px;font-weight:800;color:var(--purple);margin-bottom:9px}
+.result-rate-card>strong{display:block;font:800 clamp(15px,1.5vw,20px) Manrope,sans-serif;letter-spacing:-.5px;overflow-wrap:anywhere}
+.result-rate-card>small{display:block;margin-top:7px;color:var(--muted);font-size:9px;line-height:1.4}
+.atom-core-labels{pointer-events:none}
+.atom-country,.atom-currency{text-anchor:middle;dominant-baseline:central}
+@media(max-width:480px){.result-rate-grid{gap:7px}.result-rate-card{padding:12px 9px}.result-rate-card>strong{font-size:15px}}
