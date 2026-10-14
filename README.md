@@ -2,6 +2,9 @@
 
 A full-stack personal finance workspace for tracking the real cost of exchanging RUB → USDT → VND, expenses in multiple currencies, receipt OCR, translation, and spending analytics.
 
+**Live demo:** https://purpleehead.github.io/FlowMoney/  
+**Backend health:** https://flowmoney-app.onrender.com/api/health
+
 ## Features
 - Email/password registration and login with bcrypt password hashing and JWT auth.
 - Cloud-ready PostgreSQL schema using Prisma; user-scoped wallets, exchange records, expenses, receipt records.
@@ -34,7 +37,7 @@ If the script reports that Docker is missing or not running, start Docker Deskto
 Manual alternative: `docker compose up -d postgres`, `npm install`, copy `.env.example` to `server/.env`, then run `npm run db:generate`, `npm run db:migrate`, and `npm run dev`.
 
 ## OCR and translation
-Receipt OCR uses Tesseract.js in the browser. First OCR language download needs an internet connection. It supports Vietnamese and English (`vie+eng`); low-quality or thermal-paper receipts should be checked manually. OCR output is never treated as authoritative: review and edit items before saving. The translation endpoint is an adapter for a LibreTranslate-compatible service. Configure `TRANSLATE_URL` and optional `TRANSLATE_API_KEY` in `server/.env`; if absent, the UI preserves original item text and translation is skipped. Do not upload sensitive receipts to third-party translation services without reviewing their privacy policy.
+Receipt OCR uses Tesseract.js in the browser. First OCR language download needs an internet connection. It supports Vietnamese and English (`vie+eng`); low-quality or thermal-paper receipts should be checked manually. OCR output is never treated as authoritative: review and edit items before saving. The translation endpoint first uses `TRANSLATE_URL` and optional `TRANSLATE_API_KEY` when configured, then attempts a free MyMemory fallback. Translation depends on external service availability; original OCR text and prices are preserved. Do not upload sensitive receipts to third-party translation services without reviewing their privacy policy.
 
 ## Exchange calculations
 Rates are manually entered and stored with the exchange record; the app does not pretend that a rate is live. Calculation:
