@@ -118,7 +118,7 @@ export default function ReceiptScanner({ locale, onSave, vndPerUsdt, vndPerRub }
             <div className="detected-row receipt-edit-row" key={`${item.name}-${index}`}>
               <label className="receipt-item-name">
                 <span className="sr-only">{t('Item name','Название позиции')}</span>
-                <input value={item.name} onChange={event => updateItem(index, { name: event.target.value })} />
+                <input value={item.name} onChange={event => updateItem(index, { name: event.target.value })} />{item.originalName && item.originalName !== item.name && <small className="receipt-original-name">{item.originalName}</small>}
               </label>
               <label className="receipt-item-price">
                 <span className="sr-only">{t('Price in VND','Цена в VND')}</span>
