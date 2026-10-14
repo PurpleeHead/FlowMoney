@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  wallets      Wallet[]
+  exchanges    Exchange[]
+  expenses     Expense[]
+  receipts     Receipt[]
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String
+  currency  String
+  balance   Decimal  @default(0) @db.Decimal(20, 6)
+  label     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, currency])
+}
+
+model Exchange {
+  id                 String   @id @default(cuid())
+  userId             String
+  rubSpent           Decimal  @db.Decimal(20, 4)
+  usdtReceived       Decimal  @db.Decimal(20, 8)
+  vndPerUsdt         Decimal? @db.Decimal(20, 4)
+  vndFee             Decimal  @default(0) @db.Decimal(20, 4)
+  vndReceived        Decimal? @db.Decimal(20, 4)
+  effectiveVndPerRub Decimal? @db.Decimal(20, 8)
+  effectiveRubPerUsdt Decimal @db.Decimal(20, 8)
+  createdAt          DateTime @default(now())
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model Expense {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  category  String
+  amount    Decimal  @db.Decimal(20, 6)
+  currency  String
+  amountVnd Decimal  @db.Decimal(20, 4)
+  date      DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  receiptId String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  receipt   Receipt? @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+}
+
+model Receipt {
+  id        String    @id @default(cuid())
+  userId    String
+  rawText   String    @db.Text
+  items     Json
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+
+  @@index([userId, createdAt])
+}
+

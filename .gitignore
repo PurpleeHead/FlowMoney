@@ -1,0 +1,13 @@
+node_modules
+.env
+client/dist
+server/dist
+coverage
+.DS_Store
+
+# Local database backups
+flowmoney-before-migration.sql
+*.sql.bak
+
+# Generated TypeScript files
+*.tsbuildinfo
