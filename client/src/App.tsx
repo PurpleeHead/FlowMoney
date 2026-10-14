@@ -46,9 +46,10 @@ export default function App(){const [lang,setLang]=useState<Lang>(()=>localStora
   <defs>
     <linearGradient id="atom-rub-gradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#ffffff" stopOpacity=".9"/><stop offset="100%" stopColor="#c8c0ff" stopOpacity=".48"/></linearGradient>
     <linearGradient id="atom-usdt-gradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#b8ffe6" stopOpacity=".95"/><stop offset="100%" stopColor="#ffffff" stopOpacity=".5"/></linearGradient>
+    <linearGradient id="atom-core-gradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#9585ff"/><stop offset="100%" stopColor="#5747bb"/></linearGradient>
   </defs>
-  <path className="atom-orbit atom-orbit-rub" d="M 228.3 78.1 C 244.9 108.6 213.8 158.1 158.8 188.9 C 103.8 219.7 45.8 220.1 29.2 189.6 C 12.6 159.1 43.7 109.6 98.7 78.8 C 153.7 48 211.7 47.6 228.3 78.1 Z"/>
-  <path className="atom-orbit atom-orbit-usdt" d="M 186.4 37.7 C 217.7 58.8 207.9 112.5 164.5 157.7 C 121.1 202.9 60.5 222.4 29.2 201.3 C -2.1 180.2 7.7 126.5 51.1 81.3 C 94.5 36.1 155.1 16.6 186.4 37.7 Z"/>
+  <path className="atom-orbit atom-orbit-rub" d="M 235.36 74.30 C 247.80 97.70 215.20 139.38 162.53 167.38 C 109.87 195.38 57.09 199.11 44.64 175.70 C 32.20 152.30 64.80 110.62 117.47 82.62 C 170.13 54.62 222.91 50.89 235.36 74.30 Z"/>
+  <path className="atom-orbit atom-orbit-usdt" d="M 192.19 182.97 C 150.33 220.66 93.02 225.26 64.20 193.25 C 35.37 161.24 45.94 104.73 87.81 67.03 C 129.67 29.34 186.98 24.74 215.80 56.75 C 244.63 88.76 234.06 145.27 192.19 182.97 Z"/>
   <g className="atom-token">
     <animateMotion dur="16s" repeatCount="indefinite" rotate="0"><mpath href="#atom-rub-motion"/></animateMotion>
     <rect x="-34" y="-15" width="68" height="30" rx="9" fill="#ffffff" fillOpacity=".14" stroke="url(#atom-rub-gradient)" strokeOpacity=".9"/>
@@ -59,8 +60,8 @@ export default function App(){const [lang,setLang]=useState<Lang>(()=>localStora
     <rect x="-37" y="-15" width="74" height="30" rx="9" fill="#ffffff" fillOpacity=".14" stroke="url(#atom-usdt-gradient)" strokeOpacity=".95"/>
     <text x="0" y="4" textAnchor="middle" className="atom-token-label">◈ USDT</text>
   </g>
-  <path id="atom-rub-motion" className="atom-motion-path" d="M 228.3 78.1 C 244.9 108.6 213.8 158.1 158.8 188.9 C 103.8 219.7 45.8 220.1 29.2 189.6 C 12.6 159.1 43.7 109.6 98.7 78.8 C 153.7 48 211.7 47.6 228.3 78.1 Z"/>
-  <path id="atom-usdt-motion" className="atom-motion-path" d="M 186.4 37.7 C 217.7 58.8 207.9 112.5 164.5 157.7 C 121.1 202.9 60.5 222.4 29.2 201.3 C -2.1 180.2 7.7 126.5 51.1 81.3 C 94.5 36.1 155.1 16.6 186.4 37.7 Z"/>
+  <path id="atom-rub-motion" className="atom-motion-path" d="M 235.36 74.30 C 247.80 97.70 215.20 139.38 162.53 167.38 C 109.87 195.38 57.09 199.11 44.64 175.70 C 32.20 152.30 64.80 110.62 117.47 82.62 C 170.13 54.62 222.91 50.89 235.36 74.30 Z"/>
+  <path id="atom-usdt-motion" className="atom-motion-path" d="M 192.19 182.97 C 150.33 220.66 93.02 225.26 64.20 193.25 C 35.37 161.24 45.94 104.73 87.81 67.03 C 129.67 29.34 186.98 24.74 215.80 56.75 C 244.63 88.76 234.06 145.27 192.19 182.97 Z"/>
   <rect className="atom-core-glow" x="93" y="78" width="94" height="94" rx="29"/>
   <rect className="atom-core" x="97" y="82" width="86" height="86" rx="26"/>
   <text className="atom-country" x="140" y="121" textAnchor="middle">{selectedCountry.code}</text>
