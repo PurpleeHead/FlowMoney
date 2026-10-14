@@ -35,7 +35,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     res.json({
       totalVnd,monthVnd,
       observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerRub,
-      expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:Number(x.amountVnd),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
+      expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
       exchanges:exchanges.map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:Number(x.effectiveRubPerUsdt)}))
     });
   } catch(e) { next(e); }
