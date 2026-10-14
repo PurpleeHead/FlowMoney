@@ -31,7 +31,7 @@ export default function ReceiptScanner({ locale, onSave, vndPerUsdt, vndPerRub }
         const result = await worker.recognize(file);
         setOriginalText(result.data.text);
         setTranslatedText('');
-        setItems(parseReceiptLines(result.data.text));
+        setItems(parseReceiptLines(result.data.text).map(item => ({ ...item, originalName: item.name })));
         setStatus(locale === 'ru' ? `OCR завершён. Найдено позиций: ${parseReceiptLines(result.data.text).length}.` : `OCR finished. Review ${parseReceiptLines(result.data.text).length} detected item(s).`);
       } finally {
         await worker.terminate();
@@ -53,7 +53,7 @@ export default function ReceiptScanner({ locale, onSave, vndPerUsdt, vndPerRub }
       });
       setTranslatedText(result.translatedText);
       const translatedItems = parseReceiptLines(result.translatedText);
-      if (translatedItems.length) setItems(translatedItems);
+      if (translatedItems.length) setItems(translatedItems.map((item, index) => ({ ...item, originalName: items[index]?.originalName ?? items[index]?.name, translatedName: item.name })));
       setStatus(t('Translation complete. Original Vietnamese text is preserved; check names and amounts.','Перевод готов. Оригинальный вьетнамский текст сохранён; проверьте названия и суммы.'));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t('Translation service unavailable','Сервис перевода недоступен'));
@@ -94,7 +94,7 @@ export default function ReceiptScanner({ locale, onSave, vndPerUsdt, vndPerRub }
         <textarea rows={5} value={originalText} onChange={event => {
           setOriginalText(event.target.value);
           setTranslatedText('');
-          setItems(parseReceiptLines(event.target.value));
+          setItems(parseReceiptLines(event.target.value).map(item => ({ ...item, originalName: item.name })));
         }} placeholder={t('Upload a receipt or paste its original Vietnamese text here…','Загрузите чек или вставьте сюда оригинальный вьетнамский текст…')} />
       </label>
       {translatedText && (
@@ -108,7 +108,7 @@ export default function ReceiptScanner({ locale, onSave, vndPerUsdt, vndPerRub }
           <Languages size={16} /> Translate to Russian
         </button>
         <button className="button primary" onClick={() => onSave(items, originalText)} disabled={!items.length || busy}>
-          Save {items.length || ''} items
+          {t('Save','Сохранить')} {items.length || ''} {t('items','позиций')}
         </button>
       </div>
       {items.length > 0 && (
