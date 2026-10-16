@@ -25,4 +25,16 @@ describe('calculateExchange', () => {
     expect(estimateRubFromVnd(100000, 30000, null)).toBeNull();
     expect(estimateRubFromVnd(0, 30000, 100)).toBeNull();
   });
+
+  it('calculates the unified RUB estimate from the real three-purchase example', () => {
+    const purchases = [
+      { amountVnd: 55536, usdtCharged: 2.19 },
+      { amountVnd: 40000, usdtCharged: 1.57 },
+      { amountVnd: 722728, usdtCharged: 28.39 },
+    ];
+    const observedVndPerUsdt = calculateObservedVndPerUsdt(purchases);
+    const rubPerUsdt = 8300 / 93.7853;
+    expect(observedVndPerUsdt).toBeCloseTo(25451.4463, 3);
+    expect(estimateRubFromVnd(100000, observedVndPerUsdt, rubPerUsdt)).toBeCloseTo(347.7209, 2);
+  });
 });
