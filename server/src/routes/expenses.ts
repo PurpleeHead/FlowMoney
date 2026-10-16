@@ -64,19 +64,19 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const usdtReceived = exchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
     const historicalRubPerUsdt = usdtReceived > 0 ? rubSpent / usdtReceived : null;
 
-    const vndExchanges = exchanges.filter(x => x.vndReceived != null);
-    const vndExchangeRub = vndExchanges.reduce((sum, x) => sum + Number(x.rubSpent), 0);
-    const vndExchangeReceived = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
-    let historicalVndPerRub = vndExchangeRub > 0
-      ? vndExchangeReceived / vndExchangeRub
+    // Prefer real card-purchase observations over manually entered exchange estimates.
+    const observedVnd = previousPurchases.reduce((sum, x) => sum + Number(x.amountVnd), 0);
+    const observedUsdt = previousPurchases.reduce((sum, x) => sum + Number(x.usdtCharged), 0);
+    let historicalVndPerRub = observedUsdt > 0 && historicalRubPerUsdt != null && historicalRubPerUsdt > 0
+      ? (observedVnd / observedUsdt) / historicalRubPerUsdt
       : null;
 
-    if (historicalVndPerRub == null && historicalRubPerUsdt != null) {
-      const observedVnd = previousPurchases.reduce((sum, x) => sum + Number(x.amountVnd), 0);
-      const observedUsdt = previousPurchases.reduce((sum, x) => sum + Number(x.usdtCharged), 0);
-      if (observedUsdt > 0) {
-        historicalVndPerRub = (observedVnd / observedUsdt) / historicalRubPerUsdt;
-      }
+    // If no card-purchase observation exists yet, use only exchanges with an actual recorded VND outcome.
+    if (historicalVndPerRub == null) {
+      const vndExchanges = exchanges.filter(x => x.vndReceived != null);
+      const vndExchangeRub = vndExchanges.reduce((sum, x) => sum + Number(x.rubSpent), 0);
+      const vndExchangeReceived = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
+      historicalVndPerRub = vndExchangeRub > 0 ? vndExchangeReceived / vndExchangeRub : null;
     }
 
     let amountRub: number | null = null;
