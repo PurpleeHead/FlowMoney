@@ -49,7 +49,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const [exchanges, previousPurchases] = await Promise.all([
       prisma.exchange.findMany({
         where: { userId, createdAt: { lte: expenseDate } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetVndEquivalent: true },
       }),
       prisma.expense.findMany({
         where: {
@@ -69,10 +69,10 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
     );
-    const vndExchanges = exchanges.filter(x => x.mode !== 'RUB_VND' && x.usdtReceived != null && x.vndReceived != null);
+    const vndExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.usdtReceived != null && x.vndReceived != null);
     const exchangeVnd = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
     const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
-    const plannedExchanges = exchanges.filter(x => x.mode !== 'RUB_VND' && x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
+    const plannedExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
     const plannedUsdt = plannedExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
     const planningVndPerUsdt = plannedUsdt > 0
       ? plannedExchanges.reduce((sum, x) => sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0) / plannedUsdt
@@ -81,9 +81,10 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       (exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : planningVndPerUsdt);
 
     const historicalVndPerRub = calculateObservedVndPerRub({
-      directExchanges: exchanges
-        .filter(x => x.mode === 'RUB_VND' && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      directExchanges: [
+        ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetVndEquivalent != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent) })),
+      ],
       actualVndExchanges: exchanges
         .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
         .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),

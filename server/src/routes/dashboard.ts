@@ -43,9 +43,10 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       : null;
     const balanceRateVndPerUsdt=effectiveVndPerUsdt??planningVndPerUsdt;
     const effectiveVndPerRub = calculateObservedVndPerRub({
-      directExchanges: exchanges
-        .filter(x => x.mode === 'RUB_VND' && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      directExchanges: [
+        ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetVndEquivalent != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent) })),
+      ],
       actualVndExchanges: exchanges
         .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
         .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
@@ -58,10 +59,8 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
 
     // A budget balance is a planning estimate: actual VND received is counted as-is;
     // USDT-only top-ups are converted using the observed VND/USDT rate when available.
-    const confirmedExchangeVnd = exchanges
-      .filter(x => x.vndReceived != null)
-      .reduce((sum, x) => sum + Number(x.vndReceived), 0);
-    const unpricedUsdtTopUps = exchanges.some(x => x.mode !== 'RUB_VND' && x.vndReceived == null && x.usdtReceived != null);
+    const confirmedExchangeVnd = exchanges.reduce((sum, x) => sum + (x.vndReceived != null ? Number(x.vndReceived) : 0) + (x.targetVndEquivalent != null ? Number(x.targetVndEquivalent) : 0), 0);
+    const unpricedUsdtTopUps = exchanges.some(x => x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null);
     const estimatedUnconvertedVnd = balanceRateVndPerUsdt == null ? 0 : exchanges
       .filter(x => x.mode !== 'RUB_VND' && x.vndReceived == null && x.usdtReceived != null)
       .reduce((sum, x) => sum + Number(x.usdtReceived) * balanceRateVndPerUsdt, 0);
@@ -74,7 +73,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       balanceIsEstimated: estimatedUnconvertedVnd > 0,
       observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerUsdt,effectiveVndPerRub,
       expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
-      exchanges:exchanges.map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),planningVndPerUsdt:x.planningVndPerUsdt==null?null:Number(x.planningVndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:x.effectiveRubPerUsdt==null?null:Number(x.effectiveRubPerUsdt)}))
+      exchanges:exchanges.map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),planningVndPerUsdt:x.planningVndPerUsdt==null?null:Number(x.planningVndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),targetReceived:x.targetReceived==null?null:Number(x.targetReceived),targetToVndRate:x.targetToVndRate==null?null:Number(x.targetToVndRate),targetVndEquivalent:x.targetVndEquivalent==null?null:Number(x.targetVndEquivalent),targetCurrency:x.targetCurrency,effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:x.effectiveRubPerUsdt==null?null:Number(x.effectiveRubPerUsdt)}))
     });
   } catch(e) { next(e); }
 });

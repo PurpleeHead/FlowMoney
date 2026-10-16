@@ -41,6 +41,10 @@ model Exchange {
   id                 String   @id @default(cuid())
   userId             String
   mode               String   @default("RUB_USDT_VND")
+  targetCurrency     String   @default("VND")
+  targetReceived     Decimal? @db.Decimal(20, 8)
+  targetToVndRate    Decimal? @db.Decimal(20, 8)
+  targetVndEquivalent Decimal? @db.Decimal(20, 4)
   rubSpent           Decimal  @db.Decimal(20, 4)
   usdtReceived       Decimal? @db.Decimal(20, 8)
   vndPerUsdt         Decimal? @db.Decimal(20, 4)
