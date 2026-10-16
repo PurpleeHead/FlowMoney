@@ -1,7 +1,7 @@
 import {Router} from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import {createHash,randomBytes} from 'node:crypto';
+import {createHash,randomInt} from 'node:crypto';
 import {z} from 'zod';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
@@ -24,21 +24,19 @@ function token(id:string,email:string){
 }
 function hashVerificationToken(value:string){return createHash('sha256').update(value).digest('hex');}
 
-async function sendVerificationEmail(email:string,verificationToken:string){
+async function sendVerificationEmail(email:string,verificationCode:string){
   const apiKey=process.env.RESEND_API_KEY;
   const from=process.env.MAIL_FROM;
   if(!apiKey||!from)throw new Error('Email verification is not configured. Set RESEND_API_KEY and MAIL_FROM in Render.');
-  const appUrl=(process.env.APP_URL||process.env.CLIENT_ORIGIN||'https://flowmoney-app.onrender.com').replace(/\/$/,'');
-  const verifyUrl=`${appUrl}/?verify=${encodeURIComponent(verificationToken)}`;
   const response=await fetch('https://api.resend.com/emails',{
     method:'POST',
     headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
     body:JSON.stringify({
       from,
       to:[email],
-      subject:'Verify your FLOWMONEY email',
-      text:`Verify your FLOWMONEY email by opening this link (valid for 24 hours): ${verifyUrl}`,
-      html:`<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>Welcome to FLOWMONEY</h2><p>Confirm your email address to activate your account.</p><p><a href="${verifyUrl}">Verify email address</a></p><p>This link expires in 24 hours.</p></div>`,
+      subject:'Your FLOWMONEY activation code',
+      text:`Your FLOWMONEY activation code is ${verificationCode}. It expires in 15 minutes. If you did not request this, ignore this email.`,
+      html:`<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>Welcome to FLOWMONEY</h2><p>Enter this code in the app to activate your account:</p><p style="font-size:32px;font-weight:700;letter-spacing:8px">${verificationCode}</p><p>This code expires in 15 minutes.</p></div>`,
     }),
     signal:AbortSignal.timeout(15000),
   });
@@ -52,19 +50,19 @@ router.post('/register',async(req,res,next)=>{
     if(!parsed.success){res.status(400).json({message:'Enter a valid email and a password of at least 8 characters.'});return;}
     const {email,password}=parsed.data;
     if(await prisma.user.findUnique({where:{email}})){res.status(409).json({message:'An account with this email already exists.'});return;}
-    const verificationToken=randomBytes(32).toString('hex');
+    const verificationCode=String(randomInt(100000,1000000));
     const passwordHash=await bcrypt.hash(password,12);
     const user=await prisma.user.create({
       data:{
         email,passwordHash,emailVerified:false,
-        emailVerificationTokenHash:hashVerificationToken(verificationToken),
-        emailVerificationExpiresAt:new Date(Date.now()+24*60*60*1000),
+        emailVerificationTokenHash:hashVerificationToken(verificationCode),
+        emailVerificationExpiresAt:new Date(Date.now()+15*60*1000),
         wallets:{create:[{currency:'RUB',balance:0,label:'Russian ruble'},{currency:'USDT',balance:0,label:'Tether'},{currency:'VND',balance:0,label:'Vietnamese dong'}]},
       },
     });
     createdUserId=user.id;
-    await sendVerificationEmail(user.email,verificationToken);
-    res.status(201).json({message:'Account created. Check your email and verify the address before signing in.'});
+    await sendVerificationEmail(user.email,verificationCode);
+    res.status(201).json({message:'Account created. Check your email for the 6-digit activation code, then enter it below.'});
   }catch(e){
     if(createdUserId){
       try{await prisma.user.delete({where:{id:createdUserId}});}catch{/* Keep the original error for diagnostics. */}
@@ -83,11 +81,11 @@ router.post('/register',async(req,res,next)=>{
 
 router.post('/verify-email',async(req,res,next)=>{
   try{
-    const parsed=z.object({token:z.string().min(32).max(200)}).safeParse(req.body);
+    const parsed=z.object({code:z.string().regex(/^\\d{6}$/)}).safeParse(req.body);
     if(!parsed.success){res.status(400).json({message:'The verification link is invalid or incomplete.'});return;}
-    const user=await prisma.user.findUnique({where:{emailVerificationTokenHash:hashVerificationToken(parsed.data.token)}});
+    const user=await prisma.user.findUnique({where:{emailVerificationTokenHash:hashVerificationToken(parsed.data.code)}});
     if(!user||!user.emailVerificationExpiresAt||user.emailVerificationExpiresAt<new Date()){
-      res.status(400).json({message:'This verification link has expired or was already used. Request a new one.'});return;
+      res.status(400).json({message:'This activation code has expired or was already used. Request a new one.'});return;
     }
     await prisma.user.update({where:{id:user.id},data:{emailVerified:true,emailVerificationTokenHash:null,emailVerificationExpiresAt:null}});
     res.json({message:'Email verified. You can now sign in on any device.'});
@@ -100,9 +98,9 @@ router.post('/resend-verification',async(req,res,next)=>{
     if(!parsed.success){res.status(400).json({message:'Enter a valid email address.'});return;}
     const user=await prisma.user.findUnique({where:{email:parsed.data.email}});
     if(!user||user.emailVerified){res.json({message:'If the account needs verification, a new email will be sent.'});return;}
-    const verificationToken=randomBytes(32).toString('hex');
-    await prisma.user.update({where:{id:user.id},data:{emailVerificationTokenHash:hashVerificationToken(verificationToken),emailVerificationExpiresAt:new Date(Date.now()+24*60*60*1000)}});
-    await sendVerificationEmail(user.email,verificationToken);
+    const verificationCode=String(randomInt(100000,1000000));
+    await prisma.user.update({where:{id:user.id},data:{emailVerificationTokenHash:hashVerificationToken(verificationCode),emailVerificationExpiresAt:new Date(Date.now()+15*60*1000)}});
+    await sendVerificationEmail(user.email,verificationCode);
     res.json({message:'If the account needs verification, a new email will be sent.'});
   }catch(e){next(e);}
 });
