@@ -35,13 +35,14 @@ model Wallet {
 model Exchange {
   id                 String   @id @default(cuid())
   userId             String
+  mode               String   @default("RUB_USDT_VND")
   rubSpent           Decimal  @db.Decimal(20, 4)
-  usdtReceived       Decimal  @db.Decimal(20, 8)
+  usdtReceived       Decimal? @db.Decimal(20, 8)
   vndPerUsdt         Decimal? @db.Decimal(20, 4)
   vndFee             Decimal  @default(0) @db.Decimal(20, 4)
   vndReceived        Decimal? @db.Decimal(20, 4)
   effectiveVndPerRub Decimal? @db.Decimal(20, 8)
-  effectiveRubPerUsdt Decimal @db.Decimal(20, 8)
+  effectiveRubPerUsdt Decimal? @db.Decimal(20, 8)
   createdAt          DateTime @default(now())
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
