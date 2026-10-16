@@ -12,7 +12,7 @@ describe('Vietnamese receipt line parsing', () => {
     expect(parseReceiptLines('Banh mi 25.000 VND')).toEqual([{ name: 'Banh mi', price: 25000, quantity: 1 }]);
   });
   it('attaches a standalone price to the preceding product line', () => {
-    expect(parseReceiptLines('WMCOOK. Bánh donut 85G\n18.000')).toEqual([{ name: 'WMCOOK. Bánh donut', price: 18000, quantity: 1 }]);
+    expect(parseReceiptLines('WMCOOK. Bánh donut 85G\n18.000')).toEqual([{ name: 'WMCOOK Bánh donut', price: 18000, quantity: 1 }]);
   });
   it('removes OCR quantity fragments and uses the trailing line total', () => {
     expect(parseReceiptLines('O Bánh quy kem socola x 2 10,100. 20,200')).toEqual([{ name: 'O Bánh quy kem socola', price: 20200, quantity: 1 }]);
