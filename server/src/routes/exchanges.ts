@@ -29,16 +29,8 @@ router.post('/', async (req: AuthedRequest, res, next) => {
 
     const x = parsed.data;
 
-    if ((x.vndPerUsdt == null) !== (x.vndReceived == null)) {
-      res.status(400).json({
-        message: 'VND rate and received amount must be provided together.',
-      });
-      return;
-    }
-
     if (x.vndPerUsdt != null && x.vndReceived != null) {
       const grossVnd = x.usdtReceived * x.vndPerUsdt;
-
       if (x.vndReceived > grossVnd + 0.01 || x.vndFee > grossVnd) {
         res.status(400).json({
           message: 'VND result or fee is inconsistent with the entered rate.',
@@ -46,17 +38,27 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         return;
       }
     }
+    if (x.vndReceived == null && x.vndPerUsdt != null) {
+      res.status(400).json({
+        message: 'Enter the actual VND received amount when providing a VND/USDT rate.',
+      });
+      return;
+    }
+    const effectiveVndReceived = x.vndReceived;
+    const effectiveVndPerUsdt = effectiveVndReceived == null
+      ? null
+      : (x.vndPerUsdt ?? (effectiveVndReceived / x.usdtReceived));
 
     const record = await prisma.exchange.create({
       data: {
         userId: req.user!.id,
         rubSpent: x.rubSpent,
         usdtReceived: x.usdtReceived,
-        vndPerUsdt: x.vndPerUsdt,
+        vndPerUsdt: effectiveVndPerUsdt,
         vndFee: x.vndFee,
-        vndReceived: x.vndReceived,
+        vndReceived: effectiveVndReceived,
         effectiveVndPerRub:
-          x.vndReceived == null ? null : x.vndReceived / x.rubSpent,
+          effectiveVndReceived == null ? null : effectiveVndReceived / x.rubSpent,
         effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
       },
     });
