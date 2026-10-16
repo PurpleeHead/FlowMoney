@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateExchange, calculateObservedVndPerUsdt, estimateRubFromVnd } from './money';
+import { calculateActualExchangeRates, calculateExchange, calculateObservedVndPerUsdt, estimateRubFromVnd } from './money';
 describe('calculateExchange', () => {
   it('records RUB to USDT even before the VND rate is known', () => {
     expect(calculateExchange({ rubSpent: 10000, usdtReceived: 100 })).toEqual({ effectiveRubPerUsdt: 100 });
@@ -36,5 +36,29 @@ describe('calculateExchange', () => {
     const rubPerUsdt = 8300 / 93.7853;
     expect(observedVndPerUsdt).toBeCloseTo(25451.4463, 3);
     expect(estimateRubFromVnd(100000, observedVndPerUsdt, rubPerUsdt)).toBeCloseTo(347.7209, 2);
+  });
+});
+
+
+describe('actual rates for the current exchange form', () => {
+  it('calculates RUB/USDT, VND/USDT and VND/RUB from the same actual amounts', () => {
+    const rates = calculateActualExchangeRates({ rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 2383500 });
+    expect(rates.effectiveRubPerUsdt).toBeCloseTo(88.5000101, 6);
+    expect(rates.effectiveVndPerUsdt).toBeCloseTo(25414.4306, 3);
+    expect(rates.effectiveVndPerRub).toBeCloseTo(287.1686747, 6);
+  });
+
+  it('keeps VND rates unknown until the actual VND outcome is entered', () => {
+    expect(calculateActualExchangeRates({ rubSpent: 8300, usdtReceived: 93.7853 })).toEqual({
+      effectiveRubPerUsdt: 8300 / 93.7853,
+      effectiveVndPerUsdt: null,
+      effectiveVndPerRub: null,
+    });
+  });
+
+  it('rejects invalid amounts instead of producing misleading rates', () => {
+    expect(() => calculateActualExchangeRates({ rubSpent: 0, usdtReceived: 93.7853 })).toThrow();
+    expect(() => calculateActualExchangeRates({ rubSpent: 8300, usdtReceived: 0 })).toThrow();
+    expect(() => calculateActualExchangeRates({ rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 0 })).toThrow();
   });
 });
