@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt } from '../lib/money.js';
+import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges } from '../lib/money.js';
 
 const router = Router();
 router.use(auth);
@@ -81,10 +81,12 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       (exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : planningVndPerUsdt);
 
     const historicalVndPerRub = calculateObservedVndPerRub({
-      directExchanges: [
-        ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetVndEquivalent != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent) })),
-      ],
+      directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+      }))),
       actualVndExchanges: exchanges
         .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
         .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
@@ -165,7 +167,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
     const [exchanges, otherPurchases] = await Promise.all([
       prisma.exchange.findMany({
         where: { userId, createdAt: { lte: expenseDate } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetVndEquivalent: true },
       }),
       prisma.expense.findMany({
         where: { userId, id: { not: id }, date: { lte: expenseDate }, usdtCharged: { not: null } },
@@ -188,8 +190,12 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       : null;
     const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : plannedRate);
     const vndPerRub = calculateObservedVndPerRub({
-      directExchanges: exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+      }))),
       actualVndExchanges: exchanges.filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
         .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
       cardPurchases: otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) })),

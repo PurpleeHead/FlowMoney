@@ -56,6 +56,24 @@ export function calculateObservedVndPerRub(input: {
   return rubTotal > 0 && vndTotal > 0 ? vndTotal / rubTotal : null;
 }
 
+/** Convert exchange records into direct RUB-to-VND observations for historical-rate calculations. */
+export function mapDirectVndExchanges(exchanges: Array<{
+  mode: string;
+  rubSpent: number;
+  vndReceived?: number | null;
+  targetVndEquivalent?: number | null;
+}>): DirectVndObservation[] {
+  return exchanges.flatMap((exchange) => {
+    if (exchange.mode === 'RUB_VND' && exchange.vndReceived != null) {
+      return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
+    }
+    if (exchange.mode === 'RUB_TARGET' && exchange.targetVndEquivalent != null) {
+      return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.targetVndEquivalent }];
+    }
+    return [];
+  });
+}
+
 /**
  * Unified budget formula:
  * RUB = VND purchase / observed VND-per-USDT * effective RUB-per-USDT.

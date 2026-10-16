@@ -6,6 +6,7 @@ import {
   calculateObservedVndPerUsdt,
   calculateObservedVndPerRub,
   calculateRubPerUsdt,
+  mapDirectVndExchanges,
   estimateRubFromVnd,
   resolveExchangeVndOutcome,
 } from './money.js';
@@ -78,6 +79,19 @@ describe('unified RUB cost formula', () => {
   it('returns null rather than inventing a RUB estimate when rates are missing', () => {
     assert.equal(estimateRubFromVnd(100000, null, 88.5), null);
     assert.equal(estimateRubFromVnd(100000, 25451, null), null);
+  });
+});
+
+describe('direct exchange observations', () => {
+  it('includes RUB_TARGET VND equivalents when recalculating historical VND/RUB rates', () => {
+    assert.deepEqual(mapDirectVndExchanges([
+      { mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250000 },
+      { mode: 'RUB_TARGET', rubSpent: 2000, targetVndEquivalent: 460000 },
+      { mode: 'RUB_USDT_VND', rubSpent: 3000, vndReceived: null },
+    ]), [
+      { rubSpent: 1000, vndReceived: 250000 },
+      { rubSpent: 2000, vndReceived: 460000 },
+    ]);
   });
 });
 
