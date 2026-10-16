@@ -59,3 +59,30 @@ export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number |
   }
   return estimateRubFromVnd(input.amountVnd, vndPerUsdt, rubPerUsdt);
 }
+
+
+/** Resolve the VND outcome from real amounts, without inventing a rate when VND is unknown. */
+export function resolveExchangeVndOutcome(input: {
+  usdtReceived: number;
+  vndReceived?: number | null;
+  vndPerUsdt?: number | null;
+}): { vndReceived: number | null; vndPerUsdt: number | null } {
+  if (!Number.isFinite(input.usdtReceived) || input.usdtReceived <= 0) {
+    throw new Error('USDT received must be positive.');
+  }
+  const vndReceived = input.vndReceived ?? null;
+  const vndPerUsdt = input.vndPerUsdt ?? null;
+  if (vndReceived != null && (!Number.isFinite(vndReceived) || vndReceived <= 0)) {
+    throw new Error('VND received must be positive.');
+  }
+  if (vndPerUsdt != null && (!Number.isFinite(vndPerUsdt) || vndPerUsdt <= 0)) {
+    throw new Error('VND per USDT must be positive.');
+  }
+  if (vndReceived == null && vndPerUsdt != null) {
+    throw new Error('Actual VND received is required when a VND rate is provided.');
+  }
+  return {
+    vndReceived,
+    vndPerUsdt: vndReceived == null ? null : (vndPerUsdt ?? vndReceived / input.usdtReceived),
+  };
+}
