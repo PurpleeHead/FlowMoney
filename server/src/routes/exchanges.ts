@@ -13,6 +13,7 @@ const schema = z.object({
   rubSpent: z.number().positive().finite(),
   usdtReceived: z.number().positive().finite().optional(),
   vndPerUsdt: z.number().positive().finite().optional(),
+  planningVndPerUsdt: z.number().positive().finite().optional(),
   vndFee: z.number().min(0).finite().default(0),
   vndReceived: z.number().positive().finite().optional(),
 });
@@ -43,6 +44,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
           rubSpent: x.rubSpent,
           usdtReceived: null,
           vndPerUsdt: null,
+          planningVndPerUsdt: null,
           vndFee: x.vndFee,
           vndReceived,
           effectiveVndPerRub: vndReceived / x.rubSpent,
@@ -90,6 +92,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         rubSpent: x.rubSpent,
         usdtReceived: x.usdtReceived,
         vndPerUsdt: effectiveVndPerUsdt,
+        planningVndPerUsdt: effectiveVndReceived == null ? (x.planningVndPerUsdt ?? null) : null,
         vndFee: x.vndFee,
         vndReceived: effectiveVndReceived,
         effectiveVndPerRub: effectiveVndReceived == null ? null : effectiveVndReceived / x.rubSpent,
@@ -128,6 +131,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       rubSpent: number;
       usdtReceived: number | null;
       vndPerUsdt: number | null;
+      planningVndPerUsdt?: number | null;
       vndFee: number;
       vndReceived: number | null;
       effectiveVndPerRub: number | null;
@@ -141,6 +145,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       const vndReceived = x.vndReceived - x.vndFee;
       data = {
         mode: 'RUB_VND', rubSpent: x.rubSpent, usdtReceived: null, vndPerUsdt: null,
+        planningVndPerUsdt: null,
         vndFee: x.vndFee, vndReceived, effectiveVndPerRub: vndReceived / x.rubSpent,
         effectiveRubPerUsdt: null,
       };
@@ -160,7 +165,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       });
       data = {
         mode: 'RUB_USDT_VND', rubSpent: x.rubSpent, usdtReceived: x.usdtReceived,
-        vndPerUsdt: outcome.vndPerUsdt, vndFee: x.vndFee, vndReceived: outcome.vndReceived,
+        vndPerUsdt: outcome.vndPerUsdt, ...(outcome.vndReceived != null ? { planningVndPerUsdt: null } : x.planningVndPerUsdt != null ? { planningVndPerUsdt: x.planningVndPerUsdt } : {}), vndFee: x.vndFee, vndReceived: outcome.vndReceived,
         effectiveVndPerRub: outcome.vndReceived == null ? null : outcome.vndReceived / x.rubSpent,
         effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
       };
