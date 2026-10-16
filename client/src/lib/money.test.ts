@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateActualExchangeRates, calculateExchange, calculateObservedVndPerUsdt, estimateRubFromVnd } from './money';
+import { calculateActualExchangeRates, calculateBalanceEquivalents, calculateExchange, calculateObservedVndPerUsdt, estimateRubFromVnd } from './money';
 describe('calculateExchange', () => {
   it('records RUB to USDT even before the VND rate is known', () => {
     expect(calculateExchange({ rubSpent: 10000, usdtReceived: 100 })).toEqual({ effectiveRubPerUsdt: 100 });
@@ -60,5 +60,18 @@ describe('actual rates for the current exchange form', () => {
     expect(() => calculateActualExchangeRates({ rubSpent: 0, usdtReceived: 93.7853 })).toThrow();
     expect(() => calculateActualExchangeRates({ rubSpent: 8300, usdtReceived: 0 })).toThrow();
     expect(() => calculateActualExchangeRates({ rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 0 })).toThrow();
+  });
+});
+
+
+describe('balance currency equivalents', () => {
+  it('converts one remaining budget into RUB, USDT and VND equivalents', () => {
+    expect(calculateBalanceEquivalents(2800000, 28000, 280)).toEqual({ vnd: 2800000, usdt: 100, rub: 10000 });
+  });
+  it('does not invent a balance before an exchange is recorded', () => {
+    expect(calculateBalanceEquivalents(null, 25450, 287)).toEqual({ vnd: null, usdt: null, rub: null });
+  });
+  it('keeps equivalents unavailable when their rates are missing', () => {
+    expect(calculateBalanceEquivalents(100000, null, null)).toEqual({ vnd: 100000, usdt: null, rub: null });
   });
 });
