@@ -99,8 +99,13 @@ router.post('/resend-verification',async(req,res,next)=>{
     const user=await prisma.user.findUnique({where:{email:parsed.data.email}});
     if(!user||user.emailVerified){res.json({message:'If the account needs verification, a new email will be sent.'});return;}
     const verificationCode=String(randomInt(100000,1000000));
+    try {
+      await sendVerificationEmail(user.email,verificationCode);
+    } catch {
+      res.status(502).json({message:'We could not send the verification email. Please try again later.'});
+      return;
+    }
     await prisma.user.update({where:{id:user.id},data:{emailVerificationTokenHash:hashVerificationToken(verificationCode),emailVerificationExpiresAt:new Date(Date.now()+15*60*1000)}});
-    await sendVerificationEmail(user.email,verificationCode);
     res.json({message:'If the account needs verification, a new email will be sent.'});
   }catch(e){next(e);}
 });
@@ -140,6 +145,41 @@ router.patch('/profile',auth,async(req:AuthedRequest,res,next)=>{
     const user=await prisma.user.update({where:{id:req.user!.id},data:parsed.data,select:{id:true,email:true,name:true,country:true,emailVerified:true,createdAt:true}});
     res.json(user);
   }catch(e){next(e);}
+});
+
+
+router.patch('/password', auth, async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({
+      currentPassword: z.string().min(1).max(128),
+      newPassword: z.string().min(8).max(128),
+    }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: 'Enter your current password and a new password of at least 8 characters.' });
+      return;
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { id: true, passwordHash: true },
+    });
+    if (!user) {
+      res.status(404).json({ message: 'Account not found.' });
+      return;
+    }
+    if (!(await bcrypt.compare(parsed.data.currentPassword, user.passwordHash))) {
+      res.status(400).json({ message: 'Current password is incorrect.' });
+      return;
+    }
+    if (await bcrypt.compare(parsed.data.newPassword, user.passwordHash)) {
+      res.status(400).json({ message: 'New password must be different from the current password.' });
+      return;
+    }
+    const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+    res.json({ message: 'Password changed successfully.' });
+  } catch (e) {
+    next(e);
+  }
 });
 
 export default router;

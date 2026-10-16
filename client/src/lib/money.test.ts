@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateActualExchangeRates, calculateBalanceEquivalents, calculateExchange, calculateObservedVndPerUsdt, estimateRubFromVnd } from './money';
+import { calculateActualExchangeRates, calculateBalanceEquivalents, calculateExchange, calculateObservedVndPerUsdt, estimateRubFromVnd, parseAmountInput } from './money';
 describe('calculateExchange', () => {
   it('records RUB to USDT even before the VND rate is known', () => {
     expect(calculateExchange({ rubSpent: 10000, usdtReceived: 100 })).toEqual({ effectiveRubPerUsdt: 100 });
@@ -73,5 +73,20 @@ describe('balance currency equivalents', () => {
   });
   it('keeps equivalents unavailable when their rates are missing', () => {
     expect(calculateBalanceEquivalents(100000, null, null)).toEqual({ vnd: 100000, usdt: null, rub: null });
+  });
+});
+
+describe('parseAmountInput', () => {
+  it('accepts decimal points and decimal commas', () => {
+    expect(parseAmountInput('2.19')).toBe('2.19');
+    expect(parseAmountInput('2,19')).toBe('2.19');
+    expect(parseAmountInput('93.7853')).toBe('93.7853');
+  });
+  it('accepts thousands separators without shrinking the amount', () => {
+    expect(parseAmountInput('25,450')).toBe('25450');
+    expect(parseAmountInput('2,500,000')).toBe('2500000');
+    expect(parseAmountInput('2.500.000')).toBe('2500000');
+    expect(parseAmountInput('1.234,56')).toBe('1234.56');
+    expect(parseAmountInput('1,234.56')).toBe('1234.56');
   });
 });

@@ -3,20 +3,42 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { resolveExchangeVndOutcome } from '../lib/money.js';
+import { calculateTargetVndEquivalent, resolveExchangeVndOutcome } from '../lib/money.js';
 
 const router = Router();
 router.use(auth);
 
 const schema = z.object({
-  mode: z.enum(['RUB_USDT_VND', 'RUB_VND']).default('RUB_USDT_VND'),
+  mode: z.enum(['RUB_USDT_VND', 'RUB_VND', 'RUB_TARGET']).default('RUB_USDT_VND'),
   rubSpent: z.number().positive().finite(),
   usdtReceived: z.number().positive().finite().optional(),
   vndPerUsdt: z.number().positive().finite().optional(),
   planningVndPerUsdt: z.number().positive().finite().optional(),
   vndFee: z.number().min(0).finite().default(0),
   vndReceived: z.number().positive().finite().optional(),
+  targetCurrency: z.string().trim().regex(/^[A-Za-z]{3,8}$/).transform(value => value.toUpperCase()).default('VND'),
+  targetReceived: z.number().positive().finite().optional(),
+  targetToVndRate: z.number().positive().finite().optional(),
 });
+
+function directTargetData(x: z.infer<typeof schema>) {
+  if (x.targetReceived == null) throw new Error('Enter the amount received in the target currency.');
+  const rate = x.targetCurrency === 'VND' ? 1 : x.targetToVndRate;
+  if (rate == null || !Number.isFinite(rate) || rate <= 0) {
+    throw new Error('Enter how many VND equal one unit of the target currency.');
+  }
+  const targetVndEquivalent = calculateTargetVndEquivalent(x.targetCurrency, x.targetReceived, rate);
+  if (!Number.isFinite(targetVndEquivalent) || targetVndEquivalent <= 0) {
+    throw new Error('The VND equivalent must be a positive amount.');
+  }
+  return {
+    mode: 'RUB_TARGET', rubSpent: x.rubSpent, usdtReceived: null, vndPerUsdt: null,
+    planningVndPerUsdt: null, vndFee: 0, vndReceived: null,
+    effectiveVndPerRub: targetVndEquivalent / x.rubSpent, effectiveRubPerUsdt: null,
+    targetCurrency: x.targetCurrency, targetReceived: x.targetReceived,
+    targetToVndRate: rate, targetVndEquivalent,
+  };
+}
 
 router.post('/', async (req: AuthedRequest, res, next) => {
   try {
@@ -25,8 +47,20 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       res.status(400).json({ message: 'Enter valid RUB and received amounts.' });
       return;
     }
-
     const x = parsed.data;
+
+    if (x.mode === 'RUB_TARGET') {
+      let data;
+      try { data = directTargetData(x); }
+      catch (error) {
+        res.status(400).json({ message: error instanceof Error ? error.message : 'Enter valid target currency amounts.' });
+        return;
+      }
+      const record = await prisma.exchange.create({ data: { userId: req.user!.id, ...data } });
+      res.status(201).json(record);
+      return;
+    }
+
     if (x.mode === 'RUB_VND') {
       if (x.vndReceived == null) {
         res.status(400).json({ message: 'Enter the actual VND received for a direct RUB → VND exchange.' });
@@ -39,16 +73,11 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       const vndReceived = x.vndReceived - x.vndFee;
       const record = await prisma.exchange.create({
         data: {
-          userId: req.user!.id,
-          mode: 'RUB_VND',
-          rubSpent: x.rubSpent,
-          usdtReceived: null,
-          vndPerUsdt: null,
-          planningVndPerUsdt: null,
-          vndFee: x.vndFee,
-          vndReceived,
-          effectiveVndPerRub: vndReceived / x.rubSpent,
-          effectiveRubPerUsdt: null,
+          userId: req.user!.id, mode: 'RUB_VND', rubSpent: x.rubSpent,
+          usdtReceived: null, vndPerUsdt: null, planningVndPerUsdt: null,
+          vndFee: x.vndFee, vndReceived, effectiveVndPerRub: vndReceived / x.rubSpent,
+          effectiveRubPerUsdt: null, targetCurrency: 'VND', targetReceived: vndReceived,
+          targetToVndRate: 1, targetVndEquivalent: null,
         },
       });
       res.status(201).json(record);
@@ -70,52 +99,33 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       res.status(400).json({ message: 'Enter the actual VND received amount when providing a VND/USDT rate.' });
       return;
     }
-
-    let vndOutcome: { vndReceived: number | null; vndPerUsdt: number | null };
+    let outcome: { vndReceived: number | null; vndPerUsdt: number | null };
     try {
-      vndOutcome = resolveExchangeVndOutcome({
-        usdtReceived: x.usdtReceived,
-        vndReceived: x.vndReceived,
-        vndPerUsdt: x.vndPerUsdt,
-      });
+      outcome = resolveExchangeVndOutcome({ usdtReceived: x.usdtReceived, vndReceived: x.vndReceived, vndPerUsdt: x.vndPerUsdt });
     } catch {
       res.status(400).json({ message: 'Enter the actual VND amount received, or leave VND unknown.' });
       return;
     }
-
-    const effectiveVndReceived = vndOutcome.vndReceived;
-    const effectiveVndPerUsdt = vndOutcome.vndPerUsdt;
     const record = await prisma.exchange.create({
       data: {
-        userId: req.user!.id,
-        mode: 'RUB_USDT_VND',
-        rubSpent: x.rubSpent,
-        usdtReceived: x.usdtReceived,
-        vndPerUsdt: effectiveVndPerUsdt,
-        planningVndPerUsdt: effectiveVndReceived == null ? (x.planningVndPerUsdt ?? null) : null,
-        vndFee: x.vndFee,
-        vndReceived: effectiveVndReceived,
-        effectiveVndPerRub: effectiveVndReceived == null ? null : effectiveVndReceived / x.rubSpent,
+        userId: req.user!.id, mode: 'RUB_USDT_VND', rubSpent: x.rubSpent,
+        usdtReceived: x.usdtReceived, vndPerUsdt: outcome.vndPerUsdt,
+        planningVndPerUsdt: outcome.vndReceived == null ? (x.planningVndPerUsdt ?? null) : null,
+        vndFee: x.vndFee, vndReceived: outcome.vndReceived,
+        effectiveVndPerRub: outcome.vndReceived == null ? null : outcome.vndReceived / x.rubSpent,
         effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
+        targetCurrency: 'VND', targetReceived: null, targetToVndRate: null, targetVndEquivalent: null,
       },
     });
     res.status(201).json(record);
-  } catch (e) {
-    next(e);
-  }
+  } catch (e) { next(e); }
 });
 
 router.get('/', async (req: AuthedRequest, res, next) => {
   try {
-    const records = await prisma.exchange.findMany({
-      where: { userId: req.user!.id },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
+    const records = await prisma.exchange.findMany({ where: { userId: req.user!.id }, orderBy: { createdAt: 'desc' }, take: 100 });
     res.json(records);
-  } catch (e) {
-    next(e);
-  }
+  } catch (e) { next(e); }
 });
 
 router.patch('/:id', async (req: AuthedRequest, res, next) => {
@@ -127,17 +137,19 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
     }
     const x = parsed.data;
     let data: {
-      mode: string;
-      rubSpent: number;
-      usdtReceived: number | null;
-      vndPerUsdt: number | null;
-      planningVndPerUsdt?: number | null;
-      vndFee: number;
-      vndReceived: number | null;
-      effectiveVndPerRub: number | null;
-      effectiveRubPerUsdt: number | null;
+      mode: string; rubSpent: number; usdtReceived: number | null; vndPerUsdt: number | null;
+      planningVndPerUsdt: number | null; vndFee: number; vndReceived: number | null;
+      effectiveVndPerRub: number | null; effectiveRubPerUsdt: number | null;
+      targetCurrency: string; targetReceived: number | null; targetToVndRate: number | null; targetVndEquivalent: number | null;
     };
-    if (x.mode === 'RUB_VND') {
+
+    if (x.mode === 'RUB_TARGET') {
+      try { data = directTargetData(x); }
+      catch (error) {
+        res.status(400).json({ message: error instanceof Error ? error.message : 'Enter valid target currency amounts.' });
+        return;
+      }
+    } else if (x.mode === 'RUB_VND') {
       if (x.vndReceived == null || x.vndFee > x.vndReceived) {
         res.status(400).json({ message: 'Enter the actual VND received; the fee cannot exceed it.' });
         return;
@@ -145,9 +157,9 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       const vndReceived = x.vndReceived - x.vndFee;
       data = {
         mode: 'RUB_VND', rubSpent: x.rubSpent, usdtReceived: null, vndPerUsdt: null,
-        planningVndPerUsdt: null,
-        vndFee: x.vndFee, vndReceived, effectiveVndPerRub: vndReceived / x.rubSpent,
-        effectiveRubPerUsdt: null,
+        planningVndPerUsdt: null, vndFee: x.vndFee, vndReceived,
+        effectiveVndPerRub: vndReceived / x.rubSpent, effectiveRubPerUsdt: null,
+        targetCurrency: 'VND', targetReceived: vndReceived, targetToVndRate: 1, targetVndEquivalent: null,
       };
     } else {
       if (x.usdtReceived == null) {
@@ -158,46 +170,36 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         res.status(400).json({ message: 'Enter actual VND received or leave the VND amount blank.' });
         return;
       }
-      const outcome = resolveExchangeVndOutcome({
-        usdtReceived: x.usdtReceived,
-        vndReceived: x.vndReceived,
-        vndPerUsdt: x.vndPerUsdt,
-      });
+      const outcome = resolveExchangeVndOutcome({ usdtReceived: x.usdtReceived, vndReceived: x.vndReceived, vndPerUsdt: x.vndPerUsdt });
       data = {
         mode: 'RUB_USDT_VND', rubSpent: x.rubSpent, usdtReceived: x.usdtReceived,
-        vndPerUsdt: outcome.vndPerUsdt, ...(outcome.vndReceived != null ? { planningVndPerUsdt: null } : x.planningVndPerUsdt != null ? { planningVndPerUsdt: x.planningVndPerUsdt } : {}), vndFee: x.vndFee, vndReceived: outcome.vndReceived,
+        vndPerUsdt: outcome.vndPerUsdt,
+        planningVndPerUsdt: outcome.vndReceived != null ? null : (x.planningVndPerUsdt ?? null),
+        vndFee: x.vndFee, vndReceived: outcome.vndReceived,
         effectiveVndPerRub: outcome.vndReceived == null ? null : outcome.vndReceived / x.rubSpent,
         effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
+        targetCurrency: 'VND', targetReceived: null, targetToVndRate: null, targetVndEquivalent: null,
       };
     }
-    const result = await prisma.exchange.updateMany({
-      where: { id: String(req.params.id), userId: req.user!.id },
-      data,
-    });
+    const result = await prisma.exchange.updateMany({ where: { id: String(req.params.id), userId: req.user!.id }, data });
     if (!result.count) {
       res.status(404).json({ message: 'Exchange not found.' });
       return;
     }
     const updated = await prisma.exchange.findFirst({ where: { id: String(req.params.id), userId: req.user!.id } });
     res.json(updated);
-  } catch (e) {
-    next(e);
-  }
+  } catch (e) { next(e); }
 });
 
 router.delete('/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const result = await prisma.exchange.deleteMany({
-      where: { id: String(req.params.id), userId: req.user!.id },
-    });
+    const result = await prisma.exchange.deleteMany({ where: { id: String(req.params.id), userId: req.user!.id } });
     if (!result.count) {
       res.status(404).json({ message: 'Exchange not found.' });
       return;
     }
     res.status(204).end();
-  } catch (e) {
-    next(e);
-  }
+  } catch (e) { next(e); }
 });
 
 export default router;
