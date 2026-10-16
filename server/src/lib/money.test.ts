@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calculateExpenseRub,
+  calculateTargetVndEquivalent,
   calculateObservedVndPerUsdt,
   calculateObservedVndPerRub,
   calculateRubPerUsdt,
@@ -77,5 +78,20 @@ describe('unified RUB cost formula', () => {
   it('returns null rather than inventing a RUB estimate when rates are missing', () => {
     assert.equal(estimateRubFromVnd(100000, null, 88.5), null);
     assert.equal(estimateRubFromVnd(100000, 25451, null), null);
+  });
+});
+
+describe('direct target-currency exchange', () => {
+  it('uses a 1:1 rate for VND and preserves the actual received amount', () => {
+    assert.equal(calculateTargetVndEquivalent('VND', 2500000, null), 2500000);
+  });
+
+  it('converts a non-VND target amount into the shared VND budget', () => {
+    assert.equal(calculateTargetVndEquivalent('GEL', 100, 9200), 920000);
+  });
+
+  it('requires a VND-per-unit rate for non-VND target currencies', () => {
+    assert.throws(() => calculateTargetVndEquivalent('GEL', 100, null));
+    assert.throws(() => calculateTargetVndEquivalent('TRY', 100, 0));
   });
 });

@@ -115,3 +115,19 @@ export function resolveExchangeVndOutcome(input: {
     vndPerUsdt: vndReceived == null ? null : (vndPerUsdt ?? vndReceived / input.usdtReceived),
   };
 }
+
+/** Convert an actual amount in a target currency to the VND base used by the shared budget. */
+export function calculateTargetVndEquivalent(targetCurrency: string, targetReceived: number, targetToVndRate: number | null | undefined): number {
+  if (!Number.isFinite(targetReceived) || targetReceived <= 0) {
+    throw new Error('Target currency received amount must be positive.');
+  }
+  const rate = targetCurrency.toUpperCase() === 'VND' ? 1 : targetToVndRate;
+  if (rate == null || !Number.isFinite(rate) || rate <= 0) {
+    throw new Error('A positive VND-per-target-currency rate is required.');
+  }
+  const equivalent = targetReceived * rate;
+  if (!Number.isFinite(equivalent) || equivalent <= 0) {
+    throw new Error('Target currency VND equivalent must be positive.');
+  }
+  return equivalent;
+}

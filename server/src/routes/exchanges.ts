@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { resolveExchangeVndOutcome } from '../lib/money.js';
+import { calculateTargetVndEquivalent, resolveExchangeVndOutcome } from '../lib/money.js';
 
 const router = Router();
 router.use(auth);
@@ -27,7 +27,7 @@ function directTargetData(x: z.infer<typeof schema>) {
   if (rate == null || !Number.isFinite(rate) || rate <= 0) {
     throw new Error('Enter how many VND equal one unit of the target currency.');
   }
-  const targetVndEquivalent = x.targetReceived * rate;
+  const targetVndEquivalent = calculateTargetVndEquivalent(x.targetCurrency, x.targetReceived, rate);
   if (!Number.isFinite(targetVndEquivalent) || targetVndEquivalent <= 0) {
     throw new Error('The VND equivalent must be a positive amount.');
   }
