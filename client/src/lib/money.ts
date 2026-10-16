@@ -1,3 +1,19 @@
+/** Planning fallback only; never presented as a live market quote. */
+export const DEFAULT_PLANNING_VND_PER_USDT = 25450;
+
+export function calculateBalanceEquivalents(
+  balanceVnd: number | null | undefined,
+  vndPerUsdt: number | null | undefined,
+  vndPerRub: number | null | undefined,
+): { vnd: number | null; usdt: number | null; rub: number | null } {
+  if (balanceVnd == null || !Number.isFinite(balanceVnd)) return { vnd: null, usdt: null, rub: null };
+  return {
+    vnd: balanceVnd,
+    usdt: Number.isFinite(vndPerUsdt) && Number(vndPerUsdt) > 0 ? balanceVnd / Number(vndPerUsdt) : null,
+    rub: Number.isFinite(vndPerRub) && Number(vndPerRub) > 0 ? balanceVnd / Number(vndPerRub) : null,
+  };
+}
+
 export type ExchangeInput = { rubSpent: number; usdtReceived: number; vndPerUsdt?: number; vndFee?: number };
 export type ExchangeResult = { vndReceived?: number; effectiveVndPerRub?: number; effectiveRubPerUsdt: number; effectiveVndPerUsdt?: number };
 
