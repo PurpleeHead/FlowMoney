@@ -45,7 +45,12 @@ async function translateLineWithFallback(line:string,source:string,target:string
 
 async function translateWithFreeFallback(text:string,source:string,target:string):Promise<string>{
   const lines=text.split(/\r?\n/);
-  const translated=await Promise.all(lines.map(async line=>line.trim()?translateLineWithFallback(line,source,target):line));
+  const translated:string[]=[];
+  // Keep concurrency modest to avoid public translation providers rate-limiting long receipts.
+  for(let i=0;i<lines.length;i+=4){
+    const batch=lines.slice(i,i+4);
+    translated.push(...await Promise.all(batch.map(async line=>line.trim()?translateLineWithFallback(line,source,target):line)));
+  }
   return translated.join('\n');
 }
 
