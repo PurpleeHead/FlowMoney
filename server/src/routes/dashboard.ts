@@ -55,10 +55,13 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const confirmedExchangeVnd = exchanges
       .filter(x => x.vndReceived != null)
       .reduce((sum, x) => sum + Number(x.vndReceived), 0);
+    const unpricedUsdtTopUps = exchanges.some(x => x.mode !== 'RUB_VND' && x.vndReceived == null && x.usdtReceived != null);
     const estimatedUnconvertedVnd = effectiveVndPerUsdt == null ? 0 : exchanges
       .filter(x => x.mode !== 'RUB_VND' && x.vndReceived == null && x.usdtReceived != null)
       .reduce((sum, x) => sum + Number(x.usdtReceived) * effectiveVndPerUsdt, 0);
-    const balanceVnd = confirmedExchangeVnd + estimatedUnconvertedVnd - totalVnd;
+    const balanceVnd = unpricedUsdtTopUps && effectiveVndPerUsdt == null
+      ? null
+      : confirmedExchangeVnd + estimatedUnconvertedVnd - totalVnd;
 
     res.json({
       totalVnd,monthVnd,balanceVnd,confirmedExchangeVnd,estimatedUnconvertedVnd,
