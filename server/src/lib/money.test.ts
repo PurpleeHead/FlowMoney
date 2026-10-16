@@ -36,7 +36,7 @@ describe('unified RUB cost formula', () => {
     }, rubPerUsdt, vndPerUsdt)! - 347.7209) < 0.01);
   });
 
-  it('returns null rather than inventing a RUB estimate when rates are missing', () => {
+  it('keeps VND rate unknown until a real outcome is recorded', () => {\n    assert.equal(calculateObservedVndPerUsdt([]), null);\n    assert.equal(calculateRubPerUsdt(exchange), 8300 / 93.7853);\n  });\n\n  it('returns null rather than inventing a RUB estimate when rates are missing', () => {
     assert.equal(estimateRubFromVnd(100000, null, 88.5), null);
     assert.equal(estimateRubFromVnd(100000, 25451, null), null);
   });
