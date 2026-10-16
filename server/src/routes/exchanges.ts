@@ -6,12 +6,12 @@ import type { AuthedRequest } from '../types.js';
 import { resolveExchangeVndOutcome } from '../lib/money.js';
 
 const router = Router();
-
 router.use(auth);
 
 const schema = z.object({
+  mode: z.enum(['RUB_USDT_VND', 'RUB_VND']).default('RUB_USDT_VND'),
   rubSpent: z.number().positive().finite(),
-  usdtReceived: z.number().positive().finite(),
+  usdtReceived: z.number().positive().finite().optional(),
   vndPerUsdt: z.number().positive().finite().optional(),
   vndFee: z.number().min(0).finite().default(0),
   vndReceived: z.number().positive().finite().optional(),
@@ -20,31 +20,55 @@ const schema = z.object({
 router.post('/', async (req: AuthedRequest, res, next) => {
   try {
     const parsed = schema.safeParse(req.body);
-
     if (!parsed.success) {
-      res.status(400).json({
-        message: 'Enter valid RUB spent and USDT received amounts.',
-      });
+      res.status(400).json({ message: 'Enter valid RUB and received amounts.' });
       return;
     }
 
     const x = parsed.data;
+    if (x.mode === 'RUB_VND') {
+      if (x.vndReceived == null) {
+        res.status(400).json({ message: 'Enter the actual VND received for a direct RUB → VND exchange.' });
+        return;
+      }
+      if (x.vndFee > x.vndReceived) {
+        res.status(400).json({ message: 'The VND fee cannot exceed the amount received.' });
+        return;
+      }
+      const vndReceived = x.vndReceived - x.vndFee;
+      const record = await prisma.exchange.create({
+        data: {
+          userId: req.user!.id,
+          mode: 'RUB_VND',
+          rubSpent: x.rubSpent,
+          usdtReceived: null,
+          vndPerUsdt: null,
+          vndFee: x.vndFee,
+          vndReceived,
+          effectiveVndPerRub: vndReceived / x.rubSpent,
+          effectiveRubPerUsdt: null,
+        },
+      });
+      res.status(201).json(record);
+      return;
+    }
 
+    if (x.usdtReceived == null) {
+      res.status(400).json({ message: 'Enter the actual USDT received.' });
+      return;
+    }
     if (x.vndPerUsdt != null && x.vndReceived != null) {
       const grossVnd = x.usdtReceived * x.vndPerUsdt;
       if (x.vndReceived > grossVnd + 0.01 || x.vndFee > grossVnd) {
-        res.status(400).json({
-          message: 'VND result or fee is inconsistent with the entered rate.',
-        });
+        res.status(400).json({ message: 'VND result or fee is inconsistent with the entered rate.' });
         return;
       }
     }
     if (x.vndReceived == null && x.vndPerUsdt != null) {
-      res.status(400).json({
-        message: 'Enter the actual VND received amount when providing a VND/USDT rate.',
-      });
+      res.status(400).json({ message: 'Enter the actual VND received amount when providing a VND/USDT rate.' });
       return;
     }
+
     let vndOutcome: { vndReceived: number | null; vndPerUsdt: number | null };
     try {
       vndOutcome = resolveExchangeVndOutcome({
@@ -53,28 +77,25 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         vndPerUsdt: x.vndPerUsdt,
       });
     } catch {
-      res.status(400).json({
-        message: 'Enter the actual VND amount received, or leave VND unknown.',
-      });
+      res.status(400).json({ message: 'Enter the actual VND amount received, or leave VND unknown.' });
       return;
     }
+
     const effectiveVndReceived = vndOutcome.vndReceived;
     const effectiveVndPerUsdt = vndOutcome.vndPerUsdt;
-
     const record = await prisma.exchange.create({
       data: {
         userId: req.user!.id,
+        mode: 'RUB_USDT_VND',
         rubSpent: x.rubSpent,
         usdtReceived: x.usdtReceived,
         vndPerUsdt: effectiveVndPerUsdt,
         vndFee: x.vndFee,
         vndReceived: effectiveVndReceived,
-        effectiveVndPerRub:
-          effectiveVndReceived == null ? null : effectiveVndReceived / x.rubSpent,
+        effectiveVndPerRub: effectiveVndReceived == null ? null : effectiveVndReceived / x.rubSpent,
         effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
       },
     });
-
     res.status(201).json(record);
   } catch (e) {
     next(e);
@@ -88,13 +109,11 @@ router.get('/', async (req: AuthedRequest, res, next) => {
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
-
     res.json(records);
   } catch (e) {
     next(e);
   }
 });
-
 
 router.delete('/:id', async (req: AuthedRequest, res, next) => {
   try {
