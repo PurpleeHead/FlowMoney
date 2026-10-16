@@ -212,7 +212,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         amountRub,
         usdtCharged: input.usdtCharged ?? null,
         date: expenseDate,
-        receiptId: input.receiptId ?? null,
+        receiptId: input.receiptId ?? existing.receiptId,
       },
     });
     if (!result.count) {
