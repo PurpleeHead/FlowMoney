@@ -142,4 +142,39 @@ router.patch('/profile',auth,async(req:AuthedRequest,res,next)=>{
   }catch(e){next(e);}
 });
 
+
+router.patch('/password', auth, async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({
+      currentPassword: z.string().min(1).max(128),
+      newPassword: z.string().min(8).max(128),
+    }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: 'Enter your current password and a new password of at least 8 characters.' });
+      return;
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { id: true, passwordHash: true },
+    });
+    if (!user) {
+      res.status(404).json({ message: 'Account not found.' });
+      return;
+    }
+    if (!(await bcrypt.compare(parsed.data.currentPassword, user.passwordHash))) {
+      res.status(400).json({ message: 'Current password is incorrect.' });
+      return;
+    }
+    if (await bcrypt.compare(parsed.data.newPassword, user.passwordHash)) {
+      res.status(400).json({ message: 'New password must be different from the current password.' });
+      return;
+    }
+    const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+    res.json({ message: 'Password changed successfully.' });
+  } catch (e) {
+    next(e);
+  }
+});
+
 export default router;
