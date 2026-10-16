@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { calculateExpenseRub, calculateObservedVndPerUsdt, calculateRubPerUsdt } from '../lib/money.js';
+import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt } from '../lib/money.js';
 
 const router = Router();
 router.use(auth);
@@ -49,7 +49,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const [exchanges, previousPurchases] = await Promise.all([
       prisma.exchange.findMany({
         where: { userId, createdAt: { lte: expenseDate } },
-        select: { rubSpent: true, usdtReceived: true, vndReceived: true },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true },
       }),
       prisma.expense.findMany({
         where: {
@@ -75,13 +75,27 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const historicalVndPerUsdt = observedVndPerUsdt ??
       (exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : null);
 
+    const historicalVndPerRub = calculateObservedVndPerRub({
+      directExchanges: exchanges
+        .filter(x => x.mode === 'RUB_VND' && x.vndReceived != null)
+        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      actualVndExchanges: exchanges
+        .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
+        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      cardPurchases: previousPurchases.map(x => ({
+        amountVnd: Number(x.amountVnd),
+        usdtCharged: Number(x.usdtCharged),
+      })),
+      rubPerUsdt: historicalRubPerUsdt,
+    });
+
     // This is the same formula used by the client preview. Save the resulting RUB amount once.
     const amountRub = calculateExpenseRub({
       currency: input.currency,
       amount: input.amount,
       amountVnd: input.amountVnd,
       usdtCharged: input.usdtCharged,
-    }, historicalRubPerUsdt, historicalVndPerUsdt);
+    }, historicalRubPerUsdt, historicalVndPerUsdt, historicalVndPerRub);
 
     const record = await prisma.expense.create({
       data: {
