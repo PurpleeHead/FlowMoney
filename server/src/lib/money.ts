@@ -79,12 +79,13 @@ export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number |
     return rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
       Number.isFinite(input.amount) && input.amount > 0 ? input.amount * rubPerUsdt : null;
   }
-  if (input.currency === 'VND' && input.usdtCharged != null) {
-    return rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
-      Number.isFinite(input.usdtCharged) && input.usdtCharged > 0
-      ? input.usdtCharged * rubPerUsdt : null;
+  if (input.currency === 'VND' && input.usdtCharged != null &&
+      rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
+      Number.isFinite(input.usdtCharged) && input.usdtCharged > 0) {
+    return input.usdtCharged * rubPerUsdt;
   }
   if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0 && input.amountVnd > 0) return input.amountVnd / vndPerRub;
+  if (input.currency === 'VND' && input.usdtCharged != null) return null;
   return estimateRubFromVnd(input.amountVnd, vndPerUsdt, rubPerUsdt);
 }
 
