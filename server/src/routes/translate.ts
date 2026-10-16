@@ -5,6 +5,33 @@ import {auth} from '../middleware/auth.js';
 const router=Router();
 router.use(auth);
 
+// Public translation providers intermittently rate-limit or return gateway errors.
+// Retry transient failures briefly before switching providers.
+async function fetchTranslation(url: URL): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (response.ok) return response;
+      lastError = new Error(`Translation provider returned HTTP ${response.status}`);
+      if (response.status < 500 && response.status !== 429) break;
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw lastError instanceof Error ? lastError : new Error('Translation provider unavailable');
+}
+
+const translationCache = new Map<string, string>();
+function cacheTranslation(key: string, value: string): void {
+  if (translationCache.size >= 1000) {
+    const oldest = translationCache.keys().next().value;
+    if (oldest) translationCache.delete(oldest);
+  }
+  translationCache.set(key, value);
+}
+
 async function translateWithConfiguredProvider(text:string,source:string,target:string):Promise<string>{
   const endpoint=process.env.TRANSLATE_URL;
   if(!endpoint)throw new Error('No configured provider');
@@ -16,6 +43,9 @@ async function translateWithConfiguredProvider(text:string,source:string,target:
 }
 
 async function translateLineWithFallback(line:string,source:string,target:string):Promise<string>{
+  const cacheKey = `${source}| ${target}| ${line.trim().toLocaleLowerCase()}`;
+  const cached = translationCache.get(cacheKey);
+  if (cached) return cached;
   const googleUrl=new URL('https://translate.googleapis.com/translate_a/single');
   googleUrl.searchParams.set('client','gtx');
   googleUrl.searchParams.set('sl',source);
@@ -23,12 +53,12 @@ async function translateLineWithFallback(line:string,source:string,target:string
   googleUrl.searchParams.set('dt','t');
   googleUrl.searchParams.set('q',line.slice(0,450));
   try{
-    const response=await fetch(googleUrl,{signal:AbortSignal.timeout(10000)});
+    const response=await fetchTranslation(googleUrl);
     if(response.ok){
       const data=await response.json() as unknown[];
       const segments=Array.isArray(data[0])?data[0] as unknown[]:[];
       const translated=segments.map(segment=>Array.isArray(segment)&&typeof segment[0]==='string'?segment[0]:'').join('').trim();
-      if(translated)return translated;
+      if(translated){cacheTranslation(cacheKey,translated);return translated;}
     }
   }catch{/* Try the secondary provider below. */}
 
@@ -38,8 +68,7 @@ async function translateLineWithFallback(line:string,source:string,target:string
       const memoryUrl=new URL('https://api.mymemory.translated.net/get');
       memoryUrl.searchParams.set('q',line.slice(0,450));
       memoryUrl.searchParams.set('langpair',`${memorySource}|${target}`);
-      const response=await fetch(memoryUrl,{signal:AbortSignal.timeout(10000)});
-      if(!response.ok)continue;
+      const response=await fetchTranslation(memoryUrl);
       const data=await response.json() as {responseStatus?:number;responseData?:{translatedText?:string}};
       const value=data.responseData?.translatedText;
       if(value&&data.responseStatus===200&&!/MYMEMORY WARNING|PLEASE SELECT/i.test(value)){
@@ -71,8 +100,9 @@ router.post('/',async(req,res)=>{
       catch{translatedText=await translateWithFreeFallback(p.data.text,p.data.source,p.data.target);}
     }else translatedText=await translateWithFreeFallback(p.data.text,p.data.source,p.data.target);
     res.json({translatedText});
-  }catch{
-    res.status(502).json({message:'Translation is temporarily unavailable. The original text and prices are unchanged; try again shortly.'});
+  }catch(error){
+    console.warn('[translate] Translation providers failed:', error instanceof Error ? error.message : 'unknown error');
+    res.status(502).json({message:'Translation providers are temporarily unavailable. The original text and prices are unchanged; try again shortly.'});
   }
 });
 export default router;
