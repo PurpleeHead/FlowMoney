@@ -1,5 +1,6 @@
 export type PurchaseObservation = { amountVnd: number; usdtCharged: number };
 export type ExchangeObservation = { rubSpent: number; usdtReceived: number };
+export type DirectVndObservation = { rubSpent: number; vndReceived: number };
 export type ExpenseRubInput = {
   currency: string;
   amount: number;
@@ -29,6 +30,32 @@ export function calculateObservedVndPerUsdt(purchases: PurchaseObservation[]): n
   return usdt > 0 ? vnd / usdt : null;
 }
 
+/** Weighted VND/RUB rate across direct RUB→VND exchanges, actual VND outcomes, and card purchases. */
+export function calculateObservedVndPerRub(input: {
+  directExchanges?: DirectVndObservation[];
+  actualVndExchanges?: DirectVndObservation[];
+  cardPurchases?: PurchaseObservation[];
+  rubPerUsdt: number | null;
+}): number | null {
+  let rubTotal = 0;
+  let vndTotal = 0;
+  for (const x of [...(input.directExchanges ?? []), ...(input.actualVndExchanges ?? [])]) {
+    if (Number.isFinite(x.rubSpent) && x.rubSpent > 0 && Number.isFinite(x.vndReceived) && x.vndReceived > 0) {
+      rubTotal += x.rubSpent;
+      vndTotal += x.vndReceived;
+    }
+  }
+  if (input.rubPerUsdt != null && Number.isFinite(input.rubPerUsdt) && input.rubPerUsdt > 0) {
+    for (const p of input.cardPurchases ?? []) {
+      if (Number.isFinite(p.amountVnd) && p.amountVnd > 0 && Number.isFinite(p.usdtCharged) && p.usdtCharged > 0) {
+        vndTotal += p.amountVnd;
+        rubTotal += p.usdtCharged * input.rubPerUsdt;
+      }
+    }
+  }
+  return rubTotal > 0 && vndTotal > 0 ? vndTotal / rubTotal : null;
+}
+
 /**
  * Unified budget formula:
  * RUB = VND purchase / observed VND-per-USDT * effective RUB-per-USDT.
@@ -46,17 +73,19 @@ export function estimateRubFromVnd(
 }
 
 /** Calculate and persist the RUB cost once, using actual debit when available, otherwise the unified estimate. */
-export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number | null, vndPerUsdt: number | null): number | null {
+export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number | null, vndPerUsdt: number | null, vndPerRub: number | null = null): number | null {
   if (input.currency === 'RUB') return Number.isFinite(input.amount) && input.amount > 0 ? input.amount : null;
   if (input.currency === 'USDT') {
     return rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
       Number.isFinite(input.amount) && input.amount > 0 ? input.amount * rubPerUsdt : null;
   }
-  if (input.currency === 'VND' && input.usdtCharged != null) {
-    return rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
-      Number.isFinite(input.usdtCharged) && input.usdtCharged > 0
-      ? input.usdtCharged * rubPerUsdt : null;
+  if (input.currency === 'VND' && input.usdtCharged != null &&
+      rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
+      Number.isFinite(input.usdtCharged) && input.usdtCharged > 0) {
+    return input.usdtCharged * rubPerUsdt;
   }
+  if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0 && input.amountVnd > 0) return input.amountVnd / vndPerRub;
+  if (input.currency === 'VND' && input.usdtCharged != null) return null;
   return estimateRubFromVnd(input.amountVnd, vndPerUsdt, rubPerUsdt);
 }
 

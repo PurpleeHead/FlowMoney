@@ -16,7 +16,16 @@ import { prisma } from './services/prisma.js';
 
 const app = express();
 app.disable('x-powered-by');
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      connectSrc: ["'self'", 'https://tessdata.projectnaptha.com', 'https://cdn.jsdelivr.net'],
+      scriptSrc: ["'self'", "'wasm-unsafe-eval'", 'https://cdn.jsdelivr.net'],
+      workerSrc: ["'self'", 'blob:', 'https://cdn.jsdelivr.net'],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+    },
+  },
+}));
 const allowedOrigins = new Set([process.env.CLIENT_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173', 'https://purpleehead.github.io'].filter((value): value is string => Boolean(value)));
 app.use(cors({ origin: (origin, callback) => { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error('Origin not allowed by CORS')); } }));
 app.use(express.json({ limit: '1mb' }));
