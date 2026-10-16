@@ -29,3 +29,24 @@ export function estimateRubFromVnd(amountVnd: number, vndPerUsdt: number | null 
   if (!Number.isFinite(amountVnd) || amountVnd <= 0 || !Number.isFinite(vndPerUsdt) || !vndPerUsdt || vndPerUsdt <= 0 || !Number.isFinite(rubPerUsdt) || !rubPerUsdt || rubPerUsdt <= 0) return null;
   return amountVnd / vndPerUsdt * rubPerUsdt;
 }
+
+
+/** Calculate all rates for the same in-progress exchange, using only its entered amounts. */
+export function calculateActualExchangeRates(input: {
+  rubSpent: number;
+  usdtReceived: number;
+  vndReceived?: number | null;
+}): { effectiveRubPerUsdt: number; effectiveVndPerUsdt: number | null; effectiveVndPerRub: number | null } {
+  const { rubSpent, usdtReceived, vndReceived = null } = input;
+  if (!Number.isFinite(rubSpent) || rubSpent <= 0 || !Number.isFinite(usdtReceived) || usdtReceived <= 0) {
+    throw new Error('RUB spent and USDT received must be positive finite amounts.');
+  }
+  if (vndReceived != null && (!Number.isFinite(vndReceived) || vndReceived <= 0)) {
+    throw new Error('VND received must be a positive finite amount.');
+  }
+  return {
+    effectiveRubPerUsdt: rubSpent / usdtReceived,
+    effectiveVndPerUsdt: vndReceived == null ? null : vndReceived / usdtReceived,
+    effectiveVndPerRub: vndReceived == null ? null : vndReceived / rubSpent,
+  };
+}

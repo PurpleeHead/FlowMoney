@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
+import { resolveExchangeVndOutcome } from '../lib/money.js';
 
 const router = Router();
 
@@ -29,16 +30,8 @@ router.post('/', async (req: AuthedRequest, res, next) => {
 
     const x = parsed.data;
 
-    if ((x.vndPerUsdt == null) !== (x.vndReceived == null)) {
-      res.status(400).json({
-        message: 'VND rate and received amount must be provided together.',
-      });
-      return;
-    }
-
     if (x.vndPerUsdt != null && x.vndReceived != null) {
       const grossVnd = x.usdtReceived * x.vndPerUsdt;
-
       if (x.vndReceived > grossVnd + 0.01 || x.vndFee > grossVnd) {
         res.status(400).json({
           message: 'VND result or fee is inconsistent with the entered rate.',
@@ -46,17 +39,38 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         return;
       }
     }
+    if (x.vndReceived == null && x.vndPerUsdt != null) {
+      res.status(400).json({
+        message: 'Enter the actual VND received amount when providing a VND/USDT rate.',
+      });
+      return;
+    }
+    let vndOutcome: { vndReceived: number | null; vndPerUsdt: number | null };
+    try {
+      vndOutcome = resolveExchangeVndOutcome({
+        usdtReceived: x.usdtReceived,
+        vndReceived: x.vndReceived,
+        vndPerUsdt: x.vndPerUsdt,
+      });
+    } catch {
+      res.status(400).json({
+        message: 'Enter the actual VND amount received, or leave VND unknown.',
+      });
+      return;
+    }
+    const effectiveVndReceived = vndOutcome.vndReceived;
+    const effectiveVndPerUsdt = vndOutcome.vndPerUsdt;
 
     const record = await prisma.exchange.create({
       data: {
         userId: req.user!.id,
         rubSpent: x.rubSpent,
         usdtReceived: x.usdtReceived,
-        vndPerUsdt: x.vndPerUsdt,
+        vndPerUsdt: effectiveVndPerUsdt,
         vndFee: x.vndFee,
-        vndReceived: x.vndReceived,
+        vndReceived: effectiveVndReceived,
         effectiveVndPerRub:
-          x.vndReceived == null ? null : x.vndReceived / x.rubSpent,
+          effectiveVndReceived == null ? null : effectiveVndReceived / x.rubSpent,
         effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
       },
     });
@@ -76,6 +90,22 @@ router.get('/', async (req: AuthedRequest, res, next) => {
     });
 
     res.json(records);
+  } catch (e) {
+    next(e);
+  }
+});
+
+
+router.delete('/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.exchange.deleteMany({
+      where: { id: String(req.params.id), userId: req.user!.id },
+    });
+    if (!result.count) {
+      res.status(404).json({ message: 'Exchange not found.' });
+      return;
+    }
+    res.status(204).end();
   } catch (e) {
     next(e);
   }

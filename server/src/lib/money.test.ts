@@ -5,6 +5,7 @@ import {
   calculateObservedVndPerUsdt,
   calculateRubPerUsdt,
   estimateRubFromVnd,
+  resolveExchangeVndOutcome,
 } from './money.js';
 
 describe('unified RUB cost formula', () => {
@@ -34,6 +35,29 @@ describe('unified RUB cost formula', () => {
     assert.ok(Math.abs(calculateExpenseRub({
       currency: 'VND', amount: 100000, amountVnd: 100000,
     }, rubPerUsdt, vndPerUsdt)! - 347.7209) < 0.01);
+  });
+
+  it('keeps VND rate unknown until a real outcome is recorded', () => {
+    assert.equal(calculateObservedVndPerUsdt([]), null);
+    assert.equal(calculateRubPerUsdt(exchange), 8300 / 93.7853);
+  });
+
+  it('stores actual VND received and derives the observed rate from the actual amounts', () => {
+    assert.deepEqual(resolveExchangeVndOutcome({ usdtReceived: 100, vndReceived: 2500000 }), {
+      vndReceived: 2500000,
+      vndPerUsdt: 25000,
+    });
+  });
+
+  it('allows recording RUB to USDT while VND is still unknown', () => {
+    assert.deepEqual(resolveExchangeVndOutcome({ usdtReceived: 100 }), {
+      vndReceived: null,
+      vndPerUsdt: null,
+    });
+  });
+
+  it('rejects a rate without an actual VND outcome', () => {
+    assert.throws(() => resolveExchangeVndOutcome({ usdtReceived: 100, vndPerUsdt: 25000 }));
   });
 
   it('returns null rather than inventing a RUB estimate when rates are missing', () => {
