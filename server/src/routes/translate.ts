@@ -72,7 +72,7 @@ async function translateLineWithFallback(line:string,source:string,target:string
       const data=await response.json() as {responseStatus?:number;responseData?:{translatedText?:string}};
       const value=data.responseData?.translatedText;
       if(value&&data.responseStatus===200&&!/MYMEMORY WARNING|PLEASE SELECT/i.test(value)){
-        return value.replace(/\r?\n/g,' ').trim();
+        const cleaned=value.replace(/\r?\n/g,' ').trim();cacheTranslation(cacheKey,cleaned);return cleaned;
       }
     }catch{/* Try the next language fallback. */}
   }
