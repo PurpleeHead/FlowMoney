@@ -74,18 +74,24 @@ export function estimateRubFromVnd(
 
 /** Calculate and persist the RUB cost once, using actual debit when available, otherwise the unified estimate. */
 export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number | null, vndPerUsdt: number | null, vndPerRub: number | null = null): number | null {
-  if (input.currency === 'RUB') return Number.isFinite(input.amount) && input.amount > 0 ? input.amount : null;
-  if (input.currency === 'USDT') {
+  const currency = input.currency.trim().toUpperCase();
+
+  if (currency === 'RUB') return Number.isFinite(input.amount) && input.amount > 0 ? input.amount : null;
+  if (currency === 'USDT') {
     return rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
       Number.isFinite(input.amount) && input.amount > 0 ? input.amount * rubPerUsdt : null;
   }
-  if (input.currency === 'VND' && input.usdtCharged != null &&
-      rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
-      Number.isFinite(input.usdtCharged) && input.usdtCharged > 0) {
+
+  // A recorded card debit is authoritative: never replace its unknown RUB cost with a VND/RUB forecast.
+  if (currency === 'VND' && input.usdtCharged != null) {
+    if (!Number.isFinite(input.usdtCharged) || input.usdtCharged <= 0 ||
+        rubPerUsdt == null || !Number.isFinite(rubPerUsdt) || rubPerUsdt <= 0) {
+      return null;
+    }
     return input.usdtCharged * rubPerUsdt;
   }
+
   if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0 && input.amountVnd > 0) return input.amountVnd / vndPerRub;
-  if (input.currency === 'VND' && input.usdtCharged != null) return null;
   return estimateRubFromVnd(input.amountVnd, vndPerUsdt, rubPerUsdt);
 }
 
