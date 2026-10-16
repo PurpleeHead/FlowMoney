@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
+import { calculateExpenseRub, calculateObservedVndPerUsdt, calculateRubPerUsdt } from '../lib/money.js';
 
 const router = Router();
 router.use(auth);
@@ -60,35 +61,27 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       }),
     ]);
 
-    const rubSpent = exchanges.reduce((sum, x) => sum + Number(x.rubSpent), 0);
-    const usdtReceived = exchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
-    const historicalRubPerUsdt = usdtReceived > 0 ? rubSpent / usdtReceived : null;
+    const historicalRubPerUsdt = calculateRubPerUsdt(
+      exchanges.map(x => ({ rubSpent: Number(x.rubSpent), usdtReceived: Number(x.usdtReceived) }))
+    );
 
+    // Prefer actual card purchases. If none exist yet, use only exchanges with an actual recorded VND outcome.
+    const observedVndPerUsdt = calculateObservedVndPerUsdt(
+      previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
+    );
     const vndExchanges = exchanges.filter(x => x.vndReceived != null);
-    const vndExchangeRub = vndExchanges.reduce((sum, x) => sum + Number(x.rubSpent), 0);
-    const vndExchangeReceived = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
-    let historicalVndPerRub = vndExchangeRub > 0
-      ? vndExchangeReceived / vndExchangeRub
-      : null;
+    const exchangeVnd = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
+    const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const historicalVndPerUsdt = observedVndPerUsdt ??
+      (exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : null);
 
-    if (historicalVndPerRub == null && historicalRubPerUsdt != null) {
-      const observedVnd = previousPurchases.reduce((sum, x) => sum + Number(x.amountVnd), 0);
-      const observedUsdt = previousPurchases.reduce((sum, x) => sum + Number(x.usdtCharged), 0);
-      if (observedUsdt > 0) {
-        historicalVndPerRub = (observedVnd / observedUsdt) / historicalRubPerUsdt;
-      }
-    }
-
-    let amountRub: number | null = null;
-    if (input.currency === 'RUB') {
-      amountRub = input.amount;
-    } else if (input.currency === 'USDT' && historicalRubPerUsdt != null) {
-      amountRub = input.amount * historicalRubPerUsdt;
-    } else if (input.currency === 'VND' && input.usdtCharged != null && historicalRubPerUsdt != null) {
-      amountRub = input.usdtCharged * historicalRubPerUsdt;
-    } else if (historicalVndPerRub != null && historicalVndPerRub > 0) {
-      amountRub = input.amountVnd / historicalVndPerRub;
-    }
+    // This is the same formula used by the client preview. Save the resulting RUB amount once.
+    const amountRub = calculateExpenseRub({
+      currency: input.currency,
+      amount: input.amount,
+      amountVnd: input.amountVnd,
+      usdtCharged: input.usdtCharged,
+    }, historicalRubPerUsdt, historicalVndPerUsdt);
 
     const record = await prisma.expense.create({
       data: {

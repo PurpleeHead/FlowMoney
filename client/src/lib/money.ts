@@ -23,3 +23,9 @@ export function calculateObservedVndPerUsdt(purchases: Array<{ amountVnd: number
   const usdt = valid.reduce((sum, p) => sum + p.usdtCharged, 0);
   return usdt > 0 ? vnd / usdt : null;
 }
+
+/** Estimate RUB cost from VND using the observed VND/USDT rate and the recorded RUB/USDT exchange rate. */
+export function estimateRubFromVnd(amountVnd: number, vndPerUsdt: number | null | undefined, rubPerUsdt: number | null | undefined): number | null {
+  if (!Number.isFinite(amountVnd) || amountVnd <= 0 || !Number.isFinite(vndPerUsdt) || !vndPerUsdt || vndPerUsdt <= 0 || !Number.isFinite(rubPerUsdt) || !rubPerUsdt || rubPerUsdt <= 0) return null;
+  return amountVnd / vndPerUsdt * rubPerUsdt;
+}
