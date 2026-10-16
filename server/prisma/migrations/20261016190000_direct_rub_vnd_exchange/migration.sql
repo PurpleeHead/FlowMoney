@@ -2,6 +2,7 @@ ALTER TABLE "Exchange"
   ALTER COLUMN "usdtReceived" DROP NOT NULL,
   ALTER COLUMN "vndPerUsdt" DROP NOT NULL,
   ALTER COLUMN "vndReceived" DROP NOT NULL,
+  ALTER COLUMN "effectiveVndPerRub" DROP NOT NULL,
   ALTER COLUMN "effectiveRubPerUsdt" DROP NOT NULL;
 
 ALTER TABLE "Exchange"
