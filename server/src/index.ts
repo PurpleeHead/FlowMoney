@@ -29,7 +29,16 @@ app.use('/api/receipts', receiptRoutes);
 app.use('/api/translate', translateRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-const clientDist = resolve(process.cwd(), 'client', 'dist');
+// The server starts from the `server` workspace in production, but some local
+// commands may start it from the repository root. Resolve the built client in
+// either working directory so `/` serves the SPA instead of returning a 404.
+const clientDistCandidates = [
+  resolve(process.cwd(), 'client', 'dist'),
+  resolve(process.cwd(), '..', 'client', 'dist'),
+];
+const clientDist = clientDistCandidates.find((candidate) =>
+  existsSync(resolve(candidate, 'index.html')),
+) ?? clientDistCandidates[0];
 if (existsSync(clientDist)) {
   app.use(express.static(clientDist, { index: false, maxAge: '1h' }));
 }
