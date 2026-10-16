@@ -95,4 +95,20 @@ router.get('/', async (req: AuthedRequest, res, next) => {
   }
 });
 
+
+router.delete('/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.exchange.deleteMany({
+      where: { id: String(req.params.id), userId: req.user!.id },
+    });
+    if (!result.count) {
+      res.status(404).json({ message: 'Exchange not found.' });
+      return;
+    }
+    res.status(204).end();
+  } catch (e) {
+    next(e);
+  }
+});
+
 export default router;
