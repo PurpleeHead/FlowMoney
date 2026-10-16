@@ -32,15 +32,22 @@ async function translateLineWithFallback(line:string,source:string,target:string
     }
   }catch{/* Try the secondary provider below. */}
 
-  const memoryUrl=new URL('https://api.mymemory.translated.net/get');
-  memoryUrl.searchParams.set('q',line.slice(0,450));
-  memoryUrl.searchParams.set('langpair',`${source}|${target}`);
-  const response=await fetch(memoryUrl,{signal:AbortSignal.timeout(10000)});
-  if(!response.ok)throw new Error('Translation providers are unavailable');
-  const data=await response.json() as {responseStatus?:number;responseData?:{translatedText?:string}};
-  const value=data.responseData?.translatedText;
-  if(!value||data.responseStatus!==200||/MYMEMORY WARNING|PLEASE SELECT/i.test(value))throw new Error('Translation providers returned no translation');
-  return value.replace(/\r?\n/g,' ').trim();
+  const memorySources=source==='auto'?['vi','en']: [source];
+  for(const memorySource of memorySources){
+    try{
+      const memoryUrl=new URL('https://api.mymemory.translated.net/get');
+      memoryUrl.searchParams.set('q',line.slice(0,450));
+      memoryUrl.searchParams.set('langpair',`${memorySource}|${target}`);
+      const response=await fetch(memoryUrl,{signal:AbortSignal.timeout(10000)});
+      if(!response.ok)continue;
+      const data=await response.json() as {responseStatus?:number;responseData?:{translatedText?:string}};
+      const value=data.responseData?.translatedText;
+      if(value&&data.responseStatus===200&&!/MYMEMORY WARNING|PLEASE SELECT/i.test(value)){
+        return value.replace(/\r?\n/g,' ').trim();
+      }
+    }catch{/* Try the next language fallback. */}
+  }
+  throw new Error('Translation providers are unavailable');
 }
 
 async function translateWithFreeFallback(text:string,source:string,target:string):Promise<string>{
