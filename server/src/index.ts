@@ -15,11 +15,13 @@ import { errorHandler } from './middleware/errors.js';
 import { prisma } from './services/prisma.js';
 
 const app = express();
+// Render forwards requests through one trusted proxy hop.
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      connectSrc: ["'self'", 'https://tessdata.projectnaptha.com', 'https://cdn.jsdelivr.net'],
+      connectSrc: ["'self'", 'data:', 'https://tessdata.projectnaptha.com', 'https://cdn.jsdelivr.net'],
       scriptSrc: ["'self'", "'wasm-unsafe-eval'", 'https://cdn.jsdelivr.net'],
       workerSrc: ["'self'", 'blob:', 'https://cdn.jsdelivr.net'],
       imgSrc: ["'self'", 'data:', 'blob:'],
