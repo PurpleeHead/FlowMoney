@@ -2,7 +2,7 @@ import {Router} from 'express';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
-import { calculateObservedVndPerUsdt, calculateRubPerUsdt } from '../lib/money.js';
+import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt } from '../lib/money.js';
 
 const router=Router();
 router.use(auth);
@@ -36,8 +36,19 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const effectiveVndPerUsdt=observedVndPerUsdt!=null
       ? observedVndPerUsdt
       : exchangeUsdt>0 ? exchangeVnd/exchangeUsdt : null;
-    const effectiveVndPerRub=effectiveVndPerUsdt!=null && effectiveRubPerUsdt!=null && effectiveRubPerUsdt>0
-      ? effectiveVndPerUsdt/effectiveRubPerUsdt : null;
+    const effectiveVndPerRub = calculateObservedVndPerRub({
+      directExchanges: exchanges
+        .filter(x => x.mode === 'RUB_VND' && x.vndReceived != null)
+        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      actualVndExchanges: exchanges
+        .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
+        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      cardPurchases: purchases.map(x => ({
+        amountVnd: Number(x.amountVnd),
+        usdtCharged: Number(x.usdtCharged),
+      })),
+      rubPerUsdt: effectiveRubPerUsdt,
+    });
 
     res.json({
       totalVnd,monthVnd,
