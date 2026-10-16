@@ -115,6 +115,71 @@ router.get('/', async (req: AuthedRequest, res, next) => {
   }
 });
 
+router.patch('/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: 'Enter valid RUB and received amounts.' });
+      return;
+    }
+    const x = parsed.data;
+    let data: {
+      mode: string;
+      rubSpent: number;
+      usdtReceived: number | null;
+      vndPerUsdt: number | null;
+      vndFee: number;
+      vndReceived: number | null;
+      effectiveVndPerRub: number | null;
+      effectiveRubPerUsdt: number | null;
+    };
+    if (x.mode === 'RUB_VND') {
+      if (x.vndReceived == null || x.vndFee > x.vndReceived) {
+        res.status(400).json({ message: 'Enter the actual VND received; the fee cannot exceed it.' });
+        return;
+      }
+      const vndReceived = x.vndReceived - x.vndFee;
+      data = {
+        mode: 'RUB_VND', rubSpent: x.rubSpent, usdtReceived: null, vndPerUsdt: null,
+        vndFee: x.vndFee, vndReceived, effectiveVndPerRub: vndReceived / x.rubSpent,
+        effectiveRubPerUsdt: null,
+      };
+    } else {
+      if (x.usdtReceived == null) {
+        res.status(400).json({ message: 'Enter the actual USDT received.' });
+        return;
+      }
+      if (x.vndReceived == null && x.vndPerUsdt != null) {
+        res.status(400).json({ message: 'Enter actual VND received or leave the VND amount blank.' });
+        return;
+      }
+      const outcome = resolveExchangeVndOutcome({
+        usdtReceived: x.usdtReceived,
+        vndReceived: x.vndReceived,
+        vndPerUsdt: x.vndPerUsdt,
+      });
+      data = {
+        mode: 'RUB_USDT_VND', rubSpent: x.rubSpent, usdtReceived: x.usdtReceived,
+        vndPerUsdt: outcome.vndPerUsdt, vndFee: x.vndFee, vndReceived: outcome.vndReceived,
+        effectiveVndPerRub: outcome.vndReceived == null ? null : outcome.vndReceived / x.rubSpent,
+        effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
+      };
+    }
+    const result = await prisma.exchange.updateMany({
+      where: { id: String(req.params.id), userId: req.user!.id },
+      data,
+    });
+    if (!result.count) {
+      res.status(404).json({ message: 'Exchange not found.' });
+      return;
+    }
+    const updated = await prisma.exchange.findFirst({ where: { id: String(req.params.id), userId: req.user!.id } });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.delete('/:id', async (req: AuthedRequest, res, next) => {
   try {
     const result = await prisma.exchange.deleteMany({
