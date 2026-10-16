@@ -81,8 +81,8 @@ router.post('/register',async(req,res,next)=>{
 
 router.post('/verify-email',async(req,res,next)=>{
   try{
-    const parsed=z.object({code:z.string().regex(/^\\d{6}$/)}).safeParse(req.body);
-    if(!parsed.success){res.status(400).json({message:'The verification link is invalid or incomplete.'});return;}
+    const parsed=z.object({code:z.string().regex(/^[0-9]{6}$/)}).safeParse(req.body);
+    if(!parsed.success){res.status(400).json({message:'Enter the 6-digit activation code from your email.'});return;}
     const user=await prisma.user.findUnique({where:{emailVerificationTokenHash:hashVerificationToken(parsed.data.code)}});
     if(!user||!user.emailVerificationExpiresAt||user.emailVerificationExpiresAt<new Date()){
       res.status(400).json({message:'This activation code has expired or was already used. Request a new one.'});return;
