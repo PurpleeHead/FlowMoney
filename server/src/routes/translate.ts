@@ -16,31 +16,31 @@ async function translateWithConfiguredProvider(text:string,source:string,target:
 }
 
 async function translateLineWithFallback(line:string,source:string,target:string):Promise<string>{
-  const memoryUrl=new URL('https://api.mymemory.translated.net/get');
-  memoryUrl.searchParams.set('q',line.slice(0,450));
-  memoryUrl.searchParams.set('langpair',`${source}|${target}`);
-  try{
-    const response=await fetch(memoryUrl,{signal:AbortSignal.timeout(10000)});
-    if(response.ok){
-      const data=await response.json() as {responseStatus?:number;responseData?:{translatedText?:string}};
-      const value=data.responseData?.translatedText;
-      if(value&&data.responseStatus===200&&!/MYMEMORY WARNING|PLEASE SELECT/i.test(value))return value.replace(/\r?\n/g,' ').trim();
-    }
-  }catch{/* Try the second public provider below. */}
-
   const googleUrl=new URL('https://translate.googleapis.com/translate_a/single');
   googleUrl.searchParams.set('client','gtx');
   googleUrl.searchParams.set('sl',source);
   googleUrl.searchParams.set('tl',target);
   googleUrl.searchParams.set('dt','t');
   googleUrl.searchParams.set('q',line.slice(0,450));
-  const response=await fetch(googleUrl,{signal:AbortSignal.timeout(12000)});
+  try{
+    const response=await fetch(googleUrl,{signal:AbortSignal.timeout(10000)});
+    if(response.ok){
+      const data=await response.json() as unknown[];
+      const segments=Array.isArray(data[0])?data[0] as unknown[]:[];
+      const translated=segments.map(segment=>Array.isArray(segment)&&typeof segment[0]==='string'?segment[0]:'').join('').trim();
+      if(translated)return translated;
+    }
+  }catch{/* Try the secondary provider below. */}
+
+  const memoryUrl=new URL('https://api.mymemory.translated.net/get');
+  memoryUrl.searchParams.set('q',line.slice(0,450));
+  memoryUrl.searchParams.set('langpair',`${source}|${target}`);
+  const response=await fetch(memoryUrl,{signal:AbortSignal.timeout(10000)});
   if(!response.ok)throw new Error('Translation providers are unavailable');
-  const data=await response.json() as unknown[];
-  const segments=Array.isArray(data[0])?data[0] as unknown[]:[];
-  const translated=segments.map(segment=>Array.isArray(segment)&&typeof segment[0]==='string'?segment[0]:'').join('').trim();
-  if(!translated)throw new Error('Translation providers returned no translation');
-  return translated;
+  const data=await response.json() as {responseStatus?:number;responseData?:{translatedText?:string}};
+  const value=data.responseData?.translatedText;
+  if(!value||data.responseStatus!==200||/MYMEMORY WARNING|PLEASE SELECT/i.test(value))throw new Error('Translation providers returned no translation');
+  return value.replace(/\r?\n/g,' ').trim();
 }
 
 async function translateWithFreeFallback(text:string,source:string,target:string):Promise<string>{
