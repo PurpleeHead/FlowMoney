@@ -44,6 +44,7 @@ model Exchange {
   rubSpent           Decimal  @db.Decimal(20, 4)
   usdtReceived       Decimal? @db.Decimal(20, 8)
   vndPerUsdt         Decimal? @db.Decimal(20, 4)
+  planningVndPerUsdt Decimal? @db.Decimal(20, 4)
   vndFee             Decimal  @default(0) @db.Decimal(20, 4)
   vndReceived        Decimal? @db.Decimal(20, 4)
   effectiveVndPerRub Decimal? @db.Decimal(20, 8)
