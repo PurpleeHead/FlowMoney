@@ -50,8 +50,19 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       rubPerUsdt: effectiveRubPerUsdt,
     });
 
+    // A budget balance is a planning estimate: actual VND received is counted as-is;
+    // USDT-only top-ups are converted using the observed VND/USDT rate when available.
+    const confirmedExchangeVnd = exchanges
+      .filter(x => x.vndReceived != null)
+      .reduce((sum, x) => sum + Number(x.vndReceived), 0);
+    const estimatedUnconvertedVnd = effectiveVndPerUsdt == null ? 0 : exchanges
+      .filter(x => x.mode !== 'RUB_VND' && x.vndReceived == null && x.usdtReceived != null)
+      .reduce((sum, x) => sum + Number(x.usdtReceived) * effectiveVndPerUsdt, 0);
+    const balanceVnd = confirmedExchangeVnd + estimatedUnconvertedVnd - totalVnd;
+
     res.json({
-      totalVnd,monthVnd,
+      totalVnd,monthVnd,balanceVnd,confirmedExchangeVnd,estimatedUnconvertedVnd,
+      balanceIsEstimated: estimatedUnconvertedVnd > 0,
       observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerUsdt,effectiveVndPerRub,
       expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
       exchanges:exchanges.map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:x.effectiveRubPerUsdt==null?null:Number(x.effectiveRubPerUsdt)}))
