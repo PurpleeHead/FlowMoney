@@ -483,3 +483,11 @@ button,input,select,textarea{min-width:0;max-width:100%}
  .result-rate-card>strong{font-size:12px}
 }
 @media(prefers-reduced-motion:reduce){.chart-bar-track>span{transition:none}}
+
+/* OCR language controls are independent and wrap naturally on narrow screens. */
+.ocr-language-picker{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;max-width:100%;margin:0;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface2)}
+.ocr-language-picker legend{padding:0 4px;color:var(--muted);font-size:10px;font-weight:700}
+.ocr-language-picker label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--text);font-size:10px;font-weight:600}
+.ocr-language-picker input[type=checkbox]{width:14px;height:14px;min-width:14px;margin:0;accent-color:var(--purple)}
+@media(max-width:820px){.ocr-language-picker{width:100%;justify-content:flex-start;gap:12px}}
+@media(max-width:480px){.ocr-language-picker{padding:8px;gap:9px}.ocr-language-picker label{font-size:10px}}
