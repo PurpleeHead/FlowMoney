@@ -26,15 +26,19 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const totalRub=exchanges.reduce((sum,x)=>sum+Number(x.rubSpent),0);
     const totalUsdt=exchanges.reduce((sum,x)=>sum+Number(x.usdtReceived),0);
     const effectiveRubPerUsdt=totalUsdt>0?totalRub/totalUsdt:null;
-    const exchangeVnd=exchanges.filter(x=>x.vndReceived!=null).reduce((sum,x)=>sum+Number(x.vndReceived),0);
-    const exchangeRub=exchanges.filter(x=>x.vndReceived!=null).reduce((sum,x)=>sum+Number(x.rubSpent),0);
-    const exchangeVndPerRub=exchangeRub>0?exchangeVnd/exchangeRub:null;
-    const effectiveVndPerRub=observedVndPerUsdt!=null && effectiveRubPerUsdt!=null && effectiveRubPerUsdt>0
-      ? observedVndPerUsdt/effectiveRubPerUsdt : exchangeVndPerRub;
+    const knownVndExchanges=exchanges.filter(x=>x.vndReceived!=null);
+    const exchangeVnd=knownVndExchanges.reduce((sum,x)=>sum+Number(x.vndReceived),0);
+    const exchangeUsdt=knownVndExchanges.reduce((sum,x)=>sum+Number(x.usdtReceived),0);
+    // Prefer actual card-purchase observations. Otherwise use only exchanges with a recorded VND outcome.
+    const effectiveVndPerUsdt=observedVndPerUsdt!=null
+      ? observedVndPerUsdt
+      : exchangeUsdt>0 ? exchangeVnd/exchangeUsdt : null;
+    const effectiveVndPerRub=effectiveVndPerUsdt!=null && effectiveRubPerUsdt!=null && effectiveRubPerUsdt>0
+      ? effectiveVndPerUsdt/effectiveRubPerUsdt : null;
 
     res.json({
       totalVnd,monthVnd,
-      observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerRub,
+      observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerUsdt,effectiveVndPerRub,
       expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
       exchanges:exchanges.map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:Number(x.effectiveRubPerUsdt)}))
     });
