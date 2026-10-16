@@ -69,7 +69,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
     );
-    const vndExchanges = exchanges.filter(x => x.vndReceived != null);
+    const vndExchanges = exchanges.filter(x => x.mode !== 'RUB_VND' && x.usdtReceived != null && x.vndReceived != null);
     const exchangeVnd = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
     const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
     const historicalVndPerUsdt = observedVndPerUsdt ??
