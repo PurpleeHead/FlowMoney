@@ -82,6 +82,12 @@ describe('parseAmountInput', () => {
     expect(parseAmountInput('2,19')).toBe('2.19');
     expect(parseAmountInput('93.7853')).toBe('93.7853');
   });
+  it('preserves large RUB amounts when grouped with dots', () => {
+    expect(parseAmountInput('1.000')).toBe('1000');
+    expect(parseAmountInput('10.000')).toBe('10000');
+    expect(parseAmountInput('100.000')).toBe('100000');
+    expect(parseAmountInput('1.000.000')).toBe('1000000');
+  });
   it('accepts thousands separators without shrinking the amount', () => {
     expect(parseAmountInput('25,450')).toBe('25450');
     expect(parseAmountInput('2,500,000')).toBe('2500000');
