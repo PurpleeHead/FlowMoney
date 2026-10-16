@@ -99,8 +99,13 @@ router.post('/resend-verification',async(req,res,next)=>{
     const user=await prisma.user.findUnique({where:{email:parsed.data.email}});
     if(!user||user.emailVerified){res.json({message:'If the account needs verification, a new email will be sent.'});return;}
     const verificationCode=String(randomInt(100000,1000000));
+    try {
+      await sendVerificationEmail(user.email,verificationCode);
+    } catch {
+      res.status(502).json({message:'We could not send the verification email. Please try again later.'});
+      return;
+    }
     await prisma.user.update({where:{id:user.id},data:{emailVerificationTokenHash:hashVerificationToken(verificationCode),emailVerificationExpiresAt:new Date(Date.now()+15*60*1000)}});
-    await sendVerificationEmail(user.email,verificationCode);
     res.json({message:'If the account needs verification, a new email will be sent.'});
   }catch(e){next(e);}
 });

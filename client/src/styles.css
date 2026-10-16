@@ -519,3 +519,18 @@ button,input,select,textarea{min-width:0;max-width:100%}
 @media(max-width:540px){.consent-banner{bottom:8px;width:calc(100% - 16px);padding:14px;align-items:stretch;flex-direction:column;gap:12px}.consent-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.consent-actions .button{width:100%;padding:10px 8px;font-size:10px}.profile-footer{margin-top:20px;padding-top:16px;justify-content:stretch}.profile-footer .button{width:100%}}
 
 .password-section{margin-top:28px;padding-top:24px;border-top:1px solid var(--line)}.password-section .section-heading{margin-bottom:16px}.password-section .expense-form{gap:14px}.password-section .button{margin-top:4px}
+
+/* Final narrow-screen hardening for 320px devices. */
+html,body,#root{max-width:100%}
+@media(max-width:360px){
+  .app-shell,.auth-screen,.workspace,.main-content,.dashboard-main,.panel,.hero-card,.stats-grid,.expenses-layout,.chart-bars{min-width:0;max-width:100%}
+  .hero-card{padding:20px 16px;overflow:hidden}
+  .hero-copy{max-width:100%;min-width:0}
+  .hero-copy h1,.hero-copy h2,.hero-copy p{overflow-wrap:anywhere}
+  .hero-graphic{right:-64px!important;width:150px!important;height:150px!important;opacity:.12!important}
+  .section-heading{gap:10px;flex-wrap:wrap}
+  .form-grid,.expense-form{grid-template-columns:minmax(0,1fr)!important}
+  .table-wrap{max-width:100%;overflow-x:auto}
+  .chart-bars{max-width:100%;overflow-x:auto}
+  .consent-banner{width:calc(100% - 12px);left:6px;transform:none}
+}
