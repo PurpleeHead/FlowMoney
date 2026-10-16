@@ -66,3 +66,40 @@ export function calculateActualExchangeRates(input: {
     effectiveVndPerRub: vndReceived == null ? null : vndReceived / rubSpent,
   };
 }
+
+/** Parse common keyboard/paste formats without turning decimal values into thousands. */
+export function parseAmountInput(value: string): string {
+  const input = value.trim().replace(/\s/g, '').replace(/[^\d.,-]/g, '');
+  if (!input || input === '-') return input;
+  const comma = input.lastIndexOf(',');
+  const dot = input.lastIndexOf('.');
+  const hasComma = comma >= 0;
+  const hasDot = dot >= 0;
+
+  if (hasComma && hasDot) {
+    const decimalSeparator = comma > dot ? ',' : '.';
+    const splitAt = input.lastIndexOf(decimalSeparator);
+    const integer = input.slice(0, splitAt).replace(/[.,]/g, '').replace(/(?!^)-/g, '');
+    const fraction = input.slice(splitAt + 1).replace(/\D/g, '');
+    return fraction ? integer + '.' + fraction : integer + '.';
+  }
+
+  const separator = hasComma ? ',' : hasDot ? '.' : '';
+  if (!separator) return input.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
+  const parts = input.split(separator);
+  if (parts.length > 2) {
+    const groups = parts.slice(1);
+    if (groups.every(group => group.length === 3)) return parts.join('').replace(/\D/g, '');
+    const integer = parts.slice(0, -1).join('').replace(/\D/g, '');
+    const fraction = parts[parts.length - 1].replace(/\D/g, '');
+    return fraction ? integer + '.' + fraction : integer + '.';
+  }
+
+  const [whole = '', fraction = ''] = parts;
+  if (fraction.length === 3 && whole !== '0' && whole.length <= 3) {
+    return (whole + fraction).replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
+  }
+  const integer = whole.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
+  const decimal = fraction.replace(/\D/g, '');
+  return decimal ? integer + '.' + decimal : integer + '.';
+}
