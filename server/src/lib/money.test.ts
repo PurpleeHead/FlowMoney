@@ -95,3 +95,36 @@ describe('direct target-currency exchange', () => {
     assert.throws(() => calculateTargetVndEquivalent('TRY', 100, 0));
   });
 });
+
+
+describe('conservative card-expense RUB cost', () => {
+  const cardExpense = {
+    currency: 'VND',
+    amount: 79_000,
+    amountVnd: 79_000,
+    usdtCharged: 3,
+  };
+
+  it('does not fall back to VND/RUB when the RUB/USDT cost basis is unknown', () => {
+    assert.equal(calculateExpenseRub(cardExpense, null, 26_333, 2_600), null);
+  });
+
+  it('uses actual USDT debit multiplied by the known RUB/USDT cost basis', () => {
+    assert.equal(calculateExpenseRub(cardExpense, 8_300 / 93.7853, 26_333, 2_600), 3 * (8_300 / 93.7853));
+  });
+
+  it('does not fall back when the RUB/USDT rate is zero or invalid', () => {
+    assert.equal(calculateExpenseRub(cardExpense, 0, 26_333, 2_600), null);
+    assert.equal(calculateExpenseRub(cardExpense, Number.NaN, 26_333, 2_600), null);
+  });
+
+  it('does not estimate a card expense when the recorded USDT debit is invalid', () => {
+    assert.equal(calculateExpenseRub({ ...cardExpense, usdtCharged: 0 }, 88.5, 26_333, 2_600), null);
+    assert.equal(calculateExpenseRub({ ...cardExpense, usdtCharged: Number.NaN }, 88.5, 26_333, 2_600), null);
+  });
+
+  it('normalizes currency codes before calculating RUB cost', () => {
+    assert.equal(calculateExpenseRub({ currency: 'rub', amount: 125, amountVnd: 125 }, null, null), 125);
+    assert.equal(calculateExpenseRub({ ...cardExpense, currency: 'vnd' }, null, 26_333, 2_600), null);
+  });
+});
