@@ -49,7 +49,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const [exchanges, previousPurchases] = await Promise.all([
       prisma.exchange.findMany({
         where: { userId, createdAt: { lte: expenseDate } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true },
       }),
       prisma.expense.findMany({
         where: {
@@ -72,8 +72,13 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const vndExchanges = exchanges.filter(x => x.mode !== 'RUB_VND' && x.usdtReceived != null && x.vndReceived != null);
     const exchangeVnd = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
     const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const plannedExchanges = exchanges.filter(x => x.mode !== 'RUB_VND' && x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
+    const plannedUsdt = plannedExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const planningVndPerUsdt = plannedUsdt > 0
+      ? plannedExchanges.reduce((sum, x) => sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0) / plannedUsdt
+      : null;
     const historicalVndPerUsdt = observedVndPerUsdt ??
-      (exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : null);
+      (exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : planningVndPerUsdt);
 
     const historicalVndPerRub = calculateObservedVndPerRub({
       directExchanges: exchanges
