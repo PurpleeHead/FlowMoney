@@ -136,6 +136,96 @@ router.get('/', async (req: AuthedRequest, res, next) => {
   }
 });
 
+
+router.patch('/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: 'Check the expense name, amount, currency and category.' });
+      return;
+    }
+    const input = parsed.data;
+    const userId = req.user!.id;
+    const id = String(req.params.id);
+    const existing = await prisma.expense.findFirst({ where: { id, userId } });
+    if (!existing) {
+      res.status(404).json({ message: 'Expense not found.' });
+      return;
+    }
+    if (input.receiptId) {
+      const receipt = await prisma.receipt.findFirst({ where: { id: input.receiptId, userId } });
+      if (!receipt) {
+        res.status(400).json({ message: 'Receipt not found.' });
+        return;
+      }
+    }
+
+    const expenseDate = input.date ? new Date(input.date) : existing.date;
+    const [exchanges, otherPurchases] = await Promise.all([
+      prisma.exchange.findMany({
+        where: { userId, createdAt: { lte: expenseDate } },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true },
+      }),
+      prisma.expense.findMany({
+        where: { userId, id: { not: id }, date: { lte: expenseDate }, usdtCharged: { not: null } },
+        select: { amountVnd: true, usdtCharged: true },
+      }),
+    ]);
+    const rubPerUsdt = calculateRubPerUsdt(
+      exchanges.map(x => ({ rubSpent: Number(x.rubSpent), usdtReceived: Number(x.usdtReceived) }))
+    );
+    const observedVndPerUsdt = calculateObservedVndPerUsdt(
+      otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
+    );
+    const actualExchanges = exchanges.filter(x => x.mode !== 'RUB_VND' && x.usdtReceived != null && x.vndReceived != null);
+    const actualVnd = actualExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
+    const actualUsdt = actualExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const planned = exchanges.filter(x => x.mode !== 'RUB_VND' && x.usdtReceived != null && x.vndReceived == null && x.planningVndPerUsdt != null);
+    const plannedUsdt = planned.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const plannedRate = plannedUsdt > 0
+      ? planned.reduce((sum, x) => sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0) / plannedUsdt
+      : null;
+    const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : plannedRate);
+    const vndPerRub = calculateObservedVndPerRub({
+      directExchanges: exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null)
+        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      actualVndExchanges: exchanges.filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
+        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      cardPurchases: otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) })),
+      rubPerUsdt,
+    });
+    const amountRub = calculateExpenseRub({
+      currency: input.currency,
+      amount: input.amount,
+      amountVnd: input.amountVnd,
+      usdtCharged: input.usdtCharged,
+    }, rubPerUsdt, vndPerUsdt, vndPerRub);
+
+    const result = await prisma.expense.updateMany({
+      where: { id, userId },
+      data: {
+        title: input.title,
+        category: input.category,
+        amount: input.amount,
+        currency: input.currency,
+        amountVnd: input.amountVnd,
+        amountRub,
+        usdtCharged: input.usdtCharged ?? null,
+        date: expenseDate,
+        receiptId: input.receiptId ?? null,
+      },
+    });
+    if (!result.count) {
+      res.status(404).json({ message: 'Expense not found.' });
+      return;
+    }
+    const updated = await prisma.expense.findFirst({ where: { id, userId } });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.delete('/:id', async (req: AuthedRequest, res, next) => {
   try {
     const result = await prisma.expense.deleteMany({
