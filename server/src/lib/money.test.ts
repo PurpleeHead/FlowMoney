@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   calculateExpenseRub,
   calculateObservedVndPerUsdt,
+  calculateObservedVndPerRub,
   calculateRubPerUsdt,
   estimateRubFromVnd,
   resolveExchangeVndOutcome,
@@ -35,6 +36,19 @@ describe('unified RUB cost formula', () => {
     assert.ok(Math.abs(calculateExpenseRub({
       currency: 'VND', amount: 100000, amountVnd: 100000,
     }, rubPerUsdt, vndPerUsdt)! - 347.7209) < 0.01);
+  });
+
+  it('combines direct RUB-to-VND exchanges and card observations for future estimates', () => {
+    const vndPerRub = calculateObservedVndPerRub({
+      directExchanges: [{ rubSpent: 10000, vndReceived: 2500000 }],
+      cardPurchases: [{ amountVnd: 100000, usdtCharged: 3 }],
+      rubPerUsdt: 100,
+    });
+    assert.ok(vndPerRub);
+    assert.ok(Math.abs(vndPerRub - (2600000 / 10300)) < 0.000001);
+    assert.ok(Math.abs(calculateExpenseRub({
+      currency: 'VND', amount: 79000, amountVnd: 79000,
+    }, 100, 33333.3333, vndPerRub)! - (79000 / vndPerRub)) < 0.000001);
   });
 
   it('keeps VND rate unknown until a real outcome is recorded', () => {
