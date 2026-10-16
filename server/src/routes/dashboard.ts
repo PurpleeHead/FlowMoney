@@ -2,6 +2,7 @@ import {Router} from 'express';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
+import { calculateObservedVndPerUsdt, calculateRubPerUsdt } from '../lib/money.js';
 
 const router=Router();
 router.use(auth);
@@ -20,12 +21,14 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const purchases=expenses.filter(x=>x.usdtCharged!=null && Number(x.usdtCharged)>0);
     const observedVnd=purchases.reduce((sum,x)=>sum+Number(x.amountVnd),0);
     const observedUsdt=purchases.reduce((sum,x)=>sum+Number(x.usdtCharged),0);
-    const observedVndPerUsdt=observedUsdt>0?observedVnd/observedUsdt:null;
+    const observedVndPerUsdt=calculateObservedVndPerUsdt(
+      purchases.map(x=>({amountVnd:Number(x.amountVnd),usdtCharged:Number(x.usdtCharged)}))
+    );
 
-    // Weighted by USDT received, so multiple RUB -> USDT operations produce one effective rate.
-    const totalRub=exchanges.reduce((sum,x)=>sum+Number(x.rubSpent),0);
-    const totalUsdt=exchanges.reduce((sum,x)=>sum+Number(x.usdtReceived),0);
-    const effectiveRubPerUsdt=totalUsdt>0?totalRub/totalUsdt:null;
+    // Weighted by USDT received, using the same RUB/USDT helper as expense saving.
+    const effectiveRubPerUsdt=calculateRubPerUsdt(
+      exchanges.map(x=>({rubSpent:Number(x.rubSpent),usdtReceived:Number(x.usdtReceived)}))
+    );
     const knownVndExchanges=exchanges.filter(x=>x.vndReceived!=null);
     const exchangeVnd=knownVndExchanges.reduce((sum,x)=>sum+Number(x.vndReceived),0);
     const exchangeUsdt=knownVndExchanges.reduce((sum,x)=>sum+Number(x.usdtReceived),0);
