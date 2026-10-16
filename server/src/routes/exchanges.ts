@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
+import { resolveExchangeVndOutcome } from '../lib/money.js';
 
 const router = Router();
 
@@ -44,10 +45,21 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       });
       return;
     }
-    const effectiveVndReceived = x.vndReceived;
-    const effectiveVndPerUsdt = effectiveVndReceived == null
-      ? null
-      : (x.vndPerUsdt ?? (effectiveVndReceived / x.usdtReceived));
+    let vndOutcome: { vndReceived: number | null; vndPerUsdt: number | null };
+    try {
+      vndOutcome = resolveExchangeVndOutcome({
+        usdtReceived: x.usdtReceived,
+        vndReceived: x.vndReceived,
+        vndPerUsdt: x.vndPerUsdt,
+      });
+    } catch {
+      res.status(400).json({
+        message: 'Enter the actual VND amount received, or leave VND unknown.',
+      });
+      return;
+    }
+    const effectiveVndReceived = vndOutcome.vndReceived;
+    const effectiveVndPerUsdt = vndOutcome.vndPerUsdt;
 
     const record = await prisma.exchange.create({
       data: {
