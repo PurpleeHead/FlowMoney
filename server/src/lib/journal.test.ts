@@ -54,4 +54,24 @@ describe('unified journal', () => {
       assert.equal(entries[0].amountVnd, null);
     }
   });
+
+  it('includes opening balances and adjustments as separate wallet movement entries', () => {
+    const entries = buildJournal([], [], 100, [
+      {
+        id: 'opening-usdt', currency: 'USDT', amountDelta: 93.7853,
+        kind: 'OPENING', note: 'Starting card balance', occurredAt: '2026-10-16T09:00:00.000Z',
+      },
+      {
+        id: 'adjustment-vnd', currency: 'VND', amountDelta: -50000,
+        kind: 'ADJUSTMENT', note: 'Cash count correction', occurredAt: '2026-10-16T10:00:00.000Z',
+      },
+    ]);
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].type, 'wallet_movement');
+    if (entries[0].type === 'wallet_movement') {
+      assert.equal(entries[0].id, 'movement:adjustment-vnd');
+      assert.equal(entries[0].amountDelta, -50000);
+      assert.equal(entries[0].note, 'Cash count correction');
+    }
+  });
 });
