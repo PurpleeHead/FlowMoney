@@ -597,3 +597,26 @@ html,body,#root{max-width:100%}
 .table-wrap td > .icon-button:hover{background:color-mix(in srgb,var(--purple) 10%,var(--surface));border-color:color-mix(in srgb,var(--purple) 38%,var(--line));color:var(--purple)}
 .table-wrap td > .delete-button:hover{background:color-mix(in srgb,#dc4545 10%,var(--surface));border-color:color-mix(in srgb,#dc4545 45%,var(--line));color:#dc4545}
 @media(max-width:480px){.table-wrap td > .icon-button,.table-wrap td > .delete-button{width:32px;height:32px;min-width:32px;flex-basis:32px;margin-left:7px}}
+
+
+/* Keep OCR-detected receipt rows inside the panel when names or prices are long. */
+.detected-items{width:100%;min-width:0;max-width:100%}
+.detected-items>strong{min-width:0;overflow-wrap:anywhere}
+.detected-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,38%);align-items:start;gap:12px;min-width:0;width:100%}
+.receipt-edit-name{display:block;min-width:0;width:100%;max-width:100%;overflow-wrap:anywhere}
+.receipt-edit-amount{width:100%;min-width:0;max-width:100%;justify-items:stretch}
+.receipt-edit-amount label{min-width:0;max-width:100%;white-space:normal;gap:5px}
+.receipt-edit-price{width:clamp(60px,8vw,100px);min-width:0;max-width:100%;flex:1 1 auto}
+.receipt-conversions,.receipt-edit-amount .receipt-conversions{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:normal;text-align:right;line-height:1.4}
+.receipt-edit-amount .form-hint{display:flex;align-items:flex-start;gap:4px;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+.receipt-edit-amount .form-hint svg{flex:0 0 auto;margin-top:1px}
+@media(max-width:540px){
+ .detected-row{grid-template-columns:minmax(0,1fr) minmax(0,122px);gap:8px}
+ .receipt-edit-price{width:76px;min-width:0;max-width:100%;flex:1 1 auto}
+ .receipt-edit-amount label{font-size:11px;gap:3px}
+ .receipt-conversions,.receipt-edit-amount .receipt-conversions{text-align:left;font-size:9px}
+}
+@media(max-width:350px){
+ .detected-row{grid-template-columns:minmax(0,1fr) minmax(0,105px);gap:6px}
+ .receipt-edit-price{width:62px}
+}
