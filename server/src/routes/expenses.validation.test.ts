@@ -23,6 +23,12 @@ describe('expense request validation', () => {
     assert.equal(expenseSchema.safeParse({ ...validExpense, usdtCharged: 0.000000001 }).success, false);
   });
 
+  it('rejects RUB and VND source amounts that cannot fit valuation columns', () => {
+    assert.equal(expenseSchema.safeParse({ ...validExpense, currency: 'RUB', amount: 1.23456 }).success, false);
+    assert.equal(expenseSchema.safeParse({ ...validExpense, currency: 'VND', amount: 1.23456 }).success, false);
+    assert.equal(expenseSchema.safeParse({ ...validExpense, currency: 'RUB', amount: 1.2345 }).success, true);
+  });
+
   it('rejects source values with excess fractional digits', () => {
     assert.equal(expenseSchema.safeParse({ ...validExpense, amount: 1.1234567 }).success, false);
     assert.equal(expenseSchema.safeParse({ ...validExpense, amountVnd: 100.00001 }).success, false);
