@@ -40,12 +40,18 @@ router.get('/', async (req: AuthedRequest, res, next) => {
           targetCurrency: true, targetReceived: true, targetVndEquivalent: true, createdAt: true,
         },
       }),
+      prisma.walletMovement.findMany({
+        where: { userId },
+        orderBy: { occurredAt: 'desc' },
+        take: 500,
+        select: { id: true, currency: true, amountDelta: true, kind: true, note: true, occurredAt: true },
+      }),
     ]);
 
     res.json({
-      entries: buildJournal(expenses, exchanges, parsed.data.limit),
+      entries: buildJournal(expenses, exchanges, parsed.data.limit, movements),
       limit: parsed.data.limit,
-      hasMore: expenses.length + exchanges.length > parsed.data.limit,
+      hasMore: expenses.length + exchanges.length + movements.length > parsed.data.limit,
     });
   } catch (error) {
     next(error);
