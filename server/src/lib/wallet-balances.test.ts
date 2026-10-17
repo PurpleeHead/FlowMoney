@@ -10,9 +10,10 @@ describe('wallet balance calculation', () => {
       { currency: 'USDT', amountDelta: 93.7853, kind: 'EXCHANGE', createdAt: at('2026-10-16T08:00:00Z') },
       { currency: 'USDT', amountDelta: -2.19, kind: 'EXPENSE', createdAt: at('2026-10-16T09:00:00Z') },
     ]);
-    assert.deepEqual(balances, [{
+    assert.deepEqual(balances.find(item => item.currency === 'USDT'), {
       currency: 'USDT', netMovement: 91.5953, hasOpeningBalance: false, balance: null,
-    }]);
+    });
+    assert.deepEqual(balances.map(item => item.currency), ['RUB', 'USDT', 'VND']);
   });
 
   it('uses the opening balance and applies movements created at or after it', () => {
@@ -21,9 +22,9 @@ describe('wallet balance calculation', () => {
       { currency: 'VND', amountDelta: 1000000, kind: 'OPENING', createdAt: at('2026-10-16T08:00:00Z') },
       { currency: 'VND', amountDelta: -40000, kind: 'EXPENSE', createdAt: at('2026-10-16T09:00:00Z') },
     ]);
-    assert.deepEqual(balances, [{
+    assert.deepEqual(balances.find(item => item.currency === 'VND'), {
       currency: 'VND', netMovement: 910000, hasOpeningBalance: true, balance: 960000,
-    }]);
+    });
   });
 
   it('returns stable currency ordering and keeps currencies independent', () => {
@@ -31,7 +32,17 @@ describe('wallet balance calculation', () => {
       { currency: 'VND', amountDelta: 100, kind: 'OPENING', createdAt: at('2026-10-16T08:00:00Z') },
       { currency: 'RUB', amountDelta: 500, kind: 'OPENING', createdAt: at('2026-10-16T08:00:00Z') },
     ]);
-    assert.deepEqual(balances.map(item => item.currency), ['RUB', 'VND']);
-    assert.deepEqual(balances.map(item => item.balance), [500, 100]);
+    assert.deepEqual(balances.map(item => item.currency), ['RUB', 'USDT', 'VND']);
+    assert.deepEqual(balances.map(item => item.balance), [500, null, 100]);
+  });
+});
+
+describe('empty wallets', () => {
+  it('returns all supported currencies with unknown balances before opening snapshots', () => {
+    assert.deepEqual(calculateWalletBalances([]), [
+      { currency: 'RUB', netMovement: 0, hasOpeningBalance: false, balance: null },
+      { currency: 'USDT', netMovement: 0, hasOpeningBalance: false, balance: null },
+      { currency: 'VND', netMovement: 0, hasOpeningBalance: false, balance: null },
+    ]);
   });
 });
