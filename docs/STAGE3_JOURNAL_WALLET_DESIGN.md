@@ -28,5 +28,5 @@ Status: authenticated journal API and manual wallet opening/adjustment endpoints
 - [x] Add an additive `WalletMovement` Prisma model and forward-only SQL migration (not applied).
 - Add opening balance / adjustment operations and derive per-currency balances from signed ledger movements.
 - Synchronize create, edit, and delete of expenses/exchanges transactionally.
-- Add integration tests for duplicate prevention, user ownership, card-debit accounting, edits/deletes, and unknown rates.
+- Add API/integration coverage for duplicate prevention, user ownership, card-debit accounting, edits/deletes, and unknown rates.
 - Prepare forward-only migrations; do not apply them to any database without explicit permission.
