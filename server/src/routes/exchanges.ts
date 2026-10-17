@@ -18,7 +18,7 @@ const schema = z.object({
   planningVndPerUsdt: z.number().positive().finite().optional(),
   vndFee: z.number().min(0).finite().default(0),
   vndReceived: z.number().positive().finite().optional(),
-  targetCurrency: z.string().trim().regex(/^[A-Za-z]{3,8}$/).transform(value => value.toUpperCase()).default('VND'),
+  targetCurrency: z.string().trim().regex(/^[A-Za-z]{3,8}$/).transform(value => value.toUpperCase()).refine(value => value !== 'RUB', 'Target currency must differ from RUB.').default('VND'),
   targetReceived: z.number().positive().finite().optional(),
   targetToVndRate: z.number().positive().finite().optional(),
 });
