@@ -32,7 +32,7 @@ async function createExchangeWithLedger(data: Prisma.ExchangeUncheckedCreateInpu
   });
 }
 
-function directTargetData(x: z.infer<typeof schema>) {
+function directTargetData(x: z.infer<typeof exchangeSchema>) {
   if (x.targetReceived == null) throw new Error('Enter the amount received in the target currency.');
   const rate = x.targetCurrency === 'VND' ? 1 : x.targetToVndRate;
   if (rate == null || !Number.isFinite(rate) || rate <= 0) {
