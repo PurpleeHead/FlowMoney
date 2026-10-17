@@ -4,6 +4,7 @@ import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges } from '../lib/money.js';
+import { syncExpenseLedger, removeExpenseLedger } from '../lib/wallet-ledger.js';
 
 const router = Router();
 router.use(auth);
@@ -114,19 +115,23 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       usdtCharged: input.usdtCharged,
     }, historicalRubPerUsdt, historicalVndPerUsdt, historicalVndPerRub);
 
-    const record = await prisma.expense.create({
-      data: {
-        userId,
-        title: input.title,
-        category: input.category,
-        amount: input.amount,
-        currency: input.currency,
-        amountVnd,
-        amountRub,
-        usdtCharged: input.usdtCharged,
-        date: expenseDate,
-        receiptId: input.receiptId,
-      },
+    const record = await prisma.$transaction(async (tx) => {
+      const created = await tx.expense.create({
+        data: {
+          userId,
+          title: input.title,
+          category: input.category,
+          amount: input.amount,
+          currency: input.currency,
+          amountVnd,
+          amountRub,
+          usdtCharged: input.usdtCharged,
+          date: expenseDate,
+          receiptId: input.receiptId,
+        },
+      });
+      await syncExpenseLedger(tx, created);
+      return created;
     });
 
     res.status(201).json(record);
@@ -225,25 +230,30 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       usdtCharged: input.usdtCharged,
     }, rubPerUsdt, vndPerUsdt, vndPerRub);
 
-    const result = await prisma.expense.updateMany({
-      where: { id, userId },
-      data: {
-        title: input.title,
-        category: input.category,
-        amount: input.amount,
-        currency: input.currency,
-        amountVnd,
-        amountRub,
-        usdtCharged: input.usdtCharged ?? null,
-        date: expenseDate,
-        receiptId: input.receiptId ?? existing.receiptId,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.expense.updateMany({
+        where: { id, userId },
+        data: {
+          title: input.title,
+          category: input.category,
+          amount: input.amount,
+          currency: input.currency,
+          amountVnd,
+          amountRub,
+          usdtCharged: input.usdtCharged ?? null,
+          date: expenseDate,
+          receiptId: input.receiptId ?? existing.receiptId,
+        },
+      });
+      if (!result.count) return null;
+      const current = await tx.expense.findFirst({ where: { id, userId } });
+      if (current) await syncExpenseLedger(tx, current);
+      return current;
     });
-    if (!result.count) {
+    if (!updated) {
       res.status(404).json({ message: 'Expense not found.' });
       return;
     }
-    const updated = await prisma.expense.findFirst({ where: { id, userId } });
     res.json(updated);
   } catch (e) {
     next(e);
@@ -252,10 +262,14 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
 
 router.delete('/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const result = await prisma.expense.deleteMany({
-      where: { id: String(req.params.id), userId: req.user!.id },
+    const id = String(req.params.id);
+    const userId = req.user!.id;
+    const deleted = await prisma.$transaction(async (tx) => {
+      const result = await tx.expense.deleteMany({ where: { id, userId } });
+      if (result.count) await removeExpenseLedger(tx, userId, id);
+      return result.count;
     });
-    if (!result.count) {
+    if (!deleted) {
       res.status(404).json({ message: 'Expense not found.' });
       return;
     }
