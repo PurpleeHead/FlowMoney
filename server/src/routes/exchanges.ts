@@ -77,7 +77,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         return;
       }
       if (x.vndFee >= x.vndReceived) {
-        res.status(400).json({ message: 'The VND fee cannot exceed the amount received.' });
+        res.status(400).json({ message: 'The VND fee must be lower than the gross amount received.' });
         return;
       }
       const vndReceived = x.vndReceived - x.vndFee;
@@ -163,7 +163,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       }
     } else if (x.mode === 'RUB_VND') {
       if (x.vndReceived == null || x.vndFee >= x.vndReceived) {
-        res.status(400).json({ message: 'Enter the actual VND received; the fee cannot exceed it.' });
+        res.status(400).json({ message: 'Enter the actual gross VND amount; the fee must be lower than it.' });
         return;
       }
       const vndReceived = x.vndReceived - x.vndFee;
