@@ -174,3 +174,17 @@ export function calculateTargetVndEquivalent(targetCurrency: string, targetRecei
   }
   return equivalent;
 }
+
+/** Reject impossible actual VND outcomes when a manual rate was also supplied. */
+export function isExchangeVndOutcomeConsistent(input: {
+  usdtReceived: number;
+  vndReceived?: number | null;
+  vndPerUsdt?: number | null;
+  vndFee: number;
+}): boolean {
+  if (input.vndReceived == null || input.vndPerUsdt == null) return true;
+  const grossVnd = input.usdtReceived * input.vndPerUsdt;
+  return Number.isFinite(grossVnd) && grossVnd > 0 &&
+    input.vndReceived <= grossVnd + 0.01 &&
+    input.vndFee <= grossVnd;
+}
