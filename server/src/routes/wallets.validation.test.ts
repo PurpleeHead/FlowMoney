@@ -13,7 +13,13 @@ describe('wallet movement request validation', () => {
     assert.equal(movementSchema.safeParse({ kind: 'ADJUSTMENT', currency: 'RUB', amount: 0 }).success, false);
   });
 
-  it('rejects amounts that would be rounded by Decimal(20, 8)', () => {\n    assert.equal(movementSchema.safeParse({ kind: 'OPENING', currency: 'USDT', amount: 1.123456789 }).success, false);\n    assert.equal(movementSchema.safeParse({ kind: 'ADJUSTMENT', currency: 'USDT', amount: 0.000000001 }).success, false);\n    assert.equal(movementSchema.safeParse({ kind: 'ADJUSTMENT', currency: 'USDT', amount: 0.00000001 }).success, true);\n  });\n\n  it('rejects unsupported currencies and amounts outside the wallet precision range', () => {
+  it('rejects amounts that would be rounded by Decimal(20, 8)', () => {
+    assert.equal(movementSchema.safeParse({ kind: 'OPENING', currency: 'USDT', amount: 1.123456789 }).success, false);
+    assert.equal(movementSchema.safeParse({ kind: 'ADJUSTMENT', currency: 'USDT', amount: 0.000000001 }).success, false);
+    assert.equal(movementSchema.safeParse({ kind: 'ADJUSTMENT', currency: 'USDT', amount: 0.00000001 }).success, true);
+  });
+
+  it('rejects unsupported currencies and amounts outside the wallet precision range', () => {
     assert.equal(movementSchema.safeParse({ kind: 'OPENING', currency: 'USD', amount: 100 }).success, false);
     assert.equal(movementSchema.safeParse({ kind: 'OPENING', currency: 'VND', amount: 1_000_000_000_000 }).success, false);
     assert.equal(movementSchema.safeParse({ kind: 'ADJUSTMENT', currency: 'VND', amount: -1_000_000_000_000 }).success, false);
