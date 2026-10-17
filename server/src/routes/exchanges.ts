@@ -111,7 +111,11 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     }
     let outcome: { vndReceived: number | null; vndPerUsdt: number | null };
     try {
-      outcome = resolveExchangeVndOutcome({ usdtReceived: x.usdtReceived, vndReceived: x.vndReceived, vndPerUsdt: x.vndPerUsdt });
+      const netVndReceived = x.vndReceived == null ? null : x.vndReceived - x.vndFee;
+      if (netVndReceived != null && netVndReceived <= 0) {
+        throw new Error('VND fee must be lower than the gross VND amount.');
+      }
+      outcome = resolveExchangeVndOutcome({ usdtReceived: x.usdtReceived, vndReceived: netVndReceived });
     } catch {
       res.status(400).json({ message: 'Enter the actual VND amount received, or leave VND unknown.' });
       return;
@@ -187,7 +191,12 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         res.status(400).json({ message: 'Enter actual VND received or leave the VND amount blank.' });
         return;
       }
-      const outcome = resolveExchangeVndOutcome({ usdtReceived: x.usdtReceived, vndReceived: x.vndReceived, vndPerUsdt: x.vndPerUsdt });
+      const netVndReceived = x.vndReceived == null ? null : x.vndReceived - x.vndFee;
+      if (netVndReceived != null && netVndReceived <= 0) {
+        res.status(400).json({ message: 'The VND fee must be lower than the gross VND amount.' });
+        return;
+      }
+      const outcome = resolveExchangeVndOutcome({ usdtReceived: x.usdtReceived, vndReceived: netVndReceived });
       data = {
         mode: 'RUB_USDT_VND', rubSpent: x.rubSpent, usdtReceived: x.usdtReceived,
         vndPerUsdt: outcome.vndPerUsdt,
