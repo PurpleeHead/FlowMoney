@@ -5,6 +5,7 @@ import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
 import { syncExpenseLedger, removeExpenseLedger } from '../lib/wallet-ledger.js';
+import { areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
 const router = Router();
 router.use(auth);
@@ -12,11 +13,11 @@ router.use(auth);
 const schema = z.object({
   title: z.string().trim().min(1).max(140),
   category: z.string().trim().min(1).max(80),
-  amount: z.number().positive().finite(),
+  amount: z.number().positive().finite().max(MAX_STORED_AMOUNT),
   currency: z.string().trim().min(3).max(8),
-  amountVnd: z.number().positive().finite().nullable().optional(),
-  targetToVndRate: z.number().positive().finite().nullable().optional(),
-  usdtCharged: z.number().positive().finite().optional(),
+  amountVnd: z.number().positive().finite().max(MAX_STORED_AMOUNT).nullable().optional(),
+  targetToVndRate: z.number().positive().finite().max(MAX_STORED_AMOUNT).nullable().optional(),
+  usdtCharged: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
   date: z.string().datetime().optional(),
   receiptId: z.string().optional(),
 });
@@ -120,6 +121,10 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       targetToVndRate: input.targetToVndRate,
       usdtCharged: input.usdtCharged,
     }, historicalRubPerUsdt, historicalVndPerUsdt, historicalVndPerRub);
+    if (!areSupportedStoredAmounts([amountVnd, amountRub])) {
+      res.status(400).json({ message: 'Calculated expense values exceed the supported storage range.' });
+      return;
+    }
 
     const record = await prisma.$transaction(async (tx) => {
       const created = await tx.expense.create({
@@ -241,6 +246,10 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       targetToVndRate: input.targetToVndRate,
       usdtCharged: input.usdtCharged,
     }, rubPerUsdt, vndPerUsdt, vndPerRub);
+    if (!areSupportedStoredAmounts([amountVnd, amountRub])) {
+      res.status(400).json({ message: 'Calculated expense values exceed the supported storage range.' });
+      return;
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const result = await tx.expense.updateMany({
