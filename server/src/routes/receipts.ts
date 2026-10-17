@@ -11,17 +11,17 @@ import {
   mapRubUsdtExchanges,
 } from '../lib/money.js';
 import { syncExpenseLedger } from '../lib/wallet-ledger.js';
-import { areRepresentableDecimals, areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
+import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
 const router = Router();
 router.use(auth);
 
 const itemSchema = z.object({
   name: z.string().trim().min(1).max(300),
-  price: z.number().positive().finite().min(0.000001).max(MAX_STORED_AMOUNT),
+  price: z.number().positive().finite().min(0.000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 6), 'Item price supports at most 6 decimal places.'),
   quantity: z.number().positive().finite().max(MAX_STORED_AMOUNT).default(1),
   currency: z.string().default('VND'),
-  amountVnd: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT),
+  amountVnd: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 4), 'VND amount supports at most 4 decimal places.'),
 });
 
 router.post('/', async (req: AuthedRequest, res, next) => {
