@@ -14,7 +14,8 @@ const currencySchema = z.enum(['RUB', 'USDT', 'VND']);
 export const movementSchema = z.object({
   kind: z.enum(['OPENING', 'ADJUSTMENT']),
   currency: currencySchema,
-  // Keep amounts inside Decimal(20, 8) with room for safe JS-number arithmetic.\n  amount: z.number().finite().min(-999_999_999_999.99).max(999_999_999_999.99),
+  // Keep amounts inside Decimal(20, 8) with room for safe JS-number arithmetic.
+  amount: z.number().finite().min(-999_999_999_999.99).max(999_999_999_999.99),
   note: z.string().trim().max(240).optional(),
 }).superRefine((value, ctx) => {
   if (value.kind === 'OPENING' && value.amount < 0) {
