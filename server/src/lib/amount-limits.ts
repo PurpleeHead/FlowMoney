@@ -18,13 +18,21 @@ export function isRepresentableDecimal(
   if (value == null) return true;
   if (!Number.isInteger(scale) || scale < 0 || scale > 8 || !isSupportedStoredAmount(value)) return false;
   if (value === 0) return allowZero;
-  if (Math.abs(value) < 10 ** -scale) return false;
-  // Prisma/PostgreSQL Decimal columns round excess fractional digits; reject rather than silently mutate money.
-  return Number(value.toFixed(scale)) === value;
+  return Math.abs(value) >= 10 ** -scale;
 }
 
 export function areRepresentableDecimals(
   values: Array<{ value: number | null | undefined; scale: number; allowZero?: boolean }>,
 ): boolean {
   return values.every(item => isRepresentableDecimal(item.value, item.scale, item.allowZero ?? false));
+}
+
+/** Check user-entered values have no fractional digits beyond the destination Decimal scale. */
+export function hasDecimalScale(value: number, scale: number): boolean {
+  if (!Number.isFinite(value) || !Number.isInteger(scale) || scale < 0 || scale > 8) return false;
+  return Number(value.toFixed(scale)) === value;
+}
+
+export function haveDecimalScales(values: Array<{ value: number | null | undefined; scale: number }>): boolean {
+  return values.every(item => item.value == null || hasDecimalScale(item.value, item.scale));
 }
