@@ -182,8 +182,11 @@ export function isExchangeVndOutcomeConsistent(input: {
   vndPerUsdt?: number | null;
   vndFee: number;
 }): boolean {
-  if (input.vndReceived == null || input.vndPerUsdt == null) return true;
+  if (input.vndReceived == null) return input.vndFee === 0 || input.vndPerUsdt == null;
+  if (!Number.isFinite(input.vndReceived) || input.vndReceived <= 0 ||
+      !Number.isFinite(input.vndFee) || input.vndFee < 0 || input.vndFee > input.vndReceived) return false;
+  if (input.vndPerUsdt == null) return true;
   const grossVnd = input.usdtReceived * input.vndPerUsdt;
   return Number.isFinite(grossVnd) && grossVnd > 0 &&
-    input.vndReceived + input.vndFee <= grossVnd + 0.01;
+    input.vndReceived <= grossVnd + 0.01;
 }
