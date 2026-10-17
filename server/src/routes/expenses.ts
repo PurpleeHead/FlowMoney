@@ -3,26 +3,37 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges } from '../lib/money.js';
+import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
+import { syncExpenseLedger, removeExpenseLedger } from '../lib/wallet-ledger.js';
+import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
 const router = Router();
 router.use(auth);
 
-const schema = z.object({
+export const expenseSchema = z.object({
   title: z.string().trim().min(1).max(140),
   category: z.string().trim().min(1).max(80),
-  amount: z.number().positive().finite(),
+  amount: z.number().positive().finite().min(0.000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 6), 'Amount supports at most 6 decimal places.'),
   currency: z.string().trim().min(3).max(8),
-  amountVnd: z.number().positive().finite().nullable().optional(),
-  targetToVndRate: z.number().positive().finite().nullable().optional(),
-  usdtCharged: z.number().positive().finite().optional(),
+  amountVnd: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 4), 'VND amount supports at most 4 decimal places.').nullable().optional(),
+  targetToVndRate: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'Target rate supports at most 8 decimal places.').nullable().optional(),
+  usdtCharged: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'USDT charge supports at most 8 decimal places.').optional(),
   date: z.string().datetime().optional(),
   receiptId: z.string().optional(),
+}).superRefine((value, ctx) => {
+  const currency = value.currency.trim().toUpperCase();
+  // These source values are also copied directly into Decimal(20, 4) valuation columns.
+  if (currency === 'RUB' && !hasDecimalScale(value.amount, 4)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'RUB expenses support at most 4 decimal places.' });
+  }
+  if (currency === 'VND' && !hasDecimalScale(value.amount, 4)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'VND expenses support at most 4 decimal places.' });
+  }
 });
 
 router.post('/', async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = schema.safeParse(req.body);
+    const parsed = expenseSchema.safeParse(req.body);
 
     if (!parsed.success) {
       res.status(400).json({
@@ -50,7 +61,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const [exchanges, previousPurchases] = await Promise.all([
       prisma.exchange.findMany({
         where: { userId, createdAt: { lte: expenseDate } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetVndEquivalent: true },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetCurrency: true, targetReceived: true, targetVndEquivalent: true },
       }),
       prisma.expense.findMany({
         where: {
@@ -63,7 +74,13 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     ]);
 
     const historicalRubPerUsdt = calculateRubPerUsdt(
-      exchanges.map(x => ({ rubSpent: Number(x.rubSpent), usdtReceived: Number(x.usdtReceived) }))
+      mapRubUsdtExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+        targetCurrency: x.targetCurrency,
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+      })))
     );
 
     // Prefer actual card purchases. If none exist yet, use only exchanges with an actual recorded VND outcome.
@@ -113,20 +130,30 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       targetToVndRate: input.targetToVndRate,
       usdtCharged: input.usdtCharged,
     }, historicalRubPerUsdt, historicalVndPerUsdt, historicalVndPerRub);
+    if (!areSupportedStoredAmounts([amountVnd, amountRub]) || !areRepresentableDecimals([
+      { value: amountVnd, scale: 4 }, { value: amountRub, scale: 4 },
+    ])) {
+      res.status(400).json({ message: 'Calculated expense values exceed the supported storage range.' });
+      return;
+    }
 
-    const record = await prisma.expense.create({
-      data: {
-        userId,
-        title: input.title,
-        category: input.category,
-        amount: input.amount,
-        currency: input.currency,
-        amountVnd,
-        amountRub,
-        usdtCharged: input.usdtCharged,
-        date: expenseDate,
-        receiptId: input.receiptId,
-      },
+    const record = await prisma.$transaction(async (tx) => {
+      const created = await tx.expense.create({
+        data: {
+          userId,
+          title: input.title,
+          category: input.category,
+          amount: input.amount,
+          currency: input.currency,
+          amountVnd,
+          amountRub,
+          usdtCharged: input.usdtCharged,
+          date: expenseDate,
+          receiptId: input.receiptId,
+        },
+      });
+      await syncExpenseLedger(tx, created);
+      return created;
     });
 
     res.status(201).json(record);
@@ -151,7 +178,7 @@ router.get('/', async (req: AuthedRequest, res, next) => {
 
 router.patch('/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = schema.safeParse(req.body);
+    const parsed = expenseSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ message: 'Check the expense name, amount, currency and category.' });
       return;
@@ -176,7 +203,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
     const [exchanges, otherPurchases] = await Promise.all([
       prisma.exchange.findMany({
         where: { userId, createdAt: { lte: expenseDate } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetVndEquivalent: true },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetCurrency: true, targetReceived: true, targetVndEquivalent: true },
       }),
       prisma.expense.findMany({
         where: { userId, id: { not: id }, date: { lte: expenseDate }, usdtCharged: { not: null } },
@@ -184,7 +211,13 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       }),
     ]);
     const rubPerUsdt = calculateRubPerUsdt(
-      exchanges.map(x => ({ rubSpent: Number(x.rubSpent), usdtReceived: Number(x.usdtReceived) }))
+      mapRubUsdtExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+        targetCurrency: x.targetCurrency,
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+      })))
     );
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
@@ -224,26 +257,37 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       targetToVndRate: input.targetToVndRate,
       usdtCharged: input.usdtCharged,
     }, rubPerUsdt, vndPerUsdt, vndPerRub);
+    if (!areSupportedStoredAmounts([amountVnd, amountRub]) || !areRepresentableDecimals([
+      { value: amountVnd, scale: 4 }, { value: amountRub, scale: 4 },
+    ])) {
+      res.status(400).json({ message: 'Calculated expense values exceed the supported storage range.' });
+      return;
+    }
 
-    const result = await prisma.expense.updateMany({
-      where: { id, userId },
-      data: {
-        title: input.title,
-        category: input.category,
-        amount: input.amount,
-        currency: input.currency,
-        amountVnd,
-        amountRub,
-        usdtCharged: input.usdtCharged ?? null,
-        date: expenseDate,
-        receiptId: input.receiptId ?? existing.receiptId,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.expense.updateMany({
+        where: { id, userId },
+        data: {
+          title: input.title,
+          category: input.category,
+          amount: input.amount,
+          currency: input.currency,
+          amountVnd,
+          amountRub,
+          usdtCharged: input.usdtCharged ?? null,
+          date: expenseDate,
+          receiptId: input.receiptId ?? existing.receiptId,
+        },
+      });
+      if (!result.count) return null;
+      const current = await tx.expense.findFirst({ where: { id, userId } });
+      if (current) await syncExpenseLedger(tx, current);
+      return current;
     });
-    if (!result.count) {
+    if (!updated) {
       res.status(404).json({ message: 'Expense not found.' });
       return;
     }
-    const updated = await prisma.expense.findFirst({ where: { id, userId } });
     res.json(updated);
   } catch (e) {
     next(e);
@@ -252,10 +296,14 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
 
 router.delete('/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const result = await prisma.expense.deleteMany({
-      where: { id: String(req.params.id), userId: req.user!.id },
+    const id = String(req.params.id);
+    const userId = req.user!.id;
+    const deleted = await prisma.$transaction(async (tx) => {
+      const result = await tx.expense.deleteMany({ where: { id, userId } });
+      if (result.count) await removeExpenseLedger(tx, userId, id);
+      return result.count;
     });
-    if (!result.count) {
+    if (!deleted) {
       res.status(404).json({ message: 'Expense not found.' });
       return;
     }

@@ -57,6 +57,25 @@ export function calculateObservedVndPerRub(input: {
   return rubTotal > 0 && vndTotal > 0 ? vndTotal / rubTotal : null;
 }
 
+
+/** Normalize every recorded RUB→USDT acquisition, including direct target-currency exchanges. */
+export function mapRubUsdtExchanges(exchanges: Array<{
+  mode: string;
+  rubSpent: number;
+  usdtReceived?: number | null;
+  targetCurrency?: string | null;
+  targetReceived?: number | null;
+}>): ExchangeObservation[] {
+  return exchanges.flatMap((exchange) => {
+    const isDirectUsdt = exchange.mode === 'RUB_TARGET' &&
+      exchange.targetCurrency?.trim().toUpperCase() === 'USDT';
+    const usdtReceived = isDirectUsdt ? exchange.targetReceived : exchange.usdtReceived;
+    if (usdtReceived == null || !Number.isFinite(exchange.rubSpent) || exchange.rubSpent <= 0 ||
+        !Number.isFinite(usdtReceived) || usdtReceived <= 0) return [];
+    return [{ rubSpent: exchange.rubSpent, usdtReceived }];
+  });
+}
+
 /** Convert exchange records into direct RUB-to-VND observations for historical-rate calculations. */
 export function mapDirectVndExchanges(exchanges: Array<{
   mode: string;
@@ -173,4 +192,20 @@ export function calculateTargetVndEquivalent(targetCurrency: string, targetRecei
     throw new Error('Target currency VND equivalent must be positive.');
   }
   return equivalent;
+}
+
+/** Reject impossible actual VND outcomes when a manual rate was also supplied. */
+export function isExchangeVndOutcomeConsistent(input: {
+  usdtReceived: number;
+  vndReceived?: number | null;
+  vndPerUsdt?: number | null;
+  vndFee: number;
+}): boolean {
+  if (input.vndReceived == null) return input.vndFee === 0;
+  if (!Number.isFinite(input.vndReceived) || input.vndReceived <= 0 ||
+      !Number.isFinite(input.vndFee) || input.vndFee < 0 || input.vndFee >= input.vndReceived) return false;
+  if (input.vndPerUsdt == null) return true;
+  const grossVnd = input.usdtReceived * input.vndPerUsdt;
+  return Number.isFinite(grossVnd) && grossVnd > 0 &&
+    input.vndReceived <= grossVnd + 0.01;
 }
