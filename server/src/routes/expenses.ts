@@ -20,6 +20,15 @@ export const expenseSchema = z.object({
   usdtCharged: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'USDT charge supports at most 8 decimal places.').optional(),
   date: z.string().datetime().optional(),
   receiptId: z.string().optional(),
+}).superRefine((value, ctx) => {
+  const currency = value.currency.trim().toUpperCase();
+  // These source values are also copied directly into Decimal(20, 4) valuation columns.
+  if (currency === 'RUB' && !hasDecimalScale(value.amount, 4)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'RUB expenses support at most 4 decimal places.' });
+  }
+  if (currency === 'VND' && !hasDecimalScale(value.amount, 4)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'VND expenses support at most 4 decimal places.' });
+  }
 });
 
 router.post('/', async (req: AuthedRequest, res, next) => {
