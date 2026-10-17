@@ -22,7 +22,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const observedVnd=purchases.reduce((sum,x)=>sum+Number(x.amountVnd),0);
     const observedUsdt=purchases.reduce((sum,x)=>sum+Number(x.usdtCharged),0);
     const observedVndPerUsdt=calculateObservedVndPerUsdt(
-      purchases.map(x=>({amountVnd:Number(x.amountVnd),usdtCharged:Number(x.usdtCharged)}))
+      purchases.map(x=>({amountVnd:x.amountVnd==null?null:Number(x.amountVnd),usdtCharged:Number(x.usdtCharged)}))
     );
 
     // Weighted by USDT received, using the same RUB/USDT helper as expense saving.
