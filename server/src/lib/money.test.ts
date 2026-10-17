@@ -193,6 +193,12 @@ describe('exchange rate consistency', () => {
     }), false);
   });
 
+  it('rejects net VND plus fee when their total exceeds the rate-derived gross amount', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 100, vndReceived: 2_490_000, vndPerUsdt: 25_000, vndFee: 20_001,
+    }), false);
+  });
+
   it('rejects a fee greater than the gross VND amount', () => {
     assert.equal(isExchangeVndOutcomeConsistent({
       usdtReceived: 1, vndReceived: 20_000, vndPerUsdt: 25_000, vndFee: 25_001,
