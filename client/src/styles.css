@@ -549,7 +549,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 }
 .field-label input,.field-label select,.field-label textarea,
 .expense-edit-form input,.expense-edit-form select,
-.password-section input,.verification-code-panel input{
+.password-section input{
   min-height:44px;
   border:1px solid var(--line);
   border-radius:var(--control-radius);
@@ -559,12 +559,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 }
 .field-label input:hover,.field-label select:hover,.field-label textarea:hover,
 .expense-edit-form input:hover,.expense-edit-form select:hover,
-.password-section input:hover,.verification-code-panel input:hover{
+.password-section input:hover{
   border-color:color-mix(in srgb,var(--purple) 45%,var(--line));
 }
 .field-label input:focus,.field-label select:focus,.field-label textarea:focus,
 .expense-edit-form input:focus,.expense-edit-form select:focus,
-.password-section input:focus,.verification-code-panel input:focus{
+.password-section input:focus{
   outline:0;
   border-color:var(--purple);
   background:var(--surface);
