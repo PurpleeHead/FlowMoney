@@ -141,4 +141,19 @@ describe('conservative card-expense RUB cost', () => {
     assert.equal(calculateExpenseRub({ currency: 'rub', amount: 125, amountVnd: 125 }, null, null), 125);
     assert.equal(calculateExpenseRub({ ...cardExpense, currency: 'vnd' }, null, 26_333, 2_600), null);
   });
+
+  it('does not treat an unsupported target currency as VND', () => {
+    assert.equal(calculateExpenseRub({
+      currency: 'GEL', amount: 100, amountVnd: 920_000,
+    }, 88.5, 25_000, 2_600), null);
+    assert.equal(calculateExpenseRub({
+      currency: 'TRY', amount: 100, amountVnd: 100,
+    }, 88.5, 25_000, 2_600), null);
+  });
+
+  it('rejects non-finite VND values instead of persisting an invalid RUB cost', () => {
+    assert.equal(calculateExpenseRub({
+      currency: 'VND', amount: Number.POSITIVE_INFINITY, amountVnd: Number.POSITIVE_INFINITY,
+    }, 88.5, 25_000, null), null);
+  });
 });
