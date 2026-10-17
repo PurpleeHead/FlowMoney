@@ -82,6 +82,11 @@ describe('parseAmountInput', () => {
     expect(parseAmountInput('2,19')).toBe('2.19');
     expect(parseAmountInput('93.7853')).toBe('93.7853');
   });
+  it('preserves large amounts formatted with spaces while typing', () => {
+    expect(parseAmountInput('10 000 000')).toBe('10000000');
+    expect(parseAmountInput('1 000 000')).toBe('1000000');
+    expect(parseAmountInput('10 000 000,25')).toBe('10000000.25');
+  });
   it('preserves large RUB amounts when grouped with dots', () => {
     expect(parseAmountInput('1.000')).toBe('1000');
     expect(parseAmountInput('10.000')).toBe('10000');
