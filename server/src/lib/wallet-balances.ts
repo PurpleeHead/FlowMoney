@@ -17,7 +17,8 @@ function roundAmount(value: number): number {
 }
 
 export function calculateWalletBalances(movements: WalletBalanceMovement[]): WalletBalance[] {
-  const currencies = [...new Set(movements.map(item => item.currency))].sort();
+  // Show all supported wallets even before any movement or opening snapshot exists.
+  const currencies = ['RUB', 'USDT', 'VND'];
   return currencies.map(currency => {
     const currencyMovements = movements
       .filter(item => item.currency === currency)
