@@ -9,16 +9,18 @@ import {
   calculateObservedVndPerUsdt,
   calculateRubPerUsdt,
 } from '../lib/money.js';
+import { syncExpenseLedger } from '../lib/wallet-ledger.js';
+import { areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
 const router = Router();
 router.use(auth);
 
 const itemSchema = z.object({
   name: z.string().trim().min(1).max(300),
-  price: z.number().positive().finite(),
-  quantity: z.number().positive().finite().default(1),
+  price: z.number().positive().finite().max(MAX_STORED_AMOUNT),
+  quantity: z.number().positive().finite().max(MAX_STORED_AMOUNT).default(1),
   currency: z.string().default('VND'),
-  amountVnd: z.number().positive().finite(),
+  amountVnd: z.number().positive().finite().max(MAX_STORED_AMOUNT),
 });
 
 router.post('/', async (req: AuthedRequest, res, next) => {
@@ -72,28 +74,40 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       rubPerUsdt,
     });
 
-    // Receipt and all its expenses are written in one transaction to avoid partial saves.
+    const preparedItems = items.map(item => ({
+      ...item,
+      amountRub: calculateExpenseRub({
+        currency: 'VND',
+        amount: item.price,
+        amountVnd: item.amountVnd,
+      }, rubPerUsdt, vndPerUsdt, vndPerRub),
+    }));
+    if (preparedItems.some(item => !areSupportedStoredAmounts([item.price, item.amountVnd, item.amountRub]))) {
+      res.status(400).json({ message: 'Calculated receipt values exceed the supported storage range.' });
+      return;
+    }
+
+    // Receipt and its expenses and wallet movements are written atomically.
     const result = await prisma.$transaction(async tx => {
       const receipt = await tx.receipt.create({
         data: { userId, rawText, items },
       });
-      await tx.expense.createMany({
-        data: items.map(item => ({
-          userId,
-          title: item.name,
-          category: 'Food & groceries',
-          amount: item.price,
-          currency: 'VND',
-          amountVnd: item.amountVnd,
-          amountRub: calculateExpenseRub({
-            currency: 'VND',
+      for (const item of preparedItems) {
+        const expense = await tx.expense.create({
+          data: {
+            userId,
+            title: item.name,
+            category: 'Food & groceries',
             amount: item.price,
+            currency: 'VND',
             amountVnd: item.amountVnd,
-          }, rubPerUsdt, vndPerUsdt, vndPerRub),
-          date: now,
-          receiptId: receipt.id,
-        })),
-      });
+            amountRub: item.amountRub,
+            date: now,
+            receiptId: receipt.id,
+          },
+        });
+        await syncExpenseLedger(tx, expense);
+      }
       return receipt;
     });
 
