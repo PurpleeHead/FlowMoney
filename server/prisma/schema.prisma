@@ -63,7 +63,7 @@ model Expense {
   category  String
   amount    Decimal  @db.Decimal(20, 6)
   currency  String
-  amountVnd   Decimal  @db.Decimal(20, 4)
+  amountVnd   Decimal? @db.Decimal(20, 4)
   amountRub   Decimal? @db.Decimal(20, 4)
   usdtCharged Decimal? @db.Decimal(20, 8)
   date        DateTime

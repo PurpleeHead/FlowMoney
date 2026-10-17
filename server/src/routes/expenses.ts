@@ -13,7 +13,8 @@ const schema = z.object({
   category: z.string().trim().min(1).max(80),
   amount: z.number().positive().finite(),
   currency: z.string().trim().min(3).max(8),
-  amountVnd: z.number().positive().finite(),
+  amountVnd: z.number().positive().finite().nullable().optional(),
+  targetToVndRate: z.number().positive().finite().nullable().optional(),
   usdtCharged: z.number().positive().finite().optional(),
   date: z.string().datetime().optional(),
   receiptId: z.string().optional(),
@@ -97,11 +98,19 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       rubPerUsdt: historicalRubPerUsdt,
     });
 
-    // This is the same formula used by the client preview. Save the resulting RUB amount once.
+    // Keep the source amount even when no trustworthy VND conversion is available.
+    const normalizedCurrency = input.currency.trim().toUpperCase();
+    const amountVnd = input.amountVnd ?? (
+      normalizedCurrency === 'VND' ? input.amount :
+      normalizedCurrency === 'USDT' && historicalVndPerUsdt != null ? input.amount * historicalVndPerUsdt :
+      normalizedCurrency === 'RUB' && historicalVndPerRub != null ? input.amount * historicalVndPerRub :
+      input.targetToVndRate != null ? input.amount * input.targetToVndRate : null
+    );
     const amountRub = calculateExpenseRub({
       currency: input.currency,
       amount: input.amount,
-      amountVnd: input.amountVnd,
+      amountVnd,
+      targetToVndRate: input.targetToVndRate,
       usdtCharged: input.usdtCharged,
     }, historicalRubPerUsdt, historicalVndPerUsdt, historicalVndPerRub);
 
@@ -112,7 +121,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         category: input.category,
         amount: input.amount,
         currency: input.currency,
-        amountVnd: input.amountVnd,
+        amountVnd,
         amountRub,
         usdtCharged: input.usdtCharged,
         date: expenseDate,
@@ -201,10 +210,18 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       cardPurchases: otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) })),
       rubPerUsdt,
     });
+    const normalizedCurrency = input.currency.trim().toUpperCase();
+    const amountVnd = input.amountVnd ?? (
+      normalizedCurrency === 'VND' ? input.amount :
+      normalizedCurrency === 'USDT' && vndPerUsdt != null ? input.amount * vndPerUsdt :
+      normalizedCurrency === 'RUB' && vndPerRub != null ? input.amount * vndPerRub :
+      input.targetToVndRate != null ? input.amount * input.targetToVndRate : null
+    );
     const amountRub = calculateExpenseRub({
       currency: input.currency,
       amount: input.amount,
-      amountVnd: input.amountVnd,
+      amountVnd,
+      targetToVndRate: input.targetToVndRate,
       usdtCharged: input.usdtCharged,
     }, rubPerUsdt, vndPerUsdt, vndPerRub);
 
@@ -215,7 +232,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         category: input.category,
         amount: input.amount,
         currency: input.currency,
-        amountVnd: input.amountVnd,
+        amountVnd,
         amountRub,
         usdtCharged: input.usdtCharged ?? null,
         date: expenseDate,

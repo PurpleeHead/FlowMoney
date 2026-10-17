@@ -4,8 +4,9 @@ export type DirectVndObservation = { rubSpent: number; vndReceived: number };
 export type ExpenseRubInput = {
   currency: string;
   amount: number;
-  amountVnd: number;
+  amountVnd: number | null;
   usdtCharged?: number | null;
+  targetToVndRate?: number | null;
 };
 
 /** Effective RUB/USDT from all recorded RUB -> USDT conversions, weighted by USDT received. */
@@ -114,10 +115,18 @@ export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number |
 
   // This helper only has conversion inputs for VND. Do not silently interpret GEL,
   // TRY, or another target currency as VND; a target-specific conversion path is required.
-  if (currency !== 'VND') return null;
+  if (currency !== 'VND') {
+    // Other currencies may be normalized only when the caller supplied an explicit
+    // target-currency → VND rate. Never reinterpret an unknown currency as VND.
+    if (input.targetToVndRate == null || !Number.isFinite(input.targetToVndRate) || input.targetToVndRate <= 0 ||
+        input.amountVnd == null || !Number.isFinite(input.amountVnd) || input.amountVnd <= 0) return null;
+    return vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0
+      ? input.amountVnd / vndPerRub
+      : null;
+  }
 
-  if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0 &&
-      Number.isFinite(input.amountVnd) && input.amountVnd > 0) {
+  if (input.amountVnd == null || !Number.isFinite(input.amountVnd) || input.amountVnd <= 0) return null;
+  if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0) {
     return input.amountVnd / vndPerRub;
   }
   return estimateRubFromVnd(input.amountVnd, vndPerUsdt, rubPerUsdt);

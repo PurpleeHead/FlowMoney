@@ -18,7 +18,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
 
     const totalVnd=expenses.reduce((sum,x)=>sum+Number(x.amountVnd),0);
     const monthVnd=expenses.filter(x=>x.date>=start).reduce((sum,x)=>sum+Number(x.amountVnd),0);
-    const purchases=expenses.filter(x=>x.usdtCharged!=null && Number(x.usdtCharged)>0);
+    const purchases=expenses.filter(x=>x.amountVnd!=null && x.usdtCharged!=null && Number(x.usdtCharged)>0);
     const observedVnd=purchases.reduce((sum,x)=>sum+Number(x.amountVnd),0);
     const observedUsdt=purchases.reduce((sum,x)=>sum+Number(x.usdtCharged),0);
     const observedVndPerUsdt=calculateObservedVndPerUsdt(
@@ -72,7 +72,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       totalVnd,monthVnd,balanceVnd,confirmedExchangeVnd,estimatedUnconvertedVnd,planningVndPerUsdt,
       balanceIsEstimated: estimatedUnconvertedVnd > 0 || exchanges.some(x => x.mode === 'RUB_TARGET' && x.targetCurrency !== 'VND' && x.targetVndEquivalent != null),
       observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerUsdt,effectiveVndPerRub,
-      expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
+      expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:x.amountVnd==null?null:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
       exchanges:exchanges.map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),planningVndPerUsdt:x.planningVndPerUsdt==null?null:Number(x.planningVndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),targetReceived:x.targetReceived==null?null:Number(x.targetReceived),targetToVndRate:x.targetToVndRate==null?null:Number(x.targetToVndRate),targetVndEquivalent:x.targetVndEquivalent==null?null:Number(x.targetVndEquivalent),targetCurrency:x.targetCurrency,effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:x.effectiveRubPerUsdt==null?null:Number(x.effectiveRubPerUsdt)}))
     });
   } catch(e) { next(e); }
