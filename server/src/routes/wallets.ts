@@ -5,6 +5,7 @@ import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { prisma } from '../services/prisma.js';
 import { calculateWalletBalances } from '../lib/wallet-balances.js';
+import { hasDecimalScale } from '../lib/amount-limits.js';
 import { adjustmentSourceKey, openingBalanceSourceKey } from '../lib/wallet-movement-keys.js';
 
 const router = Router();
@@ -21,8 +22,11 @@ export const movementSchema = z.object({
   if (value.kind === 'OPENING' && value.amount < 0) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'Opening balance cannot be negative.' });
   }
-  if (value.kind === 'ADJUSTMENT' && value.amount === 0) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'Adjustment must be non-zero.' });
+  if (!hasDecimalScale(value.amount, 8)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'Wallet amounts support at most 8 decimal places.' });
+  }
+  if (value.kind === 'ADJUSTMENT' && Math.abs(value.amount) < 0.00000001) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'Adjustment must be non-zero and representable at 8 decimal places.' });
   }
 });
 
