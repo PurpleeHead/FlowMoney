@@ -94,7 +94,10 @@ export function estimateRubFromVnd(
 export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number | null, vndPerUsdt: number | null, vndPerRub: number | null = null): number | null {
   const currency = input.currency.trim().toUpperCase();
 
-  if (currency === 'RUB') return Number.isFinite(input.amount) && input.amount > 0 ? input.amount : null;
+  // Validate the source amount before considering alternate equivalents or card debits.
+  if (!Number.isFinite(input.amount) || input.amount <= 0) return null;
+
+  if (currency === 'RUB') return input.amount;
   if (currency === 'USDT') {
     return rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
       Number.isFinite(input.amount) && input.amount > 0 ? input.amount * rubPerUsdt : null;
@@ -109,7 +112,14 @@ export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number |
     return input.usdtCharged * rubPerUsdt;
   }
 
-  if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0 && input.amountVnd > 0) return input.amountVnd / vndPerRub;
+  // This helper only has conversion inputs for VND. Do not silently interpret GEL,
+  // TRY, or another target currency as VND; a target-specific conversion path is required.
+  if (currency !== 'VND') return null;
+
+  if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0 &&
+      Number.isFinite(input.amountVnd) && input.amountVnd > 0) {
+    return input.amountVnd / vndPerRub;
+  }
   return estimateRubFromVnd(input.amountVnd, vndPerUsdt, rubPerUsdt);
 }
 
