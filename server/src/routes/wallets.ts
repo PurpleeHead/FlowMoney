@@ -26,27 +26,27 @@ const movementSchema = z.object({
 router.get('/balances', async (req: AuthedRequest, res, next) => {
   try {
     const userId = req.user!.id;
-    const [groups, openings] = await Promise.all([
-      prisma.walletMovement.groupBy({
-        by: ['currency'],
-        where: { userId },
-        _sum: { amountDelta: true },
-      }),
-      prisma.walletMovement.findMany({
-        where: { userId, kind: 'OPENING' },
-        select: { currency: true },
-      }),
-    ]);
-    const openedCurrencies = new Set(openings.map(item => item.currency));
+    const movements = await prisma.walletMovement.findMany({
+      where: { userId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { currency: true, amountDelta: true, kind: true, createdAt: true },
+    });
+    const currencies = [...new Set(movements.map(item => item.currency))];
     res.json({
-      balances: groups.map(group => {
-        const netMovement = Number(group._sum.amountDelta ?? 0);
-        const hasOpeningBalance = openedCurrencies.has(group.currency);
+      balances: currencies.map(currency => {
+        const currencyMovements = movements.filter(item => item.currency === currency);
+        const opening = currencyMovements.find(item => item.kind === 'OPENING');
+        const netMovement = currencyMovements.reduce((sum, item) => sum + Number(item.amountDelta), 0);
+        const balance = opening
+          ? Number(opening.amountDelta) + currencyMovements
+              .filter(item => item.kind !== 'OPENING' && item.createdAt >= opening.createdAt)
+              .reduce((sum, item) => sum + Number(item.amountDelta), 0)
+          : null;
         return {
-          currency: group.currency,
+          currency,
           netMovement,
-          hasOpeningBalance,
-          balance: hasOpeningBalance ? netMovement : null,
+          hasOpeningBalance: Boolean(opening),
+          balance,
         };
       }),
     });
