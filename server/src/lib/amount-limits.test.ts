@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { areRepresentableDecimals, areSupportedStoredAmounts, isRepresentableDecimal, isSupportedStoredAmount, MAX_STORED_AMOUNT } from './amount-limits.js';
+import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, isRepresentableDecimal, isSupportedStoredAmount, MAX_STORED_AMOUNT } from './amount-limits.js';
 
 describe('persisted amount limits', () => {
   it('accepts null optional values and finite values within the supported bound', () => {
@@ -18,7 +18,7 @@ describe('persisted amount limits', () => {
     assert.equal(isSupportedStoredAmount(-MAX_STORED_AMOUNT - 1), false);
     assert.equal(areSupportedStoredAmounts([100, Number.POSITIVE_INFINITY]), false);
   });
-  
+
   it('rejects non-zero values below a column scale and permits zero only when explicit', () => {
     assert.equal(isRepresentableDecimal(0.0001, 4), true);
     assert.equal(isRepresentableDecimal(0.00001, 4), false);
@@ -33,11 +33,12 @@ describe('persisted amount limits', () => {
     assert.equal(areRepresentableDecimals([{ value: 1e-9, scale: 8 }]), false);
   });
 
-  it('rejects values that would be rounded when persisted at the column scale', () => {
-    assert.equal(isRepresentableDecimal(1.2345, 4), true);
-    assert.equal(isRepresentableDecimal(1.23456, 4), false);
-    assert.equal(isRepresentableDecimal(1.23456789, 8), true);
-    assert.equal(isRepresentableDecimal(1.234567891, 8), false);
-    assert.equal(isRepresentableDecimal(8300.0001, 4), true);
+  it('checks exact input scale separately from derived-value representability', () => {
+    assert.equal(isRepresentableDecimal(1.23456, 4), true);
+    assert.equal(hasDecimalScale(1.2345, 4), true);
+    assert.equal(hasDecimalScale(1.23456, 4), false);
+    assert.equal(hasDecimalScale(1.23456789, 8), true);
+    assert.equal(hasDecimalScale(1.234567891, 8), false);
+    assert.equal(hasDecimalScale(8300.0001, 4), true);
   });
 });
