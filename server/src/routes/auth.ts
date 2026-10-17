@@ -50,19 +50,30 @@ router.post('/register',async(req,res,next)=>{
     if(!parsed.success){res.status(400).json({message:'Enter a valid email and a password of at least 8 characters.'});return;}
     const {email,password}=parsed.data;
     if(await prisma.user.findUnique({where:{email}})){res.status(409).json({message:'An account with this email already exists.'});return;}
-    const verificationCode=String(randomInt(100000,1000000));
+    // Email verification can be disabled for local development only.
+    // Production always requires verification, regardless of environment variables.
+    const emailVerificationRequired =
+      process.env.NODE_ENV === 'production' ||
+      process.env.EMAIL_VERIFICATION_REQUIRED !== 'false';
+    const verificationCode=emailVerificationRequired ? String(randomInt(100000,1000000)) : null;
     const passwordHash=await bcrypt.hash(password,12);
     const user=await prisma.user.create({
       data:{
-        email,passwordHash,emailVerified:false,
-        emailVerificationTokenHash:hashVerificationToken(verificationCode),
-        emailVerificationExpiresAt:new Date(Date.now()+15*60*1000),
+        email,passwordHash,emailVerified:!emailVerificationRequired,
+        emailVerificationTokenHash:verificationCode ? hashVerificationToken(verificationCode) : null,
+        emailVerificationExpiresAt:verificationCode ? new Date(Date.now()+15*60*1000) : null,
         wallets:{create:[{currency:'RUB',balance:0,label:'Russian ruble'},{currency:'USDT',balance:0,label:'Tether'},{currency:'VND',balance:0,label:'Vietnamese dong'}]},
       },
     });
     createdUserId=user.id;
-    await sendVerificationEmail(user.email,verificationCode);
-    res.status(201).json({message:'Account created. Check your email for the 6-digit activation code, then enter it below.'});
+    if(emailVerificationRequired){
+      await sendVerificationEmail(user.email,verificationCode!);
+    }
+    res.status(201).json({
+      message:emailVerificationRequired
+        ? 'Account created. Check your email for the 6-digit activation code, then enter it below.'
+        : 'Account created. You can now sign in.',
+    });
   }catch(e){
     if(createdUserId){
       try{await prisma.user.delete({where:{id:createdUserId}});}catch{/* Keep the original error for diagnostics. */}
