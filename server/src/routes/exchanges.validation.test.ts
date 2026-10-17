@@ -16,7 +16,13 @@ describe('exchange request validation', () => {
     assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1, vndFee: 0.00001 }).success, false);
   });
 
-  it('rejects source values with excess fractional digits', () => {\n    assert.equal(exchangeSchema.safeParse({ rubSpent: 1.23456, usdtReceived: 1 }).success, false);\n    assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1.123456789 }).success, false);\n    assert.equal(exchangeSchema.safeParse({ mode: 'RUB_VND', rubSpent: 1, vndReceived: 100.00001 }).success, false);\n  });\n\n  it('rejects oversized amounts, rates, and fees before database writes', () => {
+  it('rejects source values with excess fractional digits', () => {
+    assert.equal(exchangeSchema.safeParse({ rubSpent: 1.23456, usdtReceived: 1 }).success, false);
+    assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1.123456789 }).success, false);
+    assert.equal(exchangeSchema.safeParse({ mode: 'RUB_VND', rubSpent: 1, vndReceived: 100.00001 }).success, false);
+  });
+
+  it('rejects oversized amounts, rates, and fees before database writes', () => {
     assert.equal(exchangeSchema.safeParse({ rubSpent: MAX_STORED_AMOUNT + 1, usdtReceived: 1 }).success, false);
     assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: MAX_STORED_AMOUNT + 1 }).success, false);
     assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1, vndPerUsdt: MAX_STORED_AMOUNT + 1 }).success, false);
