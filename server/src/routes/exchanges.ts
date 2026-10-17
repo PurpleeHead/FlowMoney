@@ -172,6 +172,13 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         res.status(400).json({ message: 'Enter the actual USDT received.' });
         return;
       }
+      if (x.vndPerUsdt != null && x.vndReceived != null) {
+        const grossVnd = x.usdtReceived * x.vndPerUsdt;
+        if (x.vndReceived > grossVnd + 0.01 || x.vndFee > grossVnd) {
+          res.status(400).json({ message: 'VND result or fee is inconsistent with the entered rate.' });
+          return;
+        }
+      }
       if (x.vndReceived == null && x.vndPerUsdt != null) {
         res.status(400).json({ message: 'Enter actual VND received or leave the VND amount blank.' });
         return;
