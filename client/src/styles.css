@@ -534,3 +534,24 @@ html,body,#root{max-width:100%}
   .chart-bars{max-width:100%;overflow-x:auto}
   .consent-banner{width:calc(100% - 12px);left:6px;transform:none}
 }
+
+
+/* Accessible in-app delete confirmation and consistent expense row actions. */
+.row-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px}
+.row-actions .edit-button,.row-actions .delete-button{box-sizing:border-box;width:34px;height:34px;min-width:34px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;padding:0;border:1px solid var(--line);border-radius:9px;background:var(--surface2);color:var(--muted);line-height:1;cursor:pointer;transition:background .18s ease,border-color .18s ease,color .18s ease,transform .18s ease}
+.row-actions .edit-button:hover{background:color-mix(in srgb,var(--purple) 10%,var(--surface));border-color:color-mix(in srgb,var(--purple) 38%,var(--line));color:var(--purple)}
+.row-actions .delete-button{font-size:21px;font-weight:500}
+.row-actions .delete-button:hover{background:color-mix(in srgb,#dc4545 10%,var(--surface));border-color:color-mix(in srgb,#dc4545 45%,var(--line));color:#dc4545}
+.modal-backdrop{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(12,13,24,.58);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+.confirm-modal{width:min(440px,100%);padding:26px;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--text);box-shadow:0 24px 80px rgba(0,0,0,.28);animation:confirm-modal-in .18s ease-out}
+.confirm-modal-icon{width:40px;height:40px;display:grid;place-items:center;margin-bottom:18px;border-radius:12px;background:color-mix(in srgb,#dc4545 12%,var(--surface));color:#dc4545;font-size:22px;font-weight:800}
+.confirm-modal h2{margin:0 0 9px;font:800 20px/1.3 Manrope,sans-serif;letter-spacing:-.4px}
+.confirm-modal p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.confirm-modal-item{display:block;margin-top:12px;padding:10px 12px;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:9px;background:var(--surface2);font-size:13px}
+.confirm-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+.confirm-modal-actions .button{min-width:112px;min-height:40px}
+.confirm-modal-actions .button.danger{border:1px solid #dc4545;background:#dc4545;color:white}
+.confirm-modal-actions .button.danger:hover{background:#c73535;border-color:#c73535}
+@keyframes confirm-modal-in{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(max-width:480px){.confirm-modal{padding:21px;border-radius:15px}.confirm-modal-actions{display:grid;grid-template-columns:1fr 1fr}.confirm-modal-actions .button{min-width:0;width:100%}.row-actions{gap:8px}.row-actions .edit-button,.row-actions .delete-button{width:32px;height:32px;min-width:32px;flex-basis:32px}}
+@media(prefers-reduced-motion:reduce){.confirm-modal{animation:none}.row-actions .edit-button,.row-actions .delete-button{transition:none}}
