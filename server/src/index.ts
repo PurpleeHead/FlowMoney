@@ -11,6 +11,7 @@ import expenseRoutes from './routes/expenses.js';
 import receiptRoutes from './routes/receipts.js';
 import translateRoutes from './routes/translate.js';
 import dashboardRoutes from './routes/dashboard.js';
+import journalRoutes from './routes/journal.js';
 import { errorHandler } from './middleware/errors.js';
 import { prisma } from './services/prisma.js';
 
@@ -39,6 +40,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/receipts', receiptRoutes);
 app.use('/api/translate', translateRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/journal', journalRoutes);
 
 // The server starts from the `server` workspace in production, but some local
 // commands may start it from the repository root. Resolve the built client in
