@@ -187,7 +187,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
     const [exchanges, otherPurchases] = await Promise.all([
       prisma.exchange.findMany({
         where: { userId, createdAt: { lte: expenseDate } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetVndEquivalent: true },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetCurrency: true, targetReceived: true, targetVndEquivalent: true },
       }),
       prisma.expense.findMany({
         where: { userId, id: { not: id }, date: { lte: expenseDate }, usdtCharged: { not: null } },
