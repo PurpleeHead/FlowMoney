@@ -1,6 +1,6 @@
 # Stage 3 — journal and wallet accounting design
 
-Status: design and normalization helper only. No wallet balances are changed and no database migration is applied in this stage.
+Status: authenticated read-only journal API is implemented. Wallet balances are not yet changed and no database migration is applied in this stage.
 
 ## Current findings
 
@@ -22,7 +22,7 @@ Status: design and normalization helper only. No wallet balances are changed and
 
 ## Next implementation steps
 
-- Expose the normalized chronological journal through an authenticated API.
+- [x] Expose the normalized chronological journal through an authenticated API (`GET /api/journal?limit=100`, limit 1–500; current-user records only).
 - Add opening balance / adjustment operations and derive per-currency balances from signed ledger movements.
 - Synchronize create, edit, and delete of expenses/exchanges transactionally.
 - Add integration tests for duplicate prevention, user ownership, card-debit accounting, edits/deletes, and unknown rates.
