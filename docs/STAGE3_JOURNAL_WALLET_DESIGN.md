@@ -1,6 +1,6 @@
 # Stage 3 — journal and wallet accounting design
 
-Status: authenticated read-only journal API is implemented. Wallet balances are not yet changed and no database migration is applied in this stage.
+Status: authenticated journal API and manual wallet opening/adjustment endpoints are implemented. Wallet movements are stored in a new additive model; the migration is committed but has not been applied to any database.
 
 ## Current findings
 
@@ -22,7 +22,10 @@ Status: authenticated read-only journal API is implemented. Wallet balances are 
 
 ## Next implementation steps
 
-- [x] Expose the normalized chronological journal through an authenticated API (`GET /api/journal?limit=100`, limit 1–500; current-user records only).
+- [x] Expose the normalized chronological journal through an authenticated API (`GET /api/journal?limit=100`, limit 1–500; current-user records only), including manual wallet movements.
+- [x] Add `POST /api/wallets/movements` for one opening balance per currency or signed manual adjustments.
+- [x] Add `GET /api/wallets/balances`; it returns a numeric balance only when an opening balance is recorded, otherwise `balance: null` plus net movement.
+- [x] Add an additive `WalletMovement` Prisma model and forward-only SQL migration (not applied).
 - Add opening balance / adjustment operations and derive per-currency balances from signed ledger movements.
 - Synchronize create, edit, and delete of expenses/exchanges transactionally.
 - Add integration tests for duplicate prevention, user ownership, card-debit accounting, edits/deletes, and unknown rates.
