@@ -1,9 +1,11 @@
 import { Router } from 'express';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { calculateTargetVndEquivalent, resolveExchangeVndOutcome } from '../lib/money.js';
+import { syncExchangeLedger, removeExchangeLedger } from '../lib/wallet-ledger.js';
 
 const router = Router();
 router.use(auth);
@@ -20,6 +22,14 @@ const schema = z.object({
   targetReceived: z.number().positive().finite().optional(),
   targetToVndRate: z.number().positive().finite().optional(),
 });
+
+async function createExchangeWithLedger(data: Prisma.ExchangeUncheckedCreateInput) {
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.exchange.create({ data });
+    await syncExchangeLedger(tx, created);
+    return created;
+  });
+}
 
 function directTargetData(x: z.infer<typeof schema>) {
   if (x.targetReceived == null) throw new Error('Enter the amount received in the target currency.');
@@ -56,7 +66,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         res.status(400).json({ message: error instanceof Error ? error.message : 'Enter valid target currency amounts.' });
         return;
       }
-      const record = await prisma.exchange.create({ data: { userId: req.user!.id, ...data } });
+      const record = await createExchangeWithLedger({ userId: req.user!.id, ...data });
       res.status(201).json(record);
       return;
     }
@@ -71,14 +81,12 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         return;
       }
       const vndReceived = x.vndReceived - x.vndFee;
-      const record = await prisma.exchange.create({
-        data: {
-          userId: req.user!.id, mode: 'RUB_VND', rubSpent: x.rubSpent,
-          usdtReceived: null, vndPerUsdt: null, planningVndPerUsdt: null,
-          vndFee: x.vndFee, vndReceived, effectiveVndPerRub: vndReceived / x.rubSpent,
-          effectiveRubPerUsdt: null, targetCurrency: 'VND', targetReceived: vndReceived,
-          targetToVndRate: 1, targetVndEquivalent: null,
-        },
+      const record = await createExchangeWithLedger({
+        userId: req.user!.id, mode: 'RUB_VND', rubSpent: x.rubSpent,
+        usdtReceived: null, vndPerUsdt: null, planningVndPerUsdt: null,
+        vndFee: x.vndFee, vndReceived, effectiveVndPerRub: vndReceived / x.rubSpent,
+        effectiveRubPerUsdt: null, targetCurrency: 'VND', targetReceived: vndReceived,
+        targetToVndRate: 1, targetVndEquivalent: null,
       });
       res.status(201).json(record);
       return;
@@ -106,16 +114,14 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       res.status(400).json({ message: 'Enter the actual VND amount received, or leave VND unknown.' });
       return;
     }
-    const record = await prisma.exchange.create({
-      data: {
-        userId: req.user!.id, mode: 'RUB_USDT_VND', rubSpent: x.rubSpent,
-        usdtReceived: x.usdtReceived, vndPerUsdt: outcome.vndPerUsdt,
-        planningVndPerUsdt: outcome.vndReceived == null ? (x.planningVndPerUsdt ?? null) : null,
-        vndFee: x.vndFee, vndReceived: outcome.vndReceived,
-        effectiveVndPerRub: outcome.vndReceived == null ? null : outcome.vndReceived / x.rubSpent,
-        effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
-        targetCurrency: 'VND', targetReceived: null, targetToVndRate: null, targetVndEquivalent: null,
-      },
+    const record = await createExchangeWithLedger({
+      userId: req.user!.id, mode: 'RUB_USDT_VND', rubSpent: x.rubSpent,
+      usdtReceived: x.usdtReceived, vndPerUsdt: outcome.vndPerUsdt,
+      planningVndPerUsdt: outcome.vndReceived == null ? (x.planningVndPerUsdt ?? null) : null,
+      vndFee: x.vndFee, vndReceived: outcome.vndReceived,
+      effectiveVndPerRub: outcome.vndReceived == null ? null : outcome.vndReceived / x.rubSpent,
+      effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
+      targetCurrency: 'VND', targetReceived: null, targetToVndRate: null, targetVndEquivalent: null,
     });
     res.status(201).json(record);
   } catch (e) { next(e); }
@@ -181,20 +187,33 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         targetCurrency: 'VND', targetReceived: null, targetToVndRate: null, targetVndEquivalent: null,
       };
     }
-    const result = await prisma.exchange.updateMany({ where: { id: String(req.params.id), userId: req.user!.id }, data });
-    if (!result.count) {
+    const id = String(req.params.id);
+    const userId = req.user!.id;
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.exchange.updateMany({ where: { id, userId }, data });
+      if (!result.count) return null;
+      const current = await tx.exchange.findFirst({ where: { id, userId } });
+      if (current) await syncExchangeLedger(tx, current);
+      return current;
+    });
+    if (!updated) {
       res.status(404).json({ message: 'Exchange not found.' });
       return;
     }
-    const updated = await prisma.exchange.findFirst({ where: { id: String(req.params.id), userId: req.user!.id } });
     res.json(updated);
   } catch (e) { next(e); }
 });
 
 router.delete('/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const result = await prisma.exchange.deleteMany({ where: { id: String(req.params.id), userId: req.user!.id } });
-    if (!result.count) {
+    const id = String(req.params.id);
+    const userId = req.user!.id;
+    const deleted = await prisma.$transaction(async (tx) => {
+      const result = await tx.exchange.deleteMany({ where: { id, userId } });
+      if (result.count) await removeExchangeLedger(tx, userId, id);
+      return result.count;
+    });
+    if (!deleted) {
       res.status(404).json({ message: 'Exchange not found.' });
       return;
     }
