@@ -89,7 +89,9 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         amountVnd: item.amountVnd,
       }, rubPerUsdt, vndPerUsdt, vndPerRub),
     }));
-    if (preparedItems.some(item => !areSupportedStoredAmounts([item.price, item.amountVnd, item.amountRub]) || !areRepresentableDecimals([\n      { value: item.price, scale: 6 }, { value: item.amountVnd, scale: 4 }, { value: item.amountRub, scale: 4 },\n    ]))) {
+    if (preparedItems.some(item => !areSupportedStoredAmounts([item.price, item.amountVnd, item.amountRub]) || !areRepresentableDecimals([
+      { value: item.price, scale: 6 }, { value: item.amountVnd, scale: 4 }, { value: item.amountRub, scale: 4 },
+    ]))) {
       res.status(400).json({ message: 'Calculated receipt values exceed the supported storage range.' });
       return;
     }
