@@ -10,7 +10,7 @@ import { areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limi
 const router = Router();
 router.use(auth);
 
-const schema = z.object({
+export const expenseSchema = z.object({
   title: z.string().trim().min(1).max(140),
   category: z.string().trim().min(1).max(80),
   amount: z.number().positive().finite().max(MAX_STORED_AMOUNT),
@@ -24,7 +24,7 @@ const schema = z.object({
 
 router.post('/', async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = schema.safeParse(req.body);
+    const parsed = expenseSchema.safeParse(req.body);
 
     if (!parsed.success) {
       res.status(400).json({
@@ -167,7 +167,7 @@ router.get('/', async (req: AuthedRequest, res, next) => {
 
 router.patch('/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = schema.safeParse(req.body);
+    const parsed = expenseSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ message: 'Check the expense name, amount, currency and category.' });
       return;
