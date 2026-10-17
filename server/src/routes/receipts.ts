@@ -11,17 +11,17 @@ import {
   mapRubUsdtExchanges,
 } from '../lib/money.js';
 import { syncExpenseLedger } from '../lib/wallet-ledger.js';
-import { areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
+import { areRepresentableDecimals, areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
 const router = Router();
 router.use(auth);
 
 const itemSchema = z.object({
   name: z.string().trim().min(1).max(300),
-  price: z.number().positive().finite().max(MAX_STORED_AMOUNT),
+  price: z.number().positive().finite().min(0.000001).max(MAX_STORED_AMOUNT),
   quantity: z.number().positive().finite().max(MAX_STORED_AMOUNT).default(1),
   currency: z.string().default('VND'),
-  amountVnd: z.number().positive().finite().max(MAX_STORED_AMOUNT),
+  amountVnd: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT),
 });
 
 router.post('/', async (req: AuthedRequest, res, next) => {
@@ -89,7 +89,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         amountVnd: item.amountVnd,
       }, rubPerUsdt, vndPerUsdt, vndPerRub),
     }));
-    if (preparedItems.some(item => !areSupportedStoredAmounts([item.price, item.amountVnd, item.amountRub]))) {
+    if (preparedItems.some(item => !areSupportedStoredAmounts([item.price, item.amountVnd, item.amountRub]) || !areRepresentableDecimals([\n      { value: item.price, scale: 6 }, { value: item.amountVnd, scale: 4 }, { value: item.amountRub, scale: 4 },\n    ]))) {
       res.status(400).json({ message: 'Calculated receipt values exceed the supported storage range.' });
       return;
     }
