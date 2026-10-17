@@ -9,7 +9,14 @@ describe('exchange request validation', () => {
     assert.equal(exchangeSchema.safeParse({ rubSpent: MAX_STORED_AMOUNT, usdtReceived: 1 }).success, true);
   });
 
-  it('rejects positive exchange inputs below the persisted column precision', () => {\n    assert.equal(exchangeSchema.safeParse({ rubSpent: 0.00001, usdtReceived: 1 }).success, false);\n    assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 0.000000001 }).success, false);\n    assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1, vndPerUsdt: 0.00001 }).success, false);\n    assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1, vndFee: 0.00001 }).success, false);\n  });\n\n  it('rejects oversized amounts, rates, and fees before database writes', () => {
+  it('rejects positive exchange inputs below the persisted column precision', () => {
+    assert.equal(exchangeSchema.safeParse({ rubSpent: 0.00001, usdtReceived: 1 }).success, false);
+    assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 0.000000001 }).success, false);
+    assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1, vndPerUsdt: 0.00001 }).success, false);
+    assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1, vndFee: 0.00001 }).success, false);
+  });
+
+  it('rejects oversized amounts, rates, and fees before database writes', () => {
     assert.equal(exchangeSchema.safeParse({ rubSpent: MAX_STORED_AMOUNT + 1, usdtReceived: 1 }).success, false);
     assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: MAX_STORED_AMOUNT + 1 }).success, false);
     assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1, vndPerUsdt: MAX_STORED_AMOUNT + 1 }).success, false);
