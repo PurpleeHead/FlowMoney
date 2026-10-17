@@ -16,7 +16,7 @@ import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, M
 const router = Router();
 router.use(auth);
 
-const itemSchema = z.object({
+export const itemSchema = z.object({
   name: z.string().trim().min(1).max(300),
   price: z.number().positive().finite().min(0.000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 6), 'Item price supports at most 6 decimal places.'),
   quantity: z.number().positive().finite().max(MAX_STORED_AMOUNT).default(1),
