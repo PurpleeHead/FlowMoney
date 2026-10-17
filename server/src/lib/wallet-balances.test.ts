@@ -46,6 +46,20 @@ describe('wallet balance calculation', () => {
     assert.equal(balances.find(item => item.currency === 'USDT')?.balance, 48.5);
   });
 
+  it('excludes a pre-opening movement with the exact same occurrence timestamp', () => {
+    const balances = calculateWalletBalances([
+      {
+        currency: 'USDT', amountDelta: -2, kind: 'EXPENSE',
+        createdAt: at('2026-10-16T08:00:00.000Z'), occurredAt: at('2026-10-16T08:00:00.000Z'),
+      },
+      {
+        currency: 'USDT', amountDelta: 50, kind: 'OPENING',
+        createdAt: at('2026-10-16T08:00:00.001Z'), occurredAt: at('2026-10-16T08:00:00.000Z'),
+      },
+    ]);
+    assert.equal(balances.find(item => item.currency === 'USDT')?.balance, 50);
+  });
+
   it('returns stable currency ordering and keeps currencies independent', () => {
     const balances = calculateWalletBalances([
       { currency: 'VND', amountDelta: 100, kind: 'OPENING', createdAt: at('2026-10-16T08:00:00Z'), occurredAt: at('2026-10-16T08:00:00Z') },
