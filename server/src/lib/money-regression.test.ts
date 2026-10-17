@@ -72,6 +72,18 @@ describe('money regression boundaries', () => {
     }, 88.5, 25_000, 2_600), null);
   });
 
+
+  it('rejects an invalid source amount even if a separate VND equivalent is valid', () => {
+    for (const amount of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      assert.equal(calculateExpenseRub({
+        currency: 'VND',
+        amount,
+        amountVnd: 100_000,
+        usdtCharged: 3,
+      }, 88.5, 25_000, 2_600), null);
+    }
+  });
+
   it('uses actual RUB amount directly and does not require exchange rates for RUB expenses', () => {
     assert.equal(calculateExpenseRub({
       currency: ' rub ',
