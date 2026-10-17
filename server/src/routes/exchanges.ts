@@ -5,6 +5,7 @@ import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { calculateTargetVndEquivalent, isExchangeVndOutcomeConsistent, resolveExchangeVndOutcome } from '../lib/money.js';
+import { areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 import { syncExchangeLedger, removeExchangeLedger } from '../lib/wallet-ledger.js';
 
 const router = Router();
@@ -12,15 +13,15 @@ router.use(auth);
 
 const schema = z.object({
   mode: z.enum(['RUB_USDT_VND', 'RUB_VND', 'RUB_TARGET']).default('RUB_USDT_VND'),
-  rubSpent: z.number().positive().finite(),
-  usdtReceived: z.number().positive().finite().optional(),
-  vndPerUsdt: z.number().positive().finite().optional(),
-  planningVndPerUsdt: z.number().positive().finite().optional(),
-  vndFee: z.number().min(0).finite().default(0),
-  vndReceived: z.number().positive().finite().optional(),
+  rubSpent: z.number().positive().finite().max(MAX_STORED_AMOUNT),
+  usdtReceived: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
+  vndPerUsdt: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
+  planningVndPerUsdt: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
+  vndFee: z.number().min(0).finite().max(MAX_STORED_AMOUNT).default(0),
+  vndReceived: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
   targetCurrency: z.string().trim().regex(/^[A-Za-z]{3,8}$/).transform(value => value.toUpperCase()).refine(value => value !== 'RUB', 'Target currency must differ from RUB.').default('VND'),
-  targetReceived: z.number().positive().finite().optional(),
-  targetToVndRate: z.number().positive().finite().optional(),
+  targetReceived: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
+  targetToVndRate: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
 });
 
 async function createExchangeWithLedger(data: Prisma.ExchangeUncheckedCreateInput) {
@@ -64,6 +65,10 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       try { data = directTargetData(x); }
       catch (error) {
         res.status(400).json({ message: error instanceof Error ? error.message : 'Enter valid target currency amounts.' });
+        return;
+      }
+      if (!areSupportedStoredAmounts([data.rubSpent, data.usdtReceived, data.vndPerUsdt, data.planningVndPerUsdt, data.vndFee, data.vndReceived, data.effectiveVndPerRub, data.effectiveRubPerUsdt, data.targetReceived, data.targetToVndRate, data.targetVndEquivalent])) {
+        res.status(400).json({ message: 'Exchange values exceed the supported storage range.' });
         return;
       }
       const record = await createExchangeWithLedger({ userId: req.user!.id, ...data });
@@ -118,6 +123,11 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       outcome = resolveExchangeVndOutcome({ usdtReceived: x.usdtReceived, vndReceived: netVndReceived });
     } catch {
       res.status(400).json({ message: 'Enter the actual VND amount received, or leave VND unknown.' });
+      return;
+    }
+    const derivedValues = [x.rubSpent, x.usdtReceived, outcome.vndPerUsdt, x.planningVndPerUsdt ?? null, x.vndFee, outcome.vndReceived, outcome.vndReceived == null ? null : outcome.vndReceived / x.rubSpent, x.rubSpent / x.usdtReceived, null, null, null];
+    if (!areSupportedStoredAmounts(derivedValues)) {
+      res.status(400).json({ message: 'Exchange values exceed the supported storage range.' });
       return;
     }
     const record = await createExchangeWithLedger({
@@ -206,6 +216,10 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         effectiveRubPerUsdt: x.rubSpent / x.usdtReceived,
         targetCurrency: 'VND', targetReceived: null, targetToVndRate: null, targetVndEquivalent: null,
       };
+    }
+    if (!areSupportedStoredAmounts([data.rubSpent, data.usdtReceived, data.vndPerUsdt, data.planningVndPerUsdt, data.vndFee, data.vndReceived, data.effectiveVndPerRub, data.effectiveRubPerUsdt, data.targetReceived, data.targetToVndRate, data.targetVndEquivalent])) {
+      res.status(400).json({ message: 'Exchange values exceed the supported storage range.' });
+      return;
     }
     const id = String(req.params.id);
     const userId = req.user!.id;
