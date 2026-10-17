@@ -57,6 +57,25 @@ export function calculateObservedVndPerRub(input: {
   return rubTotal > 0 && vndTotal > 0 ? vndTotal / rubTotal : null;
 }
 
+
+/** Normalize every recorded RUB→USDT acquisition, including direct target-currency exchanges. */
+export function mapRubUsdtExchanges(exchanges: Array<{
+  mode: string;
+  rubSpent: number;
+  usdtReceived?: number | null;
+  targetCurrency?: string | null;
+  targetReceived?: number | null;
+}>): ExchangeObservation[] {
+  return exchanges.flatMap((exchange) => {
+    const isDirectUsdt = exchange.mode === 'RUB_TARGET' &&
+      exchange.targetCurrency?.trim().toUpperCase() === 'USDT';
+    const usdtReceived = isDirectUsdt ? exchange.targetReceived : exchange.usdtReceived;
+    if (usdtReceived == null || !Number.isFinite(exchange.rubSpent) || exchange.rubSpent <= 0 ||
+        !Number.isFinite(usdtReceived) || usdtReceived <= 0) return [];
+    return [{ rubSpent: exchange.rubSpent, usdtReceived }];
+  });
+}
+
 /** Convert exchange records into direct RUB-to-VND observations for historical-rate calculations. */
 export function mapDirectVndExchanges(exchanges: Array<{
   mode: string;
