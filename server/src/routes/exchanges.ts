@@ -11,7 +11,7 @@ import { syncExchangeLedger, removeExchangeLedger } from '../lib/wallet-ledger.j
 const router = Router();
 router.use(auth);
 
-const schema = z.object({
+export const exchangeSchema = z.object({
   mode: z.enum(['RUB_USDT_VND', 'RUB_VND', 'RUB_TARGET']).default('RUB_USDT_VND'),
   rubSpent: z.number().positive().finite().max(MAX_STORED_AMOUNT),
   usdtReceived: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
@@ -53,7 +53,7 @@ function directTargetData(x: z.infer<typeof schema>) {
 
 router.post('/', async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = schema.safeParse(req.body);
+    const parsed = exchangeSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ message: 'Enter valid RUB and received amounts.' });
       return;
@@ -156,7 +156,7 @@ router.get('/', async (req: AuthedRequest, res, next) => {
 
 router.patch('/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = schema.safeParse(req.body);
+    const parsed = exchangeSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ message: 'Enter valid RUB and received amounts.' });
       return;
