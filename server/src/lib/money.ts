@@ -109,7 +109,14 @@ export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number |
     return input.usdtCharged * rubPerUsdt;
   }
 
-  if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0 && input.amountVnd > 0) return input.amountVnd / vndPerRub;
+  // This helper only has conversion inputs for VND. Do not silently interpret GEL,
+  // TRY, or another target currency as VND; a target-specific conversion path is required.
+  if (currency !== 'VND') return null;
+
+  if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0 &&
+      Number.isFinite(input.amountVnd) && input.amountVnd > 0) {
+    return input.amountVnd / vndPerRub;
+  }
   return estimateRubFromVnd(input.amountVnd, vndPerUsdt, rubPerUsdt);
 }
 
