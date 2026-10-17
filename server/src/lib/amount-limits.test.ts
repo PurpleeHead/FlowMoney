@@ -32,4 +32,12 @@ describe('persisted amount limits', () => {
     ]), true);
     assert.equal(areRepresentableDecimals([{ value: 1e-9, scale: 8 }]), false);
   });
+
+  it('rejects values that would be rounded when persisted at the column scale', () => {
+    assert.equal(isRepresentableDecimal(1.2345, 4), true);
+    assert.equal(isRepresentableDecimal(1.23456, 4), false);
+    assert.equal(isRepresentableDecimal(1.23456789, 8), true);
+    assert.equal(isRepresentableDecimal(1.234567891, 8), false);
+    assert.equal(isRepresentableDecimal(8300.0001, 4), true);
+  });
 });
