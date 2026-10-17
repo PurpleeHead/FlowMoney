@@ -8,6 +8,7 @@ import {
   calculateObservedVndPerRub,
   calculateObservedVndPerUsdt,
   calculateRubPerUsdt,
+  mapRubUsdtExchanges,
 } from '../lib/money.js';
 import { syncExpenseLedger } from '../lib/wallet-ledger.js';
 import { areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
@@ -40,7 +41,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const [exchanges, previousPurchases] = await Promise.all([
       prisma.exchange.findMany({
         where: { userId, createdAt: { lte: now } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetVndEquivalent: true },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetCurrency: true, targetReceived: true, targetVndEquivalent: true },
       }),
       prisma.expense.findMany({
         where: { userId, date: { lte: now }, usdtCharged: { not: null } },
@@ -49,7 +50,13 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     ]);
 
     const rubPerUsdt = calculateRubPerUsdt(
-      exchanges.map(x => ({ rubSpent: Number(x.rubSpent), usdtReceived: Number(x.usdtReceived) }))
+      mapRubUsdtExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+        targetCurrency: x.targetCurrency,
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+      })))
     );
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
