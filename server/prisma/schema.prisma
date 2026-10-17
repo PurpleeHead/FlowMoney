@@ -13,9 +13,6 @@ model User {
   passwordHash String
   name         String?
   country      String?
-  emailVerified Boolean   @default(true)
-  emailVerificationTokenHash String? @unique
-  emailVerificationExpiresAt DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   wallets      Wallet[]
