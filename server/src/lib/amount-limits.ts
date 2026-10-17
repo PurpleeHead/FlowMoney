@@ -20,3 +20,9 @@ export function isRepresentableDecimal(
   if (value === 0) return allowZero;
   return Math.abs(value) >= 10 ** -scale;
 }
+
+export function areRepresentableDecimals(
+  values: Array<{ value: number | null | undefined; scale: number; allowZero?: boolean }>,
+): boolean {
+  return values.every(item => isRepresentableDecimal(item.value, item.scale, item.allowZero ?? false));
+}
