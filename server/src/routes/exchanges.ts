@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { calculateTargetVndEquivalent, resolveExchangeVndOutcome } from '../lib/money.js';
+import { calculateTargetVndEquivalent, isExchangeVndOutcomeConsistent, resolveExchangeVndOutcome } from '../lib/money.js';
 import { syncExchangeLedger, removeExchangeLedger } from '../lib/wallet-ledger.js';
 
 const router = Router();
@@ -96,12 +96,14 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       res.status(400).json({ message: 'Enter the actual USDT received.' });
       return;
     }
-    if (x.vndPerUsdt != null && x.vndReceived != null) {
-      const grossVnd = x.usdtReceived * x.vndPerUsdt;
-      if (x.vndReceived > grossVnd + 0.01 || x.vndFee > grossVnd) {
-        res.status(400).json({ message: 'VND result or fee is inconsistent with the entered rate.' });
-        return;
-      }
+    if (!isExchangeVndOutcomeConsistent({
+      usdtReceived: x.usdtReceived,
+      vndReceived: x.vndReceived,
+      vndPerUsdt: x.vndPerUsdt,
+      vndFee: x.vndFee,
+    })) {
+      res.status(400).json({ message: 'VND result or fee is inconsistent with the entered rate.' });
+      return;
     }
     if (x.vndReceived == null && x.vndPerUsdt != null) {
       res.status(400).json({ message: 'Enter the actual VND received amount when providing a VND/USDT rate.' });
@@ -172,12 +174,14 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         res.status(400).json({ message: 'Enter the actual USDT received.' });
         return;
       }
-      if (x.vndPerUsdt != null && x.vndReceived != null) {
-        const grossVnd = x.usdtReceived * x.vndPerUsdt;
-        if (x.vndReceived > grossVnd + 0.01 || x.vndFee > grossVnd) {
-          res.status(400).json({ message: 'VND result or fee is inconsistent with the entered rate.' });
-          return;
-        }
+      if (!isExchangeVndOutcomeConsistent({
+        usdtReceived: x.usdtReceived,
+        vndReceived: x.vndReceived,
+        vndPerUsdt: x.vndPerUsdt,
+        vndFee: x.vndFee,
+      })) {
+        res.status(400).json({ message: 'VND result or fee is inconsistent with the entered rate.' });
+        return;
       }
       if (x.vndReceived == null && x.vndPerUsdt != null) {
         res.status(400).json({ message: 'Enter actual VND received or leave the VND amount blank.' });
