@@ -5,7 +5,7 @@ import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { calculateTargetVndEquivalent, isExchangeVndOutcomeConsistent, resolveExchangeVndOutcome } from '../lib/money.js';
-import { areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
+import { areRepresentableDecimals, areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 import { syncExchangeLedger, removeExchangeLedger } from '../lib/wallet-ledger.js';
 
 const router = Router();
@@ -13,15 +13,15 @@ router.use(auth);
 
 export const exchangeSchema = z.object({
   mode: z.enum(['RUB_USDT_VND', 'RUB_VND', 'RUB_TARGET']).default('RUB_USDT_VND'),
-  rubSpent: z.number().positive().finite().max(MAX_STORED_AMOUNT),
-  usdtReceived: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
-  vndPerUsdt: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
-  planningVndPerUsdt: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
-  vndFee: z.number().min(0).finite().max(MAX_STORED_AMOUNT).default(0),
-  vndReceived: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
+  rubSpent: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT),
+  usdtReceived: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).optional(),
+  vndPerUsdt: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).optional(),
+  planningVndPerUsdt: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).optional(),
+  vndFee: z.number().min(0).finite().max(MAX_STORED_AMOUNT).refine(value => value === 0 || value >= 0.0001, 'Fee is below the supported decimal precision.').default(0),
+  vndReceived: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).optional(),
   targetCurrency: z.string().trim().regex(/^[A-Za-z]{3,8}$/).transform(value => value.toUpperCase()).refine(value => value !== 'RUB', 'Target currency must differ from RUB.').default('VND'),
-  targetReceived: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
-  targetToVndRate: z.number().positive().finite().max(MAX_STORED_AMOUNT).optional(),
+  targetReceived: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).optional(),
+  targetToVndRate: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).optional(),
 });
 
 async function createExchangeWithLedger(data: Prisma.ExchangeUncheckedCreateInput) {
@@ -67,7 +67,14 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         res.status(400).json({ message: error instanceof Error ? error.message : 'Enter valid target currency amounts.' });
         return;
       }
-      if (!areSupportedStoredAmounts([data.rubSpent, data.usdtReceived, data.vndPerUsdt, data.planningVndPerUsdt, data.vndFee, data.vndReceived, data.effectiveVndPerRub, data.effectiveRubPerUsdt, data.targetReceived, data.targetToVndRate, data.targetVndEquivalent])) {
+      if (!areSupportedStoredAmounts([data.rubSpent, data.usdtReceived, data.vndPerUsdt, data.planningVndPerUsdt, data.vndFee, data.vndReceived, data.effectiveVndPerRub, data.effectiveRubPerUsdt, data.targetReceived, data.targetToVndRate, data.targetVndEquivalent]) || !areRepresentableDecimals([
+      { value: data.rubSpent, scale: 4 }, { value: data.usdtReceived, scale: 8 },
+      { value: data.vndPerUsdt, scale: 4 }, { value: data.planningVndPerUsdt, scale: 4 },
+      { value: data.vndFee, scale: 4, allowZero: true }, { value: data.vndReceived, scale: 4 },
+      { value: data.effectiveVndPerRub, scale: 8 }, { value: data.effectiveRubPerUsdt, scale: 8 },
+      { value: data.targetReceived, scale: 8 }, { value: data.targetToVndRate, scale: 8 },
+      { value: data.targetVndEquivalent, scale: 4 },
+    ])) {
         res.status(400).json({ message: 'Exchange values exceed the supported storage range.' });
         return;
       }
