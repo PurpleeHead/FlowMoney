@@ -23,6 +23,15 @@ export type JournalExchange = {
   createdAt: Date | string;
 };
 
+export type JournalWalletMovement = {
+  id: string;
+  currency: string;
+  amountDelta: number | { toString(): string };
+  kind: string;
+  note: string | null;
+  occurredAt: Date | string;
+};
+
 export type JournalEntry =
   | {
       id: string; type: 'expense'; occurredAt: string; title: string; category: string;
@@ -33,6 +42,10 @@ export type JournalEntry =
       id: string; type: 'exchange'; occurredAt: string; title: string; mode: string;
       rubSpent: number; usdtReceived: number | null; vndReceived: number | null;
       targetCurrency: string; targetReceived: number | null; targetVndEquivalent: number | null;
+    }
+  | {
+      id: string; type: 'wallet_movement'; occurredAt: string; title: string;
+      currency: string; amountDelta: number; kind: string; note: string | null;
     };
 
 function numeric(value: number | { toString(): string } | null): number | null {
@@ -50,6 +63,7 @@ export function buildJournal(
   expenses: JournalExpense[],
   exchanges: JournalExchange[],
   limit = 100,
+  movements: JournalWalletMovement[] = [],
 ): JournalEntry[] {
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(500, Math.floor(limit))) : 100;
   const expenseEntries: JournalEntry[] = expenses.map((expense) => ({
@@ -81,7 +95,17 @@ export function buildJournal(
     targetReceived: numeric(exchange.targetReceived),
     targetVndEquivalent: numeric(exchange.targetVndEquivalent),
   }));
-  return [...expenseEntries, ...exchangeEntries]
+  const movementEntries: JournalEntry[] = movements.map((movement) => ({
+    id: `movement:${movement.id}`,
+    type: 'wallet_movement',
+    occurredAt: iso(movement.occurredAt),
+    title: movement.kind === 'OPENING' ? 'Opening balance' : 'Balance adjustment',
+    currency: movement.currency,
+    amountDelta: numeric(movement.amountDelta) ?? 0,
+    kind: movement.kind,
+    note: movement.note,
+  }));
+  return [...expenseEntries, ...exchangeEntries, ...movementEntries]
     .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || a.id.localeCompare(b.id))
     .slice(0, safeLimit);
 }
