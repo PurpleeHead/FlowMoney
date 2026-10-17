@@ -157,3 +157,24 @@ describe('conservative card-expense RUB cost', () => {
     }, 88.5, 25_000, null), null);
   });
 });
+
+
+describe('expenses with unknown or explicit target-currency conversion', () => {
+  it('keeps an expense unconverted when no target-currency rate is available', () => {
+    assert.equal(calculateExpenseRub({
+      currency: 'GEL', amount: 100, amountVnd: null,
+    }, 88.5, 25_000, 2_600), null);
+  });
+
+  it('uses an explicitly provided target-currency-to-VND rate for RUB estimation', () => {
+    assert.equal(calculateExpenseRub({
+      currency: 'GEL', amount: 100, amountVnd: 920_000, targetToVndRate: 9_200,
+    }, 88.5, 25_000, 2_600), 920_000 / 2_600);
+  });
+
+  it('does not use an explicit target rate when the stored VND equivalent is absent', () => {
+    assert.equal(calculateExpenseRub({
+      currency: 'GEL', amount: 100, amountVnd: null, targetToVndRate: 9_200,
+    }, 88.5, 25_000, 2_600), null);
+  });
+});
