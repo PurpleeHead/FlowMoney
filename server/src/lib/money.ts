@@ -185,6 +185,5 @@ export function isExchangeVndOutcomeConsistent(input: {
   if (input.vndReceived == null || input.vndPerUsdt == null) return true;
   const grossVnd = input.usdtReceived * input.vndPerUsdt;
   return Number.isFinite(grossVnd) && grossVnd > 0 &&
-    input.vndReceived <= grossVnd + 0.01 &&
-    input.vndFee <= grossVnd;
+    input.vndReceived + input.vndFee <= grossVnd + 0.01;
 }
