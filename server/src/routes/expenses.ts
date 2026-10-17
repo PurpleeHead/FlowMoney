@@ -5,7 +5,7 @@ import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
 import { syncExpenseLedger, removeExpenseLedger } from '../lib/wallet-ledger.js';
-import { areRepresentableDecimals, areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
+import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
 const router = Router();
 router.use(auth);
@@ -13,11 +13,11 @@ router.use(auth);
 export const expenseSchema = z.object({
   title: z.string().trim().min(1).max(140),
   category: z.string().trim().min(1).max(80),
-  amount: z.number().positive().finite().min(0.000001).max(MAX_STORED_AMOUNT),
+  amount: z.number().positive().finite().min(0.000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 6), 'Amount supports at most 6 decimal places.'),
   currency: z.string().trim().min(3).max(8),
-  amountVnd: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).nullable().optional(),
-  targetToVndRate: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).nullable().optional(),
-  usdtCharged: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).optional(),
+  amountVnd: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 4), 'VND amount supports at most 4 decimal places.').nullable().optional(),
+  targetToVndRate: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'Target rate supports at most 8 decimal places.').nullable().optional(),
+  usdtCharged: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'USDT charge supports at most 8 decimal places.').optional(),
   date: z.string().datetime().optional(),
   receiptId: z.string().optional(),
 });
