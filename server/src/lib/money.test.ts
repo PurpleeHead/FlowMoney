@@ -7,6 +7,7 @@ import {
   calculateObservedVndPerRub,
   calculateRubPerUsdt,
   mapDirectVndExchanges,
+  mapRubUsdtExchanges,
   estimateRubFromVnd,
   resolveExchangeVndOutcome,
   isExchangeVndOutcomeConsistent,
@@ -80,6 +81,22 @@ describe('unified RUB cost formula', () => {
   it('returns null rather than inventing a RUB estimate when rates are missing', () => {
     assert.equal(estimateRubFromVnd(100000, null, 88.5), null);
     assert.equal(estimateRubFromVnd(100000, 25451, null), null);
+  });
+});
+
+describe('RUB-to-USDT exchange observations', () => {
+  it('includes direct RUB_TARGET → USDT acquisitions in the weighted RUB/USDT rate', () => {
+    const observations = mapRubUsdtExchanges([
+      { mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853 },
+      { mode: 'RUB_TARGET', rubSpent: 5000, targetCurrency: 'USDT', targetReceived: 56 },
+      { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'GEL', targetReceived: 100 },
+      { mode: 'RUB_VND', rubSpent: 1000, usdtReceived: null },
+    ]);
+    assert.deepEqual(observations, [
+      { rubSpent: 8300, usdtReceived: 93.7853 },
+      { rubSpent: 5000, usdtReceived: 56 },
+    ]);
+    assert.ok(Math.abs(calculateRubPerUsdt(observations)! - (13300 / 149.7853)) < 1e-10);
   });
 });
 
