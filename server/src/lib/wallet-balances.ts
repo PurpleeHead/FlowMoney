@@ -28,7 +28,10 @@ export function calculateWalletBalances(movements: WalletBalanceMovement[]): Wal
     const netMovement = roundAmount(currencyMovements.reduce((sum, item) => sum + Number(item.amountDelta), 0));
     const balance = opening
       ? roundAmount(Number(opening.amountDelta) + currencyMovements
-          .filter(item => item.kind !== 'OPENING' && item.occurredAt >= opening.occurredAt)
+          .filter(item => item.kind !== 'OPENING' && (
+            item.occurredAt > opening.occurredAt ||
+            (item.occurredAt.getTime() === opening.occurredAt.getTime() && item.createdAt >= opening.createdAt)
+          ))
           .reduce((sum, item) => sum + Number(item.amountDelta), 0))
       : null;
     return { currency, netMovement, hasOpeningBalance: Boolean(opening), balance };
