@@ -16,7 +16,7 @@ describe('expense request validation', () => {
     assert.equal(expenseSchema.safeParse({ ...validExpense, amount: MAX_STORED_AMOUNT }).success, true);
   });
 
-  it('rejects source amounts and optional conversions outside the supported range', () => {
+  it('rejects positive inputs below their persisted decimal precision', () => {\n    assert.equal(expenseSchema.safeParse({ ...validExpense, amount: 0.0000001 }).success, false);\n    assert.equal(expenseSchema.safeParse({ ...validExpense, amountVnd: 0.00001 }).success, false);\n    assert.equal(expenseSchema.safeParse({ ...validExpense, targetToVndRate: 0.000000001 }).success, false);\n    assert.equal(expenseSchema.safeParse({ ...validExpense, usdtCharged: 0.000000001 }).success, false);\n  });\n\n  it('rejects source amounts and optional conversions outside the supported range', () => {
     assert.equal(expenseSchema.safeParse({ ...validExpense, amount: MAX_STORED_AMOUNT + 1 }).success, false);
     assert.equal(expenseSchema.safeParse({ ...validExpense, amountVnd: MAX_STORED_AMOUNT + 1 }).success, false);
     assert.equal(expenseSchema.safeParse({ ...validExpense, targetToVndRate: MAX_STORED_AMOUNT + 1 }).success, false);
