@@ -76,7 +76,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         res.status(400).json({ message: 'Enter the actual VND received for a direct RUB → VND exchange.' });
         return;
       }
-      if (x.vndFee > x.vndReceived) {
+      if (x.vndFee >= x.vndReceived) {
         res.status(400).json({ message: 'The VND fee cannot exceed the amount received.' });
         return;
       }
@@ -162,7 +162,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         return;
       }
     } else if (x.mode === 'RUB_VND') {
-      if (x.vndReceived == null || x.vndFee > x.vndReceived) {
+      if (x.vndReceived == null || x.vndFee >= x.vndReceived) {
         res.status(400).json({ message: 'Enter the actual VND received; the fee cannot exceed it.' });
         return;
       }
