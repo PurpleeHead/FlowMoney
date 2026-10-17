@@ -3,6 +3,7 @@ export type WalletBalanceMovement = {
   amountDelta: number | { toString(): string };
   kind: string;
   createdAt: Date;
+  occurredAt: Date;
 };
 
 export type WalletBalance = {
@@ -22,12 +23,12 @@ export function calculateWalletBalances(movements: WalletBalanceMovement[]): Wal
   return currencies.map(currency => {
     const currencyMovements = movements
       .filter(item => item.currency === currency)
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.createdAt.getTime() - b.createdAt.getTime());
     const opening = currencyMovements.find(item => item.kind === 'OPENING');
     const netMovement = roundAmount(currencyMovements.reduce((sum, item) => sum + Number(item.amountDelta), 0));
     const balance = opening
       ? roundAmount(Number(opening.amountDelta) + currencyMovements
-          .filter(item => item.kind !== 'OPENING' && item.createdAt >= opening.createdAt)
+          .filter(item => item.kind !== 'OPENING' && item.occurredAt >= opening.occurredAt)
           .reduce((sum, item) => sum + Number(item.amountDelta), 0))
       : null;
     return { currency, netMovement, hasOpeningBalance: Boolean(opening), balance };
