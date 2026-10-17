@@ -5,7 +5,7 @@ import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { calculateTargetVndEquivalent, isExchangeVndOutcomeConsistent, resolveExchangeVndOutcome } from '../lib/money.js';
-import { areRepresentableDecimals, areSupportedStoredAmounts, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
+import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 import { syncExchangeLedger, removeExchangeLedger } from '../lib/wallet-ledger.js';
 
 const router = Router();
@@ -13,15 +13,15 @@ router.use(auth);
 
 export const exchangeSchema = z.object({
   mode: z.enum(['RUB_USDT_VND', 'RUB_VND', 'RUB_TARGET']).default('RUB_USDT_VND'),
-  rubSpent: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT),
-  usdtReceived: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).optional(),
-  vndPerUsdt: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).optional(),
-  planningVndPerUsdt: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).optional(),
-  vndFee: z.number().min(0).finite().max(MAX_STORED_AMOUNT).refine(value => value === 0 || value >= 0.0001, 'Fee is below the supported decimal precision.').default(0),
-  vndReceived: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).optional(),
+  rubSpent: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 4), 'RUB amount supports at most 4 decimal places.'),
+  usdtReceived: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'USDT amount supports at most 8 decimal places.').optional(),
+  vndPerUsdt: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 4), 'VND/USDT rate supports at most 4 decimal places.').optional(),
+  planningVndPerUsdt: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 4), 'Planning rate supports at most 4 decimal places.').optional(),
+  vndFee: z.number().min(0).finite().max(MAX_STORED_AMOUNT).refine(value => (value === 0 || value >= 0.0001) && hasDecimalScale(value, 4), 'Fee must fit the supported decimal precision.').default(0),
+  vndReceived: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 4), 'VND amount supports at most 4 decimal places.').optional(),
   targetCurrency: z.string().trim().regex(/^[A-Za-z]{3,8}$/).transform(value => value.toUpperCase()).refine(value => value !== 'RUB', 'Target currency must differ from RUB.').default('VND'),
-  targetReceived: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).optional(),
-  targetToVndRate: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).optional(),
+  targetReceived: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'Target amount supports at most 8 decimal places.').optional(),
+  targetToVndRate: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'Target rate supports at most 8 decimal places.').optional(),
 });
 
 async function createExchangeWithLedger(data: Prisma.ExchangeUncheckedCreateInput) {
