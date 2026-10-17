@@ -18,7 +18,9 @@ export function isRepresentableDecimal(
   if (value == null) return true;
   if (!Number.isInteger(scale) || scale < 0 || scale > 8 || !isSupportedStoredAmount(value)) return false;
   if (value === 0) return allowZero;
-  return Math.abs(value) >= 10 ** -scale;
+  if (Math.abs(value) < 10 ** -scale) return false;
+  // Prisma/PostgreSQL Decimal columns round excess fractional digits; reject rather than silently mutate money.
+  return Number(value.toFixed(scale)) === value;
 }
 
 export function areRepresentableDecimals(
