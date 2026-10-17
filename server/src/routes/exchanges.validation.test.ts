@@ -20,6 +20,8 @@ describe('exchange request validation', () => {
     assert.equal(exchangeSchema.safeParse({ rubSpent: 1.23456, usdtReceived: 1 }).success, false);
     assert.equal(exchangeSchema.safeParse({ rubSpent: 1, usdtReceived: 1.123456789 }).success, false);
     assert.equal(exchangeSchema.safeParse({ mode: 'RUB_VND', rubSpent: 1, vndReceived: 100.00001 }).success, false);
+    assert.equal(exchangeSchema.safeParse({ mode: 'RUB_TARGET', rubSpent: 1, targetCurrency: 'USD', targetReceived: 1.123456789, targetToVndRate: 25000 }).success, false);
+    assert.equal(exchangeSchema.safeParse({ mode: 'RUB_TARGET', rubSpent: 1, targetCurrency: 'USD', targetReceived: 1, targetToVndRate: 25000.123456789 }).success, false);
   });
 
   it('rejects oversized amounts, rates, and fees before database writes', () => {
