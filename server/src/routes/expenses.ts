@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges } from '../lib/money.js';
+import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
 import { syncExpenseLedger, removeExpenseLedger } from '../lib/wallet-ledger.js';
 
 const router = Router();
@@ -51,7 +51,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const [exchanges, previousPurchases] = await Promise.all([
       prisma.exchange.findMany({
         where: { userId, createdAt: { lte: expenseDate } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetVndEquivalent: true },
+        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetCurrency: true, targetReceived: true, targetVndEquivalent: true },
       }),
       prisma.expense.findMany({
         where: {
@@ -64,7 +64,13 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     ]);
 
     const historicalRubPerUsdt = calculateRubPerUsdt(
-      exchanges.map(x => ({ rubSpent: Number(x.rubSpent), usdtReceived: Number(x.usdtReceived) }))
+      mapRubUsdtExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+        targetCurrency: x.targetCurrency,
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+      })))
     );
 
     // Prefer actual card purchases. If none exist yet, use only exchanges with an actual recorded VND outcome.
@@ -189,7 +195,13 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       }),
     ]);
     const rubPerUsdt = calculateRubPerUsdt(
-      exchanges.map(x => ({ rubSpent: Number(x.rubSpent), usdtReceived: Number(x.usdtReceived) }))
+      mapRubUsdtExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+        targetCurrency: x.targetCurrency,
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+      })))
     );
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
