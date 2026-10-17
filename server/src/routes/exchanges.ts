@@ -86,6 +86,10 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         return;
       }
       const vndReceived = x.vndReceived - x.vndFee;
+      if (!areSupportedStoredAmounts([x.rubSpent, x.vndFee, vndReceived, vndReceived / x.rubSpent])) {
+        res.status(400).json({ message: 'Exchange values exceed the supported storage range.' });
+        return;
+      }
       const record = await createExchangeWithLedger({
         userId: req.user!.id, mode: 'RUB_VND', rubSpent: x.rubSpent,
         usdtReceived: null, vndPerUsdt: null, planningVndPerUsdt: null,
