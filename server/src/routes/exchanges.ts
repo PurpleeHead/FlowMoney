@@ -32,6 +32,22 @@ async function createExchangeWithLedger(data: Prisma.ExchangeUncheckedCreateInpu
   });
 }
 
+function areExchangeDataRepresentable(data: {
+  rubSpent: number; usdtReceived: number | null; vndPerUsdt: number | null;
+  planningVndPerUsdt: number | null; vndFee: number; vndReceived: number | null;
+  effectiveVndPerRub: number | null; effectiveRubPerUsdt: number | null;
+  targetReceived: number | null; targetToVndRate: number | null; targetVndEquivalent: number | null;
+}) {
+  return areSupportedStoredAmounts(Object.values(data)) && areRepresentableDecimals([
+    { value: data.rubSpent, scale: 4 }, { value: data.usdtReceived, scale: 8 },
+    { value: data.vndPerUsdt, scale: 4 }, { value: data.planningVndPerUsdt, scale: 4 },
+    { value: data.vndFee, scale: 4, allowZero: true }, { value: data.vndReceived, scale: 4 },
+    { value: data.effectiveVndPerRub, scale: 8 }, { value: data.effectiveRubPerUsdt, scale: 8 },
+    { value: data.targetReceived, scale: 8 }, { value: data.targetToVndRate, scale: 8 },
+    { value: data.targetVndEquivalent, scale: 4 },
+  ]);
+}
+
 function directTargetData(x: z.infer<typeof exchangeSchema>) {
   if (x.targetReceived == null) throw new Error('Enter the amount received in the target currency.');
   const rate = x.targetCurrency === 'VND' ? 1 : x.targetToVndRate;
@@ -67,14 +83,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         res.status(400).json({ message: error instanceof Error ? error.message : 'Enter valid target currency amounts.' });
         return;
       }
-      if (!areSupportedStoredAmounts([data.rubSpent, data.usdtReceived, data.vndPerUsdt, data.planningVndPerUsdt, data.vndFee, data.vndReceived, data.effectiveVndPerRub, data.effectiveRubPerUsdt, data.targetReceived, data.targetToVndRate, data.targetVndEquivalent]) || !areRepresentableDecimals([
-      { value: data.rubSpent, scale: 4 }, { value: data.usdtReceived, scale: 8 },
-      { value: data.vndPerUsdt, scale: 4 }, { value: data.planningVndPerUsdt, scale: 4 },
-      { value: data.vndFee, scale: 4, allowZero: true }, { value: data.vndReceived, scale: 4 },
-      { value: data.effectiveVndPerRub, scale: 8 }, { value: data.effectiveRubPerUsdt, scale: 8 },
-      { value: data.targetReceived, scale: 8 }, { value: data.targetToVndRate, scale: 8 },
-      { value: data.targetVndEquivalent, scale: 4 },
-    ])) {
+      if (!areExchangeDataRepresentable(data)) {
         res.status(400).json({ message: 'Exchange values exceed the supported storage range.' });
         return;
       }
@@ -93,7 +102,11 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         return;
       }
       const vndReceived = x.vndReceived - x.vndFee;
-      if (!areSupportedStoredAmounts([x.rubSpent, x.vndFee, vndReceived, vndReceived / x.rubSpent])) {
+      if (!areSupportedStoredAmounts([x.rubSpent, x.vndFee, vndReceived, vndReceived / x.rubSpent]) ||
+          !areRepresentableDecimals([
+            { value: x.rubSpent, scale: 4 }, { value: x.vndFee, scale: 4, allowZero: true },
+            { value: vndReceived, scale: 4 }, { value: vndReceived / x.rubSpent, scale: 8 },
+          ])) {
         res.status(400).json({ message: 'Exchange values exceed the supported storage range.' });
         return;
       }
@@ -137,7 +150,13 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       return;
     }
     const derivedValues = [x.rubSpent, x.usdtReceived, outcome.vndPerUsdt, x.planningVndPerUsdt ?? null, x.vndFee, outcome.vndReceived, outcome.vndReceived == null ? null : outcome.vndReceived / x.rubSpent, x.rubSpent / x.usdtReceived, null, null, null];
-    if (!areSupportedStoredAmounts(derivedValues)) {
+    if (!areSupportedStoredAmounts(derivedValues) || !areRepresentableDecimals([
+      { value: x.rubSpent, scale: 4 }, { value: x.usdtReceived, scale: 8 },
+      { value: outcome.vndPerUsdt, scale: 4 }, { value: x.planningVndPerUsdt, scale: 4 },
+      { value: x.vndFee, scale: 4, allowZero: true }, { value: outcome.vndReceived, scale: 4 },
+      { value: outcome.vndReceived == null ? null : outcome.vndReceived / x.rubSpent, scale: 8 },
+      { value: x.rubSpent / x.usdtReceived, scale: 8 },
+    ])) {
       res.status(400).json({ message: 'Exchange values exceed the supported storage range.' });
       return;
     }
@@ -228,7 +247,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         targetCurrency: 'VND', targetReceived: null, targetToVndRate: null, targetVndEquivalent: null,
       };
     }
-    if (!areSupportedStoredAmounts([data.rubSpent, data.usdtReceived, data.vndPerUsdt, data.planningVndPerUsdt, data.vndFee, data.vndReceived, data.effectiveVndPerRub, data.effectiveRubPerUsdt, data.targetReceived, data.targetToVndRate, data.targetVndEquivalent])) {
+    if (!areExchangeDataRepresentable(data)) {
       res.status(400).json({ message: 'Exchange values exceed the supported storage range.' });
       return;
     }
