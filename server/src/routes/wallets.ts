@@ -5,6 +5,7 @@ import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { prisma } from '../services/prisma.js';
 import { calculateWalletBalances } from '../lib/wallet-balances.js';
+import { adjustmentSourceKey, openingBalanceSourceKey } from '../lib/wallet-movement-keys.js';
 
 const router = Router();
 router.use(auth);
@@ -51,8 +52,8 @@ router.post('/movements', async (req: AuthedRequest, res, next) => {
     // A deterministic source key guarantees one opening balance per user and currency.
     // Manual adjustments use unique keys so multiple corrections remain separate journal entries.
     const sourceKey = input.kind === 'OPENING'
-      ? `opening:${userId}:${input.currency}`
-      : `adjustment:${userId}:${randomUUID()}`;
+      ? openingBalanceSourceKey(userId, input.currency)
+      : adjustmentSourceKey(userId, randomUUID());
 
     try {
       const movement = await prisma.walletMovement.create({
