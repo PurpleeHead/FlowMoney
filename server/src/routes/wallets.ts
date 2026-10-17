@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { prisma } from '../services/prisma.js';
+import { calculateWalletBalances } from '../lib/wallet-balances.js';
 
 const router = Router();
 router.use(auth);
@@ -31,25 +32,7 @@ router.get('/balances', async (req: AuthedRequest, res, next) => {
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: { currency: true, amountDelta: true, kind: true, createdAt: true },
     });
-    const currencies = [...new Set(movements.map(item => item.currency))];
-    res.json({
-      balances: currencies.map(currency => {
-        const currencyMovements = movements.filter(item => item.currency === currency);
-        const opening = currencyMovements.find(item => item.kind === 'OPENING');
-        const netMovement = currencyMovements.reduce((sum, item) => sum + Number(item.amountDelta), 0);
-        const balance = opening
-          ? Number(opening.amountDelta) + currencyMovements
-              .filter(item => item.kind !== 'OPENING' && item.createdAt >= opening.createdAt)
-              .reduce((sum, item) => sum + Number(item.amountDelta), 0)
-          : null;
-        return {
-          currency,
-          netMovement,
-          hasOpeningBalance: Boolean(opening),
-          balance,
-        };
-      }),
-    });
+    res.json({ balances: calculateWalletBalances(movements) });
   } catch (error) {
     next(error);
   }
