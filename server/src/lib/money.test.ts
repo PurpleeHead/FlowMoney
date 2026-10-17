@@ -181,7 +181,7 @@ describe('expenses with unknown or explicit target-currency conversion', () => {
 });
 
 describe('exchange rate consistency', () => {
-  it('accepts actual VND within the supplied rate and fee bounds', () => {
+  it('accepts gross VND within the supplied rate when fee is within the received amount', () => {
     assert.equal(isExchangeVndOutcomeConsistent({
       usdtReceived: 100, vndReceived: 2_490_000, vndPerUsdt: 25_000, vndFee: 10_000,
     }), true);
@@ -193,9 +193,15 @@ describe('exchange rate consistency', () => {
     }), false);
   });
 
-  it('rejects net VND plus fee when their total exceeds the rate-derived gross amount', () => {
+  it('rejects a fee greater than the entered gross VND amount', () => {
     assert.equal(isExchangeVndOutcomeConsistent({
-      usdtReceived: 100, vndReceived: 2_490_000, vndPerUsdt: 25_000, vndFee: 20_001,
+      usdtReceived: 100, vndReceived: 20_000, vndPerUsdt: 25_000, vndFee: 20_001,
+    }), false);
+  });
+
+  it('rejects VND received above the rate-derived gross amount even when fee is nonzero', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 100, vndReceived: 2_500_001, vndPerUsdt: 25_000, vndFee: 0,
     }), false);
   });
 
