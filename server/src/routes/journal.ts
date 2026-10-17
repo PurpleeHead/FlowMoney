@@ -21,7 +21,7 @@ router.get('/', async (req: AuthedRequest, res, next) => {
     }
 
     const userId = req.user!.id;
-    const [expenses, exchanges] = await Promise.all([
+    const [expenses, exchanges, movements] = await Promise.all([
       prisma.expense.findMany({
         where: { userId },
         orderBy: { date: 'desc' },
