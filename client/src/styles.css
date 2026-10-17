@@ -580,3 +580,11 @@ html,body,#root{max-width:100%}
 @media(max-width:480px){.country-picker{max-width:calc(100% - 88px)}.country-picker-trigger{gap:6px;padding:0 8px}.country-picker-current{max-width:clamp(74px,28vw,120px);font-size:10px}.country-picker-current small{font-size:8px;padding:2px 4px}.country-picker-menu{right:0;width:250px;max-height:calc(100vh - 100px)}.country-picker-option{min-height:42px}}
 @media(max-width:350px){.country-picker-trigger{gap:5px;padding:0 6px}.country-picker-current{max-width:70px}.country-picker-current small{display:none}.country-picker-menu{width:240px}}
 @media(prefers-reduced-motion:reduce){.country-picker-menu,.country-picker-chevron{animation:none;transition:none}}
+
+
+/* Country menu fixes: remove the legacy pseudo-arrow and keep the popup above page content. */
+.topbar{position:relative;z-index:40}
+.topbar-actions{position:relative;z-index:41}
+.country-picker{isolation:isolate;z-index:100}
+.country-picker::after{display:none!important;content:none!important}
+.country-picker-menu{z-index:1000}
