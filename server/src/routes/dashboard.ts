@@ -18,7 +18,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
 
     const totalVnd=expenses.reduce((sum,x)=>sum+Number(x.amountVnd),0);
     const monthVnd=expenses.filter(x=>x.date>=start).reduce((sum,x)=>sum+Number(x.amountVnd),0);
-    const purchases=expenses.filter(x=>x.usdtCharged!=null && Number(x.usdtCharged)>0);
+    const purchases=expenses.filter(x=>x.amountVnd!=null && x.usdtCharged!=null && Number(x.usdtCharged)>0);
     const observedVnd=purchases.reduce((sum,x)=>sum+Number(x.amountVnd),0);
     const observedUsdt=purchases.reduce((sum,x)=>sum+Number(x.usdtCharged),0);
     const observedVndPerUsdt=calculateObservedVndPerUsdt(
