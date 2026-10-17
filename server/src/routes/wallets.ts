@@ -30,8 +30,8 @@ router.get('/balances', async (req: AuthedRequest, res, next) => {
     const userId = req.user!.id;
     const movements = await prisma.walletMovement.findMany({
       where: { userId },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      select: { currency: true, amountDelta: true, kind: true, createdAt: true },
+      orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      select: { currency: true, amountDelta: true, kind: true, createdAt: true, occurredAt: true },
     });
     res.json({ balances: calculateWalletBalances(movements) });
   } catch (error) {
