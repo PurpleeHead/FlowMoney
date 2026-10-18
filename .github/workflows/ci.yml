@@ -65,7 +65,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flowmoney_test?schema=public
-    PSQL_URL: postgresql://postgres:postgres@localhost:5432/flowmoney_test
+      PSQL_URL: postgresql://postgres:postgres@localhost:5432/flowmoney_test
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -88,7 +88,7 @@ jobs:
           psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
           psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
           psql "$PSQL_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          DO $
+          DO $backfill$
           DECLARE
             movement_count integer;
             card_count integer;
@@ -112,5 +112,5 @@ jobs:
             IF exchange_usdt_count <> 1 THEN RAISE EXCEPTION 'USDT exchange credit missing or duplicated'; END IF;
             SELECT count(*) INTO exchange_vnd_count FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-exchange:VND' AND "amountDelta" = 250000;
             IF exchange_vnd_count <> 1 THEN RAISE EXCEPTION 'VND exchange credit missing or duplicated'; END IF;
-          END $;
+          END $backfill$;
           SQL
