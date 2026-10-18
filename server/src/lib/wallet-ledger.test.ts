@@ -82,3 +82,14 @@ describe('wallet ledger mapping', () => {
     ]);
   });
 });
+
+  it('does not create a RUB credit for an invalid legacy RUB_TARGET record', () => {
+    const drafts = exchangeLedgerDrafts({
+      id: 'x-invalid', userId: 'u1', mode: 'RUB_TARGET', rubSpent: 200,
+      usdtReceived: null, vndReceived: null, targetCurrency: 'RUB',
+      targetReceived: 100, createdAt: new Date('2026-10-16T07:00:00.000Z'),
+    });
+    assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [
+      ['RUB', -200],
+    ]);
+  });
