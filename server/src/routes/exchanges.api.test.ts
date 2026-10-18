@@ -175,5 +175,4 @@ describe('exchange API ledger synchronization', () => {
       assert.deepEqual(movementDeleteArgs, [], 'ledger deletion must not run if the owner-scoped exchange delete matched no row');
     });
   });
-  });
 });
