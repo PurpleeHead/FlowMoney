@@ -44,7 +44,7 @@ jobs:
           }
           if (report.error) console.log('Audit error:', JSON.stringify(report.error));
           NODE
-      - name: Report server production dependency audit (non-blocking)
+      - name: Enforce clean server production dependency audit
         shell: bash
         run: |
           npm audit --workspace=@flowmoney/server --omit=dev --json > "$RUNNER_TEMP/npm-audit-production.json" || true
@@ -61,7 +61,14 @@ jobs:
               `fixAvailable=${JSON.stringify(item.fixAvailable)}`,
             ].join(' | '));
           }
-          if (report.error) console.log('Production audit error:', JSON.stringify(report.error));
+          if (report.error) {
+            console.log('Production audit error:', JSON.stringify(report.error));
+            process.exitCode = 1;
+          }
+          if ((report.metadata?.vulnerabilities?.total ?? 0) > 0) {
+            console.error('Server production dependency audit found vulnerabilities.');
+            process.exitCode = 1;
+          }
           NODE
       - name: Generate Prisma client
         run: npm run db:generate
