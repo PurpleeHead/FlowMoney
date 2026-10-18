@@ -59,7 +59,10 @@ function fold(text: string): string {
 }
 
 function isMetadataLine(text: string): boolean {
-  return /(?:tien can thanh toan|tong cong|thanh toan|phieu tinh tien|hoa don|xuat hoa don|ma so|khach|hotline|truy cap|cqt|subtotal|total|thank you|cash|change|diem)/i.test(fold(text));
+  // Monetary adjustments affect the printed payable total but are not purchased items.
+  // Excluding them prevents discounts, VAT, service fees, refunds, tendered cash, and change
+  // from being misread as positive product prices by the trailing-price parser.
+  return /(?:tien can thanh toan|tong cong|thanh toan|phieu tinh tien|hoa don|xuat hoa don|ma so|khach|hotline|truy cap|cqt|subtotal|total|thank you|cash|change|diem|discount|voucher|coupon|service charge|service fee|tax|vat|refund|return|giam gia|khuyen mai|chiet khau|phi dich vu|phi phuc vu|thue|hoan tien|tra hang|tien khach dua|tien thua)/i.test(fold(text));
 }
 
 function parseQuantity(value: string): number {
