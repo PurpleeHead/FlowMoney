@@ -35,7 +35,13 @@ router.post('/register',async(req,res,next)=>{
       },
     });
     res.status(201).json({message:'Account created. You can now sign in.'});
-  }catch(e){next(e);}
+  }catch(e){
+    if (typeof e === 'object' && e !== null && 'code' in e && e.code === 'P2002') {
+      res.status(409).json({message:'An account with this email already exists.'});
+      return;
+    }
+    next(e);
+  }
 });
 
 router.post('/login',async(req,res,next)=>{
