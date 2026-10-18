@@ -120,9 +120,6 @@ router.post('/', async (req: AuthedRequest, res, next) => {
 
     // Keep the source amount even when no trustworthy VND conversion is available.
     const normalizedCurrency = input.currency.trim().toUpperCase();
-    const effectiveUsdtCharged = input.usdtCharged === undefined && normalizedCurrency === 'VND'
-      ? (existing.usdtCharged == null ? null : Number(existing.usdtCharged))
-      : input.usdtCharged ?? null;
     const amountVnd = input.amountVnd ?? (
       normalizedCurrency === 'VND' ? input.amount :
       normalizedCurrency === 'USDT' && historicalVndPerUsdt != null ? input.amount * historicalVndPerUsdt :
@@ -250,6 +247,9 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       rubPerUsdt,
     });
     const normalizedCurrency = input.currency.trim().toUpperCase();
+    const effectiveUsdtCharged = input.usdtCharged === undefined && normalizedCurrency === 'VND'
+      ? (existing.usdtCharged == null ? null : Number(existing.usdtCharged))
+      : input.usdtCharged ?? null;
     const amountVnd = input.amountVnd ?? (
       normalizedCurrency === 'VND' ? input.amount :
       normalizedCurrency === 'USDT' && vndPerUsdt != null ? input.amount * vndPerUsdt :
