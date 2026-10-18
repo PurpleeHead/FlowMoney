@@ -20,7 +20,7 @@ export function assertProductionSecurityConfiguration(
     'secret',
     'password',
   ]);
-  if (knownPlaceholders.has(normalized)) {
+  if ([...knownPlaceholders].some((placeholder) => normalized.includes(placeholder))) {
     throw new Error(
       'Invalid production security configuration: JWT_SECRET must not use a placeholder value.',
     );
