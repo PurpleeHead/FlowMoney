@@ -34,7 +34,7 @@ export async function auth(req: AuthedRequest, res: Response, next: NextFunction
     // Tokens issued before this field existed are version 0. Incrementing the
     // database value after a password change invalidates all of those sessions.
     const tokenVersion = payload.tokenVersion ?? 0;
-    const userRecord = await prisma.user.findUnique({
+    const userRecord = await prisma.user.findFirst({
       where: { id: payload.id },
       select: { tokenVersion: true },
     });
