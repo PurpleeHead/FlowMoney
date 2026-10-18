@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
-  process.env.JWT_SECRET = 'receipt-api-test-secret';
+  process.env.JWT_SECRET = 'receipt-api-test-secret-long-enough-for-jwt-middleware';
   const app = express();
   app.use(express.json());
   app.use('/api/receipts', receiptRoutes);
@@ -37,7 +37,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
 }
 
 function bearer(userId = 'user-1') {
-  return `Bearer ${jwt.sign({ id: userId, email: `${userId}@example.com` }, 'receipt-api-test-secret')}`;
+  return `Bearer ${jwt.sign({ id: userId, email: `${userId}@example.com` }, 'receipt-api-test-secret-long-enough-for-jwt-middleware')}`;
 }
 
 describe('receipt API ownership', () => {
