@@ -65,6 +65,14 @@ describe('auth middleware used by wallet and journal APIs', () => {
     assert.equal(result.nextCalled, false);
   });
 
+  it('rejects a token with non-string identity claims', () => {
+    process.env.JWT_SECRET = secret;
+    const token = jwt.sign({ id: 123, email: ['user@example.com'] }, secret);
+    const result = runAuth(`Bearer ${token}`);
+    assert.equal(result.statusCode, 401);
+    assert.equal(result.nextCalled, false);
+  });
+
   it('accepts a valid bearer token and attaches only the authenticated identity', () => {
     process.env.JWT_SECRET = secret;
     const token = jwt.sign({ id: 'user-1', email: 'user@example.com' }, secret);
