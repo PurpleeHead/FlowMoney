@@ -38,7 +38,7 @@ export async function auth(req: AuthedRequest, res: Response, next: NextFunction
       where: { id: payload.id },
       select: { tokenVersion: true },
     });
-    if (!userRecord || userRecord.tokenVersion !== tokenVersion) {
+    if (!userRecord || (userRecord.tokenVersion ?? 0) !== tokenVersion) {
       res.status(401).json({ message: 'Session expired. Please sign in again.' });
       return;
     }
