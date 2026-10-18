@@ -53,6 +53,9 @@ function areExchangeDataRepresentable(data: {
 }
 
 function directTargetData(x: z.infer<typeof exchangeSchema>) {
+  if (x.vndFee !== 0) {
+    throw new Error('Fees are supported only for RUB → VND and RUB → USDT → VND exchanges.');
+  }
   if (x.targetReceived == null) throw new Error('Enter the amount received in the target currency.');
   // A RUB → USDT top-up does not imply a known USDT → VND rate.
   // Keep the actual USDT received even when its VND equivalent is not yet known.
