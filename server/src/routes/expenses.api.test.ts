@@ -228,6 +228,47 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+  it('includes direct RUB_TARGET → VND exchanges when recalculating a patched expense', async () => {
+    const existing = {
+      id: 'expense-target-vnd-rate', userId: 'user-42', title: 'Old title', category: 'Food',
+      amount: 100000, currency: 'VND', amountVnd: 100000, amountRub: null,
+      usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_TARGET', rubSpent: 2000, usdtReceived: null, vndReceived: null,
+      planningVndPerUsdt: null, targetCurrency: 'VND', targetReceived: 460000,
+      targetVndEquivalent: 460000,
+    }];
+    const tx = {
+      expense: {
+        updateMany: async () => ({ count: 1 }),
+        findFirst: async ({ where }: any) => ({ ...existing, ...where }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async ({ data }: any) => ({ count: data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-target-vnd-rate`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Updated groceries', category: 'Food', amount: 100000, currency: 'VND',
+        }),
+      });
+
+      assert.equal(response.status, 200);
+      const body = await response.json() as any;
+      assert.ok(Math.abs(body.amountRub - (100000 / (460000 / 2000))) < 0.0001,
+        'PATCH must include actual direct RUB_TARGET → VND outcomes in its historical VND/RUB rate');
+    });
+  });
+
   it('deletes an expense and its ledger rows in one owner-scoped transaction', async () => {
     let expenseDeleteArgs: any;
     const movementDeleteArgs: any[] = [];
