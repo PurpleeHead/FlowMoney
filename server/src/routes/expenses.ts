@@ -120,6 +120,9 @@ router.post('/', async (req: AuthedRequest, res, next) => {
 
     // Keep the source amount even when no trustworthy VND conversion is available.
     const normalizedCurrency = input.currency.trim().toUpperCase();
+    const effectiveUsdtCharged = input.usdtCharged === undefined && normalizedCurrency === 'VND'
+      ? (existing.usdtCharged == null ? null : Number(existing.usdtCharged))
+      : input.usdtCharged ?? null;
     const amountVnd = input.amountVnd ?? (
       normalizedCurrency === 'VND' ? input.amount :
       normalizedCurrency === 'USDT' && historicalVndPerUsdt != null ? input.amount * historicalVndPerUsdt :
@@ -258,7 +261,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       amount: input.amount,
       amountVnd,
       targetToVndRate: input.targetToVndRate,
-      usdtCharged: input.usdtCharged,
+      usdtCharged: effectiveUsdtCharged,
     }, rubPerUsdt, vndPerUsdt, vndPerRub);
     if (!areSupportedStoredAmounts([amountVnd, amountRub]) || !areRepresentableDecimals([
       { value: amountVnd, scale: 4 }, { value: amountRub, scale: 4 },
@@ -277,7 +280,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
           currency: input.currency,
           amountVnd,
           amountRub,
-          usdtCharged: input.usdtCharged === undefined ? existing.usdtCharged : input.usdtCharged,
+          usdtCharged: effectiveUsdtCharged,
           date: expenseDate,
           receiptId: input.receiptId ?? existing.receiptId,
         },
