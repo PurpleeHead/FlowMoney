@@ -134,3 +134,48 @@ describe('dashboard exchange rates', () => {
     });
   });
 });
+
+describe('dashboard historical expense snapshots', () => {
+  it('returns the stored RUB valuation instead of recalculating past expenses from current exchange rates', async () => {
+    expenseModel.findMany = async () => [{
+      id: 'historical-card-purchase',
+      userId: 'dashboard-user',
+      title: 'Groceries',
+      category: 'Food',
+      amount: 120000,
+      currency: 'VND',
+      amountVnd: 120000,
+      amountRub: 332,
+      usdtCharged: 4,
+      date: new Date('2026-10-10T08:00:00.000Z'),
+      receiptId: null,
+    }];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      rubSpent: 8300,
+      targetReceived: 40,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        expenses: Array<{ id: string; amountRub: number | null; amountVnd: number | null; usdtCharged: number | null }>;
+      };
+      assert.equal(body.expenses.length, 1);
+      assert.equal(body.expenses[0].id, 'historical-card-purchase');
+      assert.equal(body.expenses[0].amountRub, 332);
+      assert.equal(body.expenses[0].amountVnd, 120000);
+      assert.equal(body.expenses[0].usdtCharged, 4);
+    });
+  });
+});
+
