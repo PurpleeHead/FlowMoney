@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
-  process.env.JWT_SECRET = 'exchange-api-test-secret';
+  process.env.JWT_SECRET = 'exchange-api-test-secret-long-enough-for-jwt-middleware';
   const app = express();
   app.use(express.json());
   app.use('/api/exchanges', exchangeRoutes);
@@ -35,7 +35,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
 }
 
 function bearer(userId = 'user-1') {
-  return `Bearer ${jwt.sign({ id: userId, email: `${userId}@example.com` }, 'exchange-api-test-secret')}`;
+  return `Bearer ${jwt.sign({ id: userId, email: `${userId}@example.com` }, 'exchange-api-test-secret-long-enough-for-jwt-middleware')}`;
 }
 
 describe('exchange API ledger synchronization', () => {
