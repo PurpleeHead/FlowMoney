@@ -498,6 +498,44 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+  it('keeps planning VND/USDT rate out of PATCH factual valuation', async () => {
+    const existing = {
+      id: 'expense-patch-planning-rate', userId: 'user-42', title: 'Old purchase', category: 'Other',
+      amount: 5, currency: 'USDT', amountVnd: null, amountRub: 50,
+      usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    let updateData: any;
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 100, vndReceived: null,
+      planningVndPerUsdt: 25000, targetCurrency: 'VND', targetReceived: null, targetVndEquivalent: null,
+    }];
+    const tx = {
+      expense: {
+        updateMany: async (args: any) => { updateData = args.data; return { count: 1 }; },
+        findFirst: async () => ({ ...existing, ...updateData }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-patch-planning-rate`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Updated purchase', category: 'Other', amount: 10, currency: 'USDT' }),
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(updateData.amountVnd, null, 'PATCH must not persist the planning rate as factual VND');
+      assert.equal(updateData.amountRub, 830, 'known RUB/USDT rate still values the source amount');
+    });
+  });
+
   it('does not infer a RUB expense VND amount from an unrelated target rate when RUB/VND is unknown', async () => {
     expenseModel.findMany = async () => [];
     exchangeModel.findMany = async () => [];
