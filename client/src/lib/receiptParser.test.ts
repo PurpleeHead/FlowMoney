@@ -8,6 +8,12 @@ describe('Vietnamese receipt line parsing', () => {
       { name: 'Water', price: 12000, quantity: 1 },
     ]);
   });
+  it('parses repeated thousands separators without changing the amount', () => {
+    expect(parseReceiptLines('Rice 1.234.567')).toEqual([{ name: 'Rice', price: 1234567, quantity: 1 }]);
+  });
+  it('marks mixed thousands and decimal separators for manual review', () => {
+    expect(parseReceiptLines('Banh mi 12.500,50')).toEqual([{ name: 'Banh mi', price: 12500.5, quantity: 1, needsReview: true }]);
+  });
   it('parses prices with currency suffixes', () => {
     expect(parseReceiptLines('Banh mi 25.000 VND')).toEqual([{ name: 'Banh mi', price: 25000, quantity: 1 }]);
   });
