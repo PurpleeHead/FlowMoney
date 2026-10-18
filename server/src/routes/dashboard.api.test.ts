@@ -55,10 +55,61 @@ function exchangeFixture() {
     targetCurrency: 'USDT',
     targetReceived: 93.7853,
     targetToVndRate: 25400,
-    targetVndEquivalent: 2382156.62,
+    targetVndEquivalent: 2382146.62,
     createdAt: new Date('2026-10-18T08:00:00.000Z'),
   };
 }
+
+describe('dashboard unpriced USDT balance', () => {
+  it('does not present an unknown VND balance as zero after a direct USDT top-up', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { balanceVnd: number | null; estimatedUnconvertedVnd: number };
+      assert.equal(body.balanceVnd, null);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+    });
+  });
+});
+
+describe('dashboard confirmed and estimated VND totals', () => {
+  it('keeps non-VND target equivalents in estimates rather than confirmed VND received', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [exchangeFixture()];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.confirmedExchangeVnd, 0);
+      assert.equal(body.estimatedUnconvertedVnd, 2382146.62);
+      assert.equal(body.balanceIsEstimated, true);
+    });
+  });
+});
 
 describe('dashboard exchange rates', () => {
   it('includes direct RUB-to-USDT target exchanges in the effective RUB/USDT rate', async () => {
