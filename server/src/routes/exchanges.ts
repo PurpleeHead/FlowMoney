@@ -38,7 +38,11 @@ function areExchangeDataRepresentable(data: {
   effectiveVndPerRub: number | null; effectiveRubPerUsdt: number | null;
   targetReceived: number | null; targetToVndRate: number | null; targetVndEquivalent: number | null;
 }) {
-  return areSupportedStoredAmounts(Object.values(data)) && areRepresentableDecimals([
+  return areSupportedStoredAmounts([
+    data.rubSpent, data.usdtReceived, data.vndPerUsdt, data.planningVndPerUsdt,
+    data.vndFee, data.vndReceived, data.effectiveVndPerRub, data.effectiveRubPerUsdt,
+    data.targetReceived, data.targetToVndRate, data.targetVndEquivalent,
+  ]) && areRepresentableDecimals([
     { value: data.rubSpent, scale: 4 }, { value: data.usdtReceived, scale: 8 },
     { value: data.vndPerUsdt, scale: 4 }, { value: data.planningVndPerUsdt, scale: 4 },
     { value: data.vndFee, scale: 4, allowZero: true }, { value: data.vndReceived, scale: 4 },
