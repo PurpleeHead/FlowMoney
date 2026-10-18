@@ -5,14 +5,14 @@ import { auth } from './auth.js';
 import type { AuthedRequest } from '../types.js';
 import { prisma } from '../services/prisma.js';
 
-const userModel = prisma.user as unknown as { findUnique: (...args: any[]) => Promise<any> };
-const originalFindUnique = userModel.findUnique;
+const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
+const originalFindFirst = userModel.findFirst;
 
 const secret = 'auth-middleware-test-secret-at-least-32-characters';
 const previousSecret = process.env.JWT_SECRET;
 
 afterEach(async () => {
-  userModel.findUnique = originalFindUnique;
+  userModel.findFirst = originalFindFirst;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
@@ -42,7 +42,7 @@ async function runAuth(authorization?: string) {
 describe('auth middleware used by wallet and journal APIs', () => {
   it('rejects requests without a bearer token', async () => {
     process.env.JWT_SECRET = secret;
-    userModel.findUnique = async () => ({ tokenVersion: 0 });
+    userModel.findFirst = async () => ({ tokenVersion: 0 });
     const result = await runAuth();
     assert.equal(result.statusCode, 401);
     assert.equal(result.nextCalled, false);
@@ -58,7 +58,7 @@ describe('auth middleware used by wallet and journal APIs', () => {
   it('rejects expired tokens', async () => {
     process.env.JWT_SECRET = secret;
     const token = jwt.sign({ id: 'user-1', email: 'user@example.com' }, secret, { expiresIn: -1 });
-    userModel.findUnique = async () => ({ tokenVersion: 0 });
+    userModel.findFirst = async () => ({ tokenVersion: 0 });
     const result = await runAuth(`Bearer ${token}`);
     assert.equal(result.statusCode, 401);
     assert.equal(result.nextCalled, false);
@@ -92,7 +92,7 @@ describe('auth middleware used by wallet and journal APIs', () => {
   it('rejects a token issued before a password change', async () => {
     process.env.JWT_SECRET = secret;
     const token = jwt.sign({ id: 'user-1', email: 'user@example.com', tokenVersion: 0 }, secret);
-    userModel.findUnique = async () => ({ tokenVersion: 1 });
+    userModel.findFirst = async () => ({ tokenVersion: 1 });
     const result = await runAuth(`Bearer ${token}`);
     assert.equal(result.statusCode, 401);
     assert.equal(result.nextCalled, false);
