@@ -83,6 +83,7 @@ describe('auth middleware used by wallet and journal APIs', () => {
   it('accepts a valid bearer token and attaches only the authenticated identity', async () => {
     process.env.JWT_SECRET = secret;
     const token = jwt.sign({ id: 'user-1', email: 'user@example.com' }, secret);
+    userModel.findFirst = async () => ({ tokenVersion: 0 });
     const result = await runAuth(`Bearer ${token}`);
     assert.equal(result.statusCode, 200);
     assert.equal(result.nextCalled, true);
