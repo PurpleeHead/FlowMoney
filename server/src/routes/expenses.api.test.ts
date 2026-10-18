@@ -277,4 +277,32 @@ describe('expense API ledger synchronization', () => {
       assert.deepEqual(movementDeleteArgs, []);
     });
   });
+
+  it('returns 404 and leaves ledger rows untouched when updating another user expense', async () => {
+    let transactionCalls = 0;
+    expenseModel.findFirst = async args => {
+      assert.deepEqual(args.where, { id: 'another-users-expense', userId: 'user-42' });
+      return null;
+    };
+    const originalTx = client.$transaction;
+    client.$transaction = async (...args: any[]) => {
+      transactionCalls += 1;
+      return originalTx(...args);
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/another-users-expense`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Tampered expense', category: 'Food', amount: 100,
+          currency: 'RUB',
+        }),
+      });
+
+      assert.equal(response.status, 404);
+      assert.equal(transactionCalls, 0, 'must not start a write transaction for another user expense');
+    });
+  });
+
 });
