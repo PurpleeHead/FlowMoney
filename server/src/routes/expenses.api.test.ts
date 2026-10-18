@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
-  process.env.JWT_SECRET = 'expense-api-test-secret';
+  process.env.JWT_SECRET = 'expense-api-test-secret-long-enough-for-jwt-middleware';
   const app = express();
   app.use(express.json());
   app.use('/api/expenses', expenseRoutes);
@@ -49,7 +49,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
 }
 
 function bearer(userId = 'user-1') {
-  return `Bearer ${jwt.sign({ id: userId, email: `${userId}@example.com` }, 'expense-api-test-secret')}`;
+  return `Bearer ${jwt.sign({ id: userId, email: `${userId}@example.com` }, 'expense-api-test-secret-long-enough-for-jwt-middleware')}`;
 }
 
 describe('expense API ledger synchronization', () => {
