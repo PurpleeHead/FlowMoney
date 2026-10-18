@@ -7,11 +7,22 @@ import { prisma } from '../services/prisma.js';
 import expenseRoutes from './expenses.js';
 
 const client = prisma as unknown as { $transaction: (...args: any[]) => Promise<any> };
+const expenseModel = prisma.expense as unknown as {
+  findFirst: (...args: any[]) => Promise<any>;
+  findMany: (...args: any[]) => Promise<any>;
+};
+const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
 const originalTransaction = client.$transaction;
+const originalExpenseFindFirst = expenseModel.findFirst;
+const originalExpenseFindMany = expenseModel.findMany;
+const originalExchangeFindMany = exchangeModel.findMany;
 const previousSecret = process.env.JWT_SECRET;
 
 afterEach(() => {
   client.$transaction = originalTransaction;
+  expenseModel.findFirst = originalExpenseFindFirst;
+  expenseModel.findMany = originalExpenseFindMany;
+  exchangeModel.findMany = originalExchangeFindMany;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
@@ -39,6 +50,63 @@ function bearer(userId = 'user-1') {
 }
 
 describe('expense API ledger synchronization', () => {
+  it('updates an expense and replaces its wallet debit in the same owner-scoped transaction', async () => {
+    const existing = {
+      id: 'expense-1', userId: 'user-42', title: 'Old title', category: 'Food',
+      amount: 100000, currency: 'VND', amountVnd: 100000, amountRub: null,
+      usdtCharged: 4, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    let updateArgs: any;
+    const deletedMovements: any[] = [];
+    const createdMovements: any[] = [];
+    expenseModel.findFirst = async args => {
+      assert.deepEqual(args.where, { id: 'expense-1', userId: 'user-42' });
+      return existing;
+    };
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    const tx = {
+      expense: {
+        updateMany: async (args: any) => {
+          updateArgs = args;
+          return { count: 1 };
+        },
+        findFirst: async () => ({ ...existing, title: 'Updated groceries', usdtCharged: 2.5 }),
+      },
+      walletMovement: {
+        deleteMany: async (args: any) => {
+          deletedMovements.push(args);
+          return { count: 1 };
+        },
+        createMany: async (args: any) => {
+          createdMovements.push(args);
+          return { count: args.data.length };
+        },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-1`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Updated groceries', category: 'Food', amount: 100000,
+          currency: 'VND', usdtCharged: 2.5,
+        }),
+      });
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(updateArgs.where, { id: 'expense-1', userId: 'user-42' });
+      assert.equal(updateArgs.data.usdtCharged, 2.5);
+      assert.deepEqual(deletedMovements, [{
+        where: { userId: 'user-42', sourceKey: { startsWith: 'expense:expense-1:' } },
+      }]);
+      const movements = createdMovements[0].data as Array<{ currency: string; amountDelta: number }>;
+      assert.deepEqual(movements.map(item => [item.currency, item.amountDelta]), [['USDT', -2.5]]);
+    });
+  });
+
   it('deletes an expense and its ledger rows in one owner-scoped transaction', async () => {
     let expenseDeleteArgs: any;
     const movementDeleteArgs: any[] = [];
