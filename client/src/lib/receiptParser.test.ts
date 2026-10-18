@@ -44,7 +44,7 @@ describe('Vietnamese receipt line parsing', () => {
       'Refund -10.000',
       'Tiền khách đưa 50.000',
       'Tiền thừa 20.000',
-    ].join('\\n'))).toEqual([{ name: 'Coffee', price: 40000, quantity: 1 }]);
+    ].join('\n'))).toEqual([{ name: 'Coffee', price: 40000, quantity: 1 }]);
   });
 
   it('ignores lines without a recognizable product and trailing price', () => {
