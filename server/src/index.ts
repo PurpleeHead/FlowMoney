@@ -33,7 +33,22 @@ app.use(helmet({
 const allowedOrigins = new Set([process.env.CLIENT_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173', 'https://purpleehead.github.io'].filter((value): value is string => Boolean(value)));
 app.use(cors({ origin: (origin, callback) => { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error('Origin not allowed by CORS')); } }));
 app.use(express.json({ limit: '1mb' }));
+// Keep a shared auth ceiling, then apply stricter per-endpoint limits to slow
+// credential stuffing and registration abuse without limiting normal API use.
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 40, standardHeaders: true, legacyHeaders: false }));
+app.use('/api/auth/login', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+}));
+app.use('/api/auth/register', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'flowmoney-api' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/exchanges', exchangeRoutes);
