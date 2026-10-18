@@ -70,6 +70,8 @@ function parsePricedItem(line: string): ReceiptItem | null {
   const match = line.match(/^(.*?)\s+([\d][\d.,'’]*(?:\s+\d{3})*)\s*(?:₫|đ|VND|VNĐ)?$/i);
   if (!match) return null;
   const rawName = match[1];
+  // A trailing x/× count is a quantity marker, not a unit price on its own.
+  if (/(?:^|\s)[xх×]\s*$/i.test(rawName)) return null;
   const name = cleanItemName(rawName);
   const parsed = normalizeVndPrice(match[2]);
   if (!parsed || !looksLikeItemName(name)) return null;
