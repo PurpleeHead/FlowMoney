@@ -232,8 +232,9 @@ describe('registration validation and duplicate handling', () => {
   it('returns conflict if a concurrent registration wins the unique-email race', async () => {
     userModel.findUnique = async () => null;
     userModel.create = async () => {
-      const error = new Error('Unique constraint failed') as Error & { code: string };
+      const error = new Error('Unique constraint failed') as Error & { code: string; meta: { target: string[] } };
       error.code = 'P2002';
+      error.meta = { target: ['email'] };
       throw error;
     };
 
@@ -246,6 +247,28 @@ describe('registration validation and duplicate handling', () => {
       assert.equal(response.status, 409);
       const body = await response.json() as Record<string, unknown>;
       assert.equal(body.message, 'An account with this email already exists.');
+    });
+  });
+});
+
+
+describe('registration unique constraint scope', () => {
+  it('does not misreport unrelated unique constraint failures as duplicate email', async () => {
+    userModel.findUnique = async () => null;
+    userModel.create = async () => {
+      const error = new Error('Unique constraint failed') as Error & { code: string; meta: { target: string[] } };
+      error.code = 'P2002';
+      error.meta = { target: ['someOtherField'] };
+      throw error;
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'unrelated@example.com', password: 'Valid-password-123' }),
+      });
+      assert.equal(response.status, 500);
     });
   });
 });
