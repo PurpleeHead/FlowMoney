@@ -148,6 +148,8 @@ describe('exchange API ledger synchronization', () => {
         where: { userId: 'user-42', sourceKey: { startsWith: 'exchange:exchange-1:' } },
       }]);
     });
+  });
+
   it('returns 404 and leaves ledger rows untouched when the exchange is absent or owned by someone else', async () => {
     const movementDeleteArgs: any[] = [];
     const tx = {
@@ -172,6 +174,5 @@ describe('exchange API ledger synchronization', () => {
       assert.equal(response.status, 404);
       assert.deepEqual(movementDeleteArgs, [], 'ledger deletion must not run if the owner-scoped exchange delete matched no row');
     });
-  });
   });
 });
