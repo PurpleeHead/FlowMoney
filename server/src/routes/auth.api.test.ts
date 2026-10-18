@@ -5,16 +5,15 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import type { AddressInfo } from 'node:net';
 import { prisma } from '../services/prisma.js';
-
-const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
-const originalUserFindFirst = userModel.findFirst;
 import authRoutes from './auth.js';
 
 const userModel = prisma.user as unknown as {
+  findFirst: (...args: any[]) => Promise<any>;
   findUnique: (...args: any[]) => Promise<any>;
   update: (...args: any[]) => Promise<any>;
   create: (...args: any[]) => Promise<any>;
 };
+const originalUserFindFirst = userModel.findFirst;
 const originalFindUnique = userModel.findUnique;
 const originalUpdate = userModel.update;
 const originalCreate = userModel.create;
@@ -98,8 +97,8 @@ describe('password change safeguards', () => {
     currentHash = await bcrypt.hash(currentPassword, 4);
     userModel.findUnique = async args => {
       assert.deepEqual(args.where, { id: 'user-1' });
-      assert.deepEqual(args.select, { id: true, passwordHash: true });
-      return { id: 'user-1', passwordHash: currentHash };
+      assert.deepEqual(args.select, { id: true, passwordHash: true, tokenVersion: true });
+      return { id: 'user-1', passwordHash: currentHash, tokenVersion: 0 };
     };
     let updateCalled = false;
     userModel.update = async () => {
@@ -120,7 +119,7 @@ describe('password change safeguards', () => {
 
   it('rejects reusing the current password without updating the account', async () => {
     currentHash = await bcrypt.hash(currentPassword, 4);
-    userModel.findUnique = async () => ({ id: 'user-1', passwordHash: currentHash });
+    userModel.findUnique = async () => ({ id: 'user-1', passwordHash: currentHash, tokenVersion: 0 });
     let updateCalled = false;
     userModel.update = async () => {
       updateCalled = true;
