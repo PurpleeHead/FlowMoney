@@ -30,7 +30,7 @@ describe('Vietnamese receipt line parsing', () => {
     expect(parseReceiptLines('WinMart 40.000\nTiền cần thanh toán 275.000\nHotline 02471066888')).toEqual([{ name: 'WinMart', price: 40000, quantity: 1 }]);
   });
   it('does not confuse product names containing metadata-like substrings with metadata', () => {
-    expect(parseReceiptLines('Cashew nuts 25.000\\nCash 50.000\\nChange 10.000')).toEqual([
+    expect(parseReceiptLines('Cashew nuts 25.000\nCash 50.000\nChange 10.000')).toEqual([
       { name: 'Cashew nuts', price: 25000, quantity: 1 },
     ]);
   });
