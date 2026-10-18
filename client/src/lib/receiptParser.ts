@@ -6,7 +6,19 @@ function normalizeVndPrice(value: string): { price: number; needsReview: boolean
   let normalized: string;
   const hasDot = raw.includes('.');
   const hasComma = raw.includes(',');
-  if (hasDot && hasComma) normalized = raw.replace(/[.,]/g, '');
+  let ambiguousMixedSeparator = false;
+  if (hasDot && hasComma) {
+    const lastSeparator = Math.max(raw.lastIndexOf('.'), raw.lastIndexOf(','));
+    const fractionalDigits = raw.length - lastSeparator - 1;
+    if (fractionalDigits === 1 || fractionalDigits === 2) {
+      const integerPart = raw.slice(0, lastSeparator).replace(/[.,]/g, '');
+      const fractionalPart = raw.slice(lastSeparator + 1);
+      normalized = integerPart + '.' + fractionalPart;
+      ambiguousMixedSeparator = true;
+    } else {
+      normalized = raw.replace(/[.,]/g, '');
+    }
+  }
   else if (hasDot || hasComma) {
     const separator = hasDot ? '.' : ',';
     const parts = raw.split(separator);
@@ -19,7 +31,7 @@ function normalizeVndPrice(value: string): { price: number; needsReview: boolean
   } else normalized = raw;
   let price = Number(normalized);
   if (!Number.isFinite(price) || price <= 0) return null;
-  let needsReview = price < 1000;
+  let needsReview = price < 1000 || ambiguousMixedSeparator;
   if (!hasDot && !hasComma && price >= 10_000_000 && price <= 100_000_000 && price % 1000 === 0) {
     price /= 1000;
     needsReview = true;
