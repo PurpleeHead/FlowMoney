@@ -8,7 +8,7 @@ import type {AuthedRequest} from '../types.js';
 
 const router=Router();
 const credentials=z.object({
-  email:z.string().email().max(254).transform(v=>v.toLowerCase().trim()),
+  email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),
   password:z.string().min(8).max(128),
 });
 const profileSchema=z.object({
@@ -35,7 +35,13 @@ router.post('/register',async(req,res,next)=>{
       },
     });
     res.status(201).json({message:'Account created. You can now sign in.'});
-  }catch(e){next(e);}
+  }catch(e){
+    if (typeof e === 'object' && e !== null && 'code' in e && e.code === 'P2002') {
+      res.status(409).json({message:'An account with this email already exists.'});
+      return;
+    }
+    next(e);
+  }
 });
 
 router.post('/login',async(req,res,next)=>{
