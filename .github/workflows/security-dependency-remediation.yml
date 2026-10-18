@@ -26,6 +26,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Update npm to a version with the peer-resolution fix
+        run: npm install --global npm@11.19.1
+      - name: Confirm toolchain versions
+        run: |
+          node --version
+          npm --version
       - name: Regenerate lockfile from manifests
         run: npm install --package-lock-only --ignore-scripts --no-audit
       - name: Install exact lockfile
