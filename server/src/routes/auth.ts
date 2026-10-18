@@ -8,7 +8,7 @@ import type {AuthedRequest} from '../types.js';
 
 const router=Router();
 const credentials=z.object({
-  email:z.string().email().max(254).transform(v=>v.toLowerCase().trim()),
+  email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),
   password:z.string().min(8).max(128),
 });
 const profileSchema=z.object({
