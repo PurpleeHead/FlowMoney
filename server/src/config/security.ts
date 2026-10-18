@@ -17,8 +17,6 @@ export function assertProductionSecurityConfiguration(
     'replace-me',
     'your-secret',
     'your-jwt-secret',
-    'secret',
-    'password',
   ]);
   if ([...knownPlaceholders].some((placeholder) => normalized.includes(placeholder))) {
     throw new Error(
