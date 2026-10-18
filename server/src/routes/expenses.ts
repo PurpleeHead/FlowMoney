@@ -241,6 +241,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         rubSpent: Number(x.rubSpent),
         vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
         targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+        targetCurrency: x.targetCurrency,
       }))),
       actualVndExchanges: exchanges.filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
         .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
