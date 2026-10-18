@@ -245,6 +245,50 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+  it('keeps the actual USDT debit when the VND amount is edited', async () => {
+    const existing = {
+      id: 'expense-edit-vnd-amount', userId: 'user-42', title: 'Old groceries', category: 'Food',
+      amount: 100000, currency: 'VND', amountVnd: 100000, amountRub: 332,
+      usdtCharged: 4, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    let updateData: any;
+    const createdMovements: any[] = [];
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 100, vndReceived: null,
+      planningVndPerUsdt: 20000, targetCurrency: 'VND', targetReceived: null, targetVndEquivalent: null,
+    }];
+    const tx = {
+      expense: {
+        updateMany: async ({ data }: any) => { updateData = data; return { count: 1 }; },
+        findFirst: async () => ({ ...existing, ...updateData }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 1 }),
+        createMany: async ({ data }: any) => { createdMovements.push(...data); return { count: data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-edit-vnd-amount`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Updated groceries', category: 'Food', amount: 120000, amountVnd: 120000, currency: 'VND',
+        }),
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(updateData.amount, 120000);
+      assert.equal(updateData.amountVnd, 120000);
+      assert.equal(updateData.usdtCharged, 4, 'editing VND amount must not erase the recorded actual USDT debit');
+      assert.equal(updateData.amountRub, 332, 'RUB cost must remain based on 4 actual USDT × 83 RUB/USDT, not the planning estimate');
+      assert.deepEqual(createdMovements.map((item: any) => [item.currency, item.amountDelta]), [['USDT', -4]]);
+    });
+  });
+
   it('includes direct RUB_TARGET → VND exchanges when recalculating a patched expense', async () => {
     const existing = {
       id: 'expense-target-vnd-rate', userId: 'user-42', title: 'Old title', category: 'Food',
