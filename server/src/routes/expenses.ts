@@ -29,6 +29,9 @@ export const expenseSchema = z.object({
   if (currency === 'VND' && !hasDecimalScale(value.amount, 4)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'VND expenses support at most 4 decimal places.' });
   }
+  if (currency === 'VND' && value.amountVnd != null && value.amountVnd !== value.amount) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amountVnd'], message: 'For VND expenses, amountVnd must match the source amount.' });
+  }
   if (value.usdtCharged != null && currency !== 'VND') {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['usdtCharged'], message: 'A USDT card debit can only be attached to a VND purchase.' });
   }

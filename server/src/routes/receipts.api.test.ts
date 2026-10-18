@@ -67,6 +67,36 @@ describe('receipt API ownership', () => {
     });
   });
 
+  it('rejects receipt items with inconsistent VND price and amountVnd before database writes', async () => {
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-1'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rawText: 'Vietnamese receipt',
+          items: [{ name: 'Coffee', price: 50000, currency: 'VND', amountVnd: 1 }],
+        }),
+      });
+
+      assert.equal(response.status, 400);
+    });
+  });
+
+  it('rejects receipt items labelled in a non-VND currency', async () => {
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-1'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rawText: 'Vietnamese receipt',
+          items: [{ name: 'Coffee', price: 50000, currency: 'USD', amountVnd: 50000 }],
+        }),
+      });
+
+      assert.equal(response.status, 400);
+    });
+  });
+
   it('rejects receipt listing without authentication', async () => {
     let queryCalled = false;
     receiptModel.findMany = async () => {

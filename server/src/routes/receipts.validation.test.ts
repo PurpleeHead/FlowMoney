@@ -7,7 +7,12 @@ describe('receipt item request validation', () => {
 
   it('accepts ordinary receipt items within persisted precision', () => {
     assert.equal(itemSchema.safeParse(validItem).success, true);
-    assert.equal(itemSchema.safeParse({ ...validItem, price: 0.000001 }).success, true);
+    assert.equal(itemSchema.safeParse({ ...validItem, price: 0.0001, amountVnd: 0.0001 }).success, true);
+  });
+
+  it('rejects source prices that disagree with the VND equivalent', () => {
+    assert.equal(itemSchema.safeParse({ ...validItem, price: 25001 }).success, false);
+    assert.equal(itemSchema.safeParse({ ...validItem, currency: 'USD' }).success, false);
   });
 
   it('rejects item values that exceed their Decimal column scale', () => {

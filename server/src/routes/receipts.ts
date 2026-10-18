@@ -20,8 +20,12 @@ export const itemSchema = z.object({
   name: z.string().trim().min(1).max(300),
   price: z.number().positive().finite().min(0.000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 6), 'Item price supports at most 6 decimal places.'),
   quantity: z.number().positive().finite().max(MAX_STORED_AMOUNT).default(1),
-  currency: z.string().default('VND'),
+  currency: z.literal('VND').default('VND'),
   amountVnd: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 4), 'VND amount supports at most 4 decimal places.'),
+}).superRefine((value, ctx) => {
+  if (value.amountVnd !== value.price) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amountVnd'], message: 'For VND receipt items, amountVnd must match the source price.' });
+  }
 });
 
 router.post('/', async (req: AuthedRequest, res, next) => {
