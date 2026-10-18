@@ -80,6 +80,8 @@ jobs:
         run: npm run db:generate
       - name: Apply all migrations to disposable PostgreSQL
         run: npx prisma migrate deploy --schema=server/prisma/schema.prisma
+      - name: Verify transaction rollback when ledger write fails
+        run: npx tsx server/prisma/tests/verify-transaction-rollback.ts
       - name: Seed legacy records and an existing ledger row
         run: psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/tests/wallet-movement-backfill-fixture.sql
       - name: Verify backfill is idempotent
