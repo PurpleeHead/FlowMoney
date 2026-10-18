@@ -21,6 +21,22 @@ INSERT INTO "Exchange" (
   8300, 93.7853, 2665, 0, 250000, 30.1204, 88.5018, CURRENT_TIMESTAMP
 );
 
+-- Unknown VND outcome: only the known RUB outflow and USDT inflow should be backfilled.
+INSERT INTO "Exchange" (
+  "id", "userId", "mode", "targetCurrency", "rubSpent", "usdtReceived", "createdAt"
+) VALUES (
+  'backfill-unknown-vnd', 'backfill-test-user', 'RUB_USDT_VND', 'VND', 500, 5, CURRENT_TIMESTAMP
+);
+
+-- Direct RUB -> VND exchange: known RUB outflow and VND inflow, no USDT movement.
+INSERT INTO "Exchange" (
+  "id", "userId", "mode", "targetCurrency", "targetReceived", "rubSpent",
+  "vndReceived", "createdAt"
+) VALUES (
+  'backfill-direct-vnd', 'backfill-test-user', 'RUB_VND', 'VND', 30000,
+  1000, 30000, CURRENT_TIMESTAMP
+);
+
 -- Simulate an already-synchronized row: the migration must preserve, not duplicate it.
 INSERT INTO "WalletMovement" (
   "id", "userId", "currency", "amountDelta", "kind", "sourceKey", "note", "occurredAt"
