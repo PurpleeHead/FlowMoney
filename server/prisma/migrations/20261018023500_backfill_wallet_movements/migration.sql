@@ -78,7 +78,7 @@ SELECT
   x."createdAt"
 FROM "Exchange" x
 WHERE x."mode" = 'RUB_TARGET'
-  AND upper(trim(x."targetCurrency")) IN ('RUB', 'USDT', 'VND')
+  AND upper(trim(x."targetCurrency")) IN ('USDT', 'VND')
   AND x."targetReceived" IS NOT NULL
   AND x."targetReceived" > 0
 
