@@ -195,7 +195,10 @@ describe('expense API ledger synchronization', () => {
     const createdMovements: any[] = [];
     expenseModel.findFirst = async () => existing;
     expenseModel.findMany = async () => [];
-    exchangeModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 100, vndReceived: null,
+      planningVndPerUsdt: 20000, targetCurrency: 'VND', targetReceived: null, targetVndEquivalent: null,
+    }];
     const tx = {
       expense: {
         updateMany: async (args: any) => { updateArgs = args; return { count: 1 }; },
@@ -219,6 +222,7 @@ describe('expense API ledger synchronization', () => {
 
       assert.equal(response.status, 200);
       assert.equal(updateArgs.data.usdtCharged, 4, 'omitting usdtCharged must preserve the existing actual card debit');
+      assert.equal(updateArgs.data.amountRub, 332, 'RUB cost must use the preserved actual debit (4 USDT × 83 RUB/USDT), not the planning estimate');
       const movements = createdMovements[0].data as Array<{ currency: string; amountDelta: number }>;
       assert.deepEqual(movements.map(item => [item.currency, item.amountDelta]), [['USDT', -4]]);
     });
