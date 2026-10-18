@@ -29,6 +29,30 @@ jobs:
           const counts = report.metadata?.vulnerabilities ?? {};
           console.log('Dependency audit summary:', JSON.stringify(counts));
           for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+            const advisories = (item.via ?? []).map((entry) =>
+              typeof entry === 'string' ? entry : `${entry.title ?? entry.name ?? 'advisory'} (${entry.url ?? 'URL unavailable'})`
+            );
+            console.log([
+              item.severity.toUpperCase(),
+              name,
+              `range=${item.range}`,
+              `direct=${item.isDirect}`,
+              `fixAvailable=${JSON.stringify(item.fixAvailable)}`,
+              `nodes=${(item.nodes ?? []).join(',')}`,
+              `via=${advisories.join('; ')}`,
+            ].join(' | '));
+          }
+          if (report.error) console.log('Audit error:', JSON.stringify(report.error));
+          NODE
+      - name: Report server production dependency audit (non-blocking)
+        shell: bash
+        run: |
+          npm audit --workspace=@flowmoney/server --omit=dev --json > "$RUNNER_TEMP/npm-audit-production.json" || true
+          node - "$RUNNER_TEMP/npm-audit-production.json" <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          console.log('Production dependency audit summary:', JSON.stringify(report.metadata?.vulnerabilities ?? {}));
+          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
             console.log([
               item.severity.toUpperCase(),
               name,
@@ -37,7 +61,7 @@ jobs:
               `fixAvailable=${JSON.stringify(item.fixAvailable)}`,
             ].join(' | '));
           }
-          if (report.error) console.log('Audit error:', JSON.stringify(report.error));
+          if (report.error) console.log('Production audit error:', JSON.stringify(report.error));
           NODE
       - name: Generate Prisma client
         run: npm run db:generate
