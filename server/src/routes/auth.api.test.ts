@@ -2,6 +2,7 @@ import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import type { AddressInfo } from 'node:net';
 import { prisma } from '../services/prisma.js';
 import authRoutes from './auth.js';
@@ -77,6 +78,80 @@ describe('auth profile ownership', () => {
       });
       assert.equal(response.status, 401);
       assert.equal(queryCalled, false);
+    });
+  });
+});
+
+describe('password change safeguards', () => {
+  const currentPassword = 'Current-password-123';
+  let currentHash: string;
+
+  it('rejects an incorrect current password without updating the account', async () => {
+    currentHash = await bcrypt.hash(currentPassword, 4);
+    userModel.findUnique = async args => {
+      assert.deepEqual(args.where, { id: 'user-1' });
+      assert.deepEqual(args.select, { id: true, passwordHash: true });
+      return { id: 'user-1', passwordHash: currentHash };
+    };
+    let updateCalled = false;
+    userModel.update = async () => {
+      updateCalled = true;
+      throw new Error('must not update password');
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/auth/password`, {
+        method: 'PATCH',
+        headers: { authorization: bearer(), 'content-type': 'application/json' },
+        body: JSON.stringify({ currentPassword: 'wrong-password', newPassword: 'New-password-456' }),
+      });
+      assert.equal(response.status, 400);
+      assert.equal(updateCalled, false);
+    });
+  });
+
+  it('rejects reusing the current password without updating the account', async () => {
+    currentHash = await bcrypt.hash(currentPassword, 4);
+    userModel.findUnique = async () => ({ id: 'user-1', passwordHash: currentHash });
+    let updateCalled = false;
+    userModel.update = async () => {
+      updateCalled = true;
+      throw new Error('must not update password');
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/auth/password`, {
+        method: 'PATCH',
+        headers: { authorization: bearer(), 'content-type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword: currentPassword }),
+      });
+      assert.equal(response.status, 400);
+      assert.equal(updateCalled, false);
+    });
+  });
+
+  it('stores only a hash for the authenticated account and never returns it', async () => {
+    currentHash = await bcrypt.hash(currentPassword, 4);
+    userModel.findUnique = async () => ({ id: 'user-1', passwordHash: currentHash });
+    let updateArgs: any;
+    userModel.update = async args => {
+      updateArgs = args;
+      return { id: 'user-1' };
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/auth/password`, {
+        method: 'PATCH',
+        headers: { authorization: bearer(), 'content-type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword: 'New-password-456' }),
+      });
+      const body = await response.json() as Record<string, unknown>;
+      assert.equal(response.status, 200);
+      assert.deepEqual(updateArgs.where, { id: 'user-1' });
+      assert.equal(typeof updateArgs.data.passwordHash, 'string');
+      assert.notEqual(updateArgs.data.passwordHash, 'New-password-456');
+      assert.equal(await bcrypt.compare('New-password-456', updateArgs.data.passwordHash), true);
+      assert.equal('passwordHash' in body, false);
     });
   });
 });
