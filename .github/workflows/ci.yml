@@ -65,6 +65,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flowmoney_test?schema=public
+    PSQL_URL: postgresql://postgres:postgres@localhost:5432/flowmoney_test
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -80,13 +81,13 @@ jobs:
       - name: Apply all migrations to disposable PostgreSQL
         run: npx prisma migrate deploy --schema=server/prisma/schema.prisma
       - name: Seed legacy records and an existing ledger row
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/prisma/tests/wallet-movement-backfill-fixture.sql
+        run: psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/tests/wallet-movement-backfill-fixture.sql
       - name: Verify backfill is idempotent
         shell: bash
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 <<'SQL'
           DO $
           DECLARE
             movement_count integer;
