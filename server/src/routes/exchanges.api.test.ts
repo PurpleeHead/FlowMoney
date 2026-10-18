@@ -82,6 +82,44 @@ describe('exchange API ledger synchronization', () => {
     });
   });
 
+  it('returns 404 and leaves ledger rows untouched when updating another user exchange', async () => {
+    let updateArgs: any;
+    const movementDeleteArgs: any[] = [];
+    const movementCreateArgs: any[] = [];
+    const tx = {
+      exchange: {
+        updateMany: async (args: any) => {
+          updateArgs = args;
+          return { count: 0 };
+        },
+        findFirst: async () => {
+          throw new Error('exchange lookup must not run after an owner-scoped update matches no row');
+        },
+      },
+      walletMovement: {
+        deleteMany: async (args: any) => { movementDeleteArgs.push(args); return { count: 1 }; },
+        createMany: async (args: any) => { movementCreateArgs.push(args); return { count: args.data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/another-users-exchange`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853,
+          vndFee: 0, targetCurrency: 'VND',
+        }),
+      });
+
+      assert.equal(response.status, 404);
+      assert.deepEqual(updateArgs.where, { id: 'another-users-exchange', userId: 'user-42' });
+      assert.deepEqual(movementDeleteArgs, [], 'ledger deletion must not run when the owner-scoped update matches no row');
+      assert.deepEqual(movementCreateArgs, [], 'ledger creation must not run when the owner-scoped update matches no row');
+    });
+  });
+
   it('returns an error when ledger synchronization fails during exchange update', async () => {
     let transactionCompleted = false;
     const tx = {
