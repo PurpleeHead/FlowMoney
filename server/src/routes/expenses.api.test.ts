@@ -241,10 +241,11 @@ describe('expense API ledger synchronization', () => {
       planningVndPerUsdt: null, targetCurrency: 'VND', targetReceived: 460000,
       targetVndEquivalent: 460000,
     }];
+    let updateData: any;
     const tx = {
       expense: {
-        updateMany: async () => ({ count: 1 }),
-        findFirst: async ({ where }: any) => ({ ...existing, ...where }),
+        updateMany: async ({ data }: any) => { updateData = data; return { count: 1 }; },
+        findFirst: async () => ({ ...existing, ...updateData }),
       },
       walletMovement: {
         deleteMany: async () => ({ count: 0 }),
