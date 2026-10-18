@@ -112,10 +112,11 @@ describe('RUB-to-USDT exchange observations', () => {
 });
 
 describe('direct exchange observations', () => {
-  it('includes RUB_TARGET VND equivalents when recalculating historical VND/RUB rates', () => {
+  it('includes direct VND target exchanges but excludes non-VND estimates from observed VND/RUB rates', () => {
     assert.deepEqual(mapDirectVndExchanges([
       { mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250000 },
-      { mode: 'RUB_TARGET', rubSpent: 2000, targetVndEquivalent: 460000 },
+      { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'VND', targetVndEquivalent: 460000 },
+      { mode: 'RUB_TARGET', rubSpent: 500, targetCurrency: 'USDT', targetVndEquivalent: 130000 },
       { mode: 'RUB_USDT_VND', rubSpent: 3000, vndReceived: null },
     ]), [
       { rubSpent: 1000, vndReceived: 250000 },

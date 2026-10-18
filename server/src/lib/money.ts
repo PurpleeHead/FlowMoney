@@ -82,12 +82,13 @@ export function mapDirectVndExchanges(exchanges: Array<{
   rubSpent: number;
   vndReceived?: number | null;
   targetVndEquivalent?: number | null;
+  targetCurrency?: string | null;
 }>): DirectVndObservation[] {
   return exchanges.flatMap((exchange) => {
     if (exchange.mode === 'RUB_VND' && exchange.vndReceived != null) {
       return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
     }
-    if (exchange.mode === 'RUB_TARGET' && exchange.targetVndEquivalent != null) {
+    if (exchange.mode === 'RUB_TARGET' && exchange.targetCurrency?.trim().toUpperCase() === 'VND' && exchange.targetVndEquivalent != null) {
       return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.targetVndEquivalent }];
     }
     return [];

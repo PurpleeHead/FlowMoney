@@ -51,7 +51,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const effectiveVndPerRub = calculateObservedVndPerRub({
       directExchanges: [
         ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetVndEquivalent != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent) })),
+        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND' && x.targetVndEquivalent != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent) })),
       ],
       actualVndExchanges: exchanges
         .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
