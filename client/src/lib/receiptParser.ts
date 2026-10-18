@@ -35,6 +35,13 @@ function isMetadataLine(text: string): boolean {
   return /(?:tien can thanh toan|tong cong|thanh toan|phieu tinh tien|hoa don|xuat hoa don|ma so|khach|hotline|truy cap|cqt|subtotal|total|thank you|cash|change|diem)/i.test(fold(text));
 }
 
+function parseQuantity(value: string): number {
+  const match = value.match(/(?:^|\s)[xх×]\s*(\d+(?:[.,]\d+)?)\s*(?=$|\s)/i);
+  if (!match) return 1;
+  const quantity = Number(match[1].replace(',', '.'));
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
 function cleanItemName(value: string): string {
   return value
     .replace(/\b[xх×]\s*\d+\b/gi, ' ')
@@ -62,10 +69,11 @@ function parsePricedItem(line: string): ReceiptItem | null {
   if (isMetadataLine(line)) return null;
   const match = line.match(/^(.*?)\s+([\d][\d.,'’]*(?:\s+\d{3})*)\s*(?:₫|đ|VND|VNĐ)?$/i);
   if (!match) return null;
-  const name = cleanItemName(match[1].replace(/\b[xх×]\s*\d+\b/gi, ' '));
+  const rawName = match[1];
+  const name = cleanItemName(rawName);
   const parsed = normalizeVndPrice(match[2]);
   if (!parsed || !looksLikeItemName(name)) return null;
-  return { name, price: parsed.price, quantity: 1, ...(parsed.needsReview ? { needsReview: true } : {}) };
+  return { name, price: parsed.price, quantity: parseQuantity(rawName), ...(parsed.needsReview ? { needsReview: true } : {}) };
 }
 
 export function parseReceiptLines(text: string): ReceiptItem[] {
@@ -79,11 +87,11 @@ export function parseReceiptLines(text: string): ReceiptItem[] {
     if (priced) { items.push(priced); pendingName = ''; continue; }
     const priceOnly = parsePriceOnly(line);
     if (priceOnly && pendingName) {
-      items.push({ name: pendingName, price: priceOnly.price, quantity: 1, ...(priceOnly.needsReview ? { needsReview: true } : {}) });
+      items.push({ name: cleanItemName(pendingName), price: priceOnly.price, quantity: parseQuantity(pendingName), ...(priceOnly.needsReview ? { needsReview: true } : {}) });
       pendingName = '';
       continue;
     }
-    if (looksLikeItemName(line)) pendingName = cleanItemName(line);
+    if (looksLikeItemName(line)) pendingName = line;
   }
   return items;
 }
