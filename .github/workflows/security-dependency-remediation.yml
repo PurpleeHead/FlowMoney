@@ -1,9 +1,6 @@
 name: Security dependency remediation
 
 on:
-  push:
-    branches:
-      - security/dependency-audit-remediation
   pull_request:
     branches:
       - stage3-unified-journal-api
@@ -13,7 +10,7 @@ permissions:
 
 jobs:
   refresh-lockfile:
-    if: (github.event_name == 'pull_request' && github.head_ref == 'security/dependency-audit-remediation') || (github.event_name == 'push' && github.event.head_commit.message != 'chore(security): refresh dependency lockfile')
+    if: github.head_ref == 'security/dependency-audit-remediation'
     runs-on: ubuntu-latest
     steps:
       - name: Check out remediation branch
