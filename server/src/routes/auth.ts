@@ -16,10 +16,10 @@ const profileSchema=z.object({
   country:z.string().trim().max(80).optional(),
 });
 
-function token(id:string,email:string){
+function token(id:string,email:string,tokenVersion:number){
   const secret=process.env.JWT_SECRET;
   if(!secret||secret.length<32)throw new Error('JWT_SECRET must be at least 32 characters');
-  return jwt.sign({id,email},secret,{expiresIn:'7d'});
+  return jwt.sign({id,email,tokenVersion},secret,{expiresIn:'7d'});
 }
 router.post('/register',async(req,res,next)=>{
   try{
@@ -59,7 +59,7 @@ router.post('/login',async(req,res,next)=>{
     const {email,password}=parsed.data;
     const user=await prisma.user.findUnique({where:{email}});
     if(!user||!(await bcrypt.compare(password,user.passwordHash))){res.status(401).json({message:'Email or password is incorrect.'});return;}
-    res.json({token:token(user.id,user.email),user:{id:user.id,email:user.email,name:user.name,country:user.country}});
+    res.json({token:token(user.id,user.email,user.tokenVersion),user:{id:user.id,email:user.email,name:user.name,country:user.country}});
   }catch(e){next(e);}
 });
 
@@ -101,7 +101,7 @@ router.patch('/password', auth, async (req: AuthedRequest, res, next) => {
     }
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
-      select: { id: true, passwordHash: true },
+      select: { id: true, passwordHash: true, tokenVersion: true },
     });
     if (!user) {
       res.status(404).json({ message: 'Account not found.' });
@@ -116,7 +116,7 @@ router.patch('/password', auth, async (req: AuthedRequest, res, next) => {
       return;
     }
     const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
-    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash, tokenVersion: { increment: 1 } } });
     res.json({ message: 'Password changed successfully.' });
   } catch (e) {
     next(e);
