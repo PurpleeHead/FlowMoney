@@ -6,7 +6,19 @@ function normalizeVndPrice(value: string): { price: number; needsReview: boolean
   let normalized: string;
   const hasDot = raw.includes('.');
   const hasComma = raw.includes(',');
-  if (hasDot && hasComma) normalized = raw.replace(/[.,]/g, '');
+  let ambiguousMixedSeparator = false;
+  if (hasDot && hasComma) {
+    const lastSeparator = Math.max(raw.lastIndexOf('.'), raw.lastIndexOf(','));
+    const fractionalDigits = raw.length - lastSeparator - 1;
+    if (fractionalDigits === 1 || fractionalDigits === 2) {
+      const integerPart = raw.slice(0, lastSeparator).replace(/[.,]/g, '');
+      const fractionalPart = raw.slice(lastSeparator + 1);
+      normalized = integerPart + '.' + fractionalPart;
+      ambiguousMixedSeparator = true;
+    } else {
+      normalized = raw.replace(/[.,]/g, '');
+    }
+  }
   else if (hasDot || hasComma) {
     const separator = hasDot ? '.' : ',';
     const parts = raw.split(separator);
@@ -19,7 +31,7 @@ function normalizeVndPrice(value: string): { price: number; needsReview: boolean
   } else normalized = raw;
   let price = Number(normalized);
   if (!Number.isFinite(price) || price <= 0) return null;
-  let needsReview = price < 1000;
+  let needsReview = price < 1000 || ambiguousMixedSeparator;
   if (!hasDot && !hasComma && price >= 10_000_000 && price <= 100_000_000 && price % 1000 === 0) {
     price /= 1000;
     needsReview = true;
@@ -33,6 +45,13 @@ function fold(text: string): string {
 
 function isMetadataLine(text: string): boolean {
   return /(?:tien can thanh toan|tong cong|thanh toan|phieu tinh tien|hoa don|xuat hoa don|ma so|khach|hotline|truy cap|cqt|subtotal|total|thank you|cash|change|diem)/i.test(fold(text));
+}
+
+function parseQuantity(value: string): number {
+  const match = value.match(/(?:^|\s)[xх×]\s*(\d+(?:[.,]\d+)?)\s*(?=$|\s)/i);
+  if (!match) return 1;
+  const quantity = Number(match[1].replace(',', '.'));
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 }
 
 function cleanItemName(value: string): string {
@@ -62,10 +81,13 @@ function parsePricedItem(line: string): ReceiptItem | null {
   if (isMetadataLine(line)) return null;
   const match = line.match(/^(.*?)\s+([\d][\d.,'’]*(?:\s+\d{3})*)\s*(?:₫|đ|VND|VNĐ)?$/i);
   if (!match) return null;
-  const name = cleanItemName(match[1].replace(/\b[xх×]\s*\d+\b/gi, ' '));
+  const rawName = match[1];
+  // A trailing x/× count is a quantity marker, not a unit price on its own.
+  if (/(?:^|\s)[xх×]\s*$/i.test(rawName)) return null;
+  const name = cleanItemName(rawName);
   const parsed = normalizeVndPrice(match[2]);
   if (!parsed || !looksLikeItemName(name)) return null;
-  return { name, price: parsed.price, quantity: 1, ...(parsed.needsReview ? { needsReview: true } : {}) };
+  return { name, price: parsed.price, quantity: parseQuantity(rawName), ...(parsed.needsReview ? { needsReview: true } : {}) };
 }
 
 export function parseReceiptLines(text: string): ReceiptItem[] {
@@ -79,11 +101,11 @@ export function parseReceiptLines(text: string): ReceiptItem[] {
     if (priced) { items.push(priced); pendingName = ''; continue; }
     const priceOnly = parsePriceOnly(line);
     if (priceOnly && pendingName) {
-      items.push({ name: pendingName, price: priceOnly.price, quantity: 1, ...(priceOnly.needsReview ? { needsReview: true } : {}) });
+      items.push({ name: cleanItemName(pendingName), price: priceOnly.price, quantity: parseQuantity(pendingName), ...(priceOnly.needsReview ? { needsReview: true } : {}) });
       pendingName = '';
       continue;
     }
-    if (looksLikeItemName(line)) pendingName = cleanItemName(line);
+    if (looksLikeItemName(line)) pendingName = line;
   }
   return items;
 }
