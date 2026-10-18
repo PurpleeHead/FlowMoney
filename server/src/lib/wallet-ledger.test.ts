@@ -59,6 +59,28 @@ describe('wallet ledger mapping', () => {
     ]);
   });
 
+  it('does not fall back to gross target VND when a legacy net amount is zero', () => {
+    const drafts = exchangeLedgerDrafts({
+      id: 'x-zero-net', userId: 'u1', mode: 'RUB_VND', rubSpent: 1000,
+      usdtReceived: null, vndReceived: 0, targetCurrency: 'VND',
+      targetReceived: 250000, createdAt: new Date('2026-10-16T07:00:00.000Z'),
+    });
+    assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [
+      ['RUB', -1000],
+    ]);
+  });
+
+  it('does not fall back to gross target VND when a legacy net amount is invalid', () => {
+    const drafts = exchangeLedgerDrafts({
+      id: 'x-invalid-net', userId: 'u1', mode: 'RUB_VND', rubSpent: 1000,
+      usdtReceived: null, vndReceived: -1, targetCurrency: 'VND',
+      targetReceived: 250000, createdAt: new Date('2026-10-16T07:00:00.000Z'),
+    });
+    assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [
+      ['RUB', -1000],
+    ]);
+  });
+
   it('credits actual USDT received in a direct RUB to USDT exchange', () => {
     const drafts = exchangeLedgerDrafts({
       id: 'x4', userId: 'u1', mode: 'RUB_TARGET', rubSpent: 8300,
