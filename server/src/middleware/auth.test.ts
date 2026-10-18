@@ -34,12 +34,12 @@ async function runAuth(authorization?: string) {
       return this;
     },
   };
-  const next = async () => { nextCalled = true; };
+  const next = () => { nextCalled = true; };
   await auth(req, res as never, next as never);
   return { statusCode, body, nextCalled, user: req.user };
 }
 
-describe('auth middleware used by wallet and journal APIs', async () => {
+describe('auth middleware used by wallet and journal APIs', () => {
   it('rejects requests without a bearer token', async () => {
     process.env.JWT_SECRET = secret;
     userModel.findUnique = async () => ({ tokenVersion: 0 });
