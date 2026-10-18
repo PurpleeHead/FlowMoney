@@ -46,6 +46,8 @@ function bearer() {
 describe('journal API integration', () => {
   it('fetches one extra row per source to calculate hasMore correctly at the maximum page size', async () => {
     let expenseArgs: any;
+    let exchangeArgs: any;
+    let movementArgs: any;
     expenseModel.findMany = async args => {
       expenseArgs = args;
       return Array.from({ length: 501 }, (_, index) => ({
@@ -54,8 +56,8 @@ describe('journal API integration', () => {
         date: new Date('2026-10-18T08:00:00.000Z'), createdAt: new Date('2026-10-18T08:00:00.000Z'),
       }));
     };
-    exchangeModel.findMany = async () => [];
-    movementModel.findMany = async () => [];
+    exchangeModel.findMany = async args => { exchangeArgs = args; return []; };
+    movementModel.findMany = async args => { movementArgs = args; return []; };
 
     await withApi(async baseUrl => {
       const response = await fetch(`${baseUrl}/api/journal?limit=500`, {
@@ -65,6 +67,9 @@ describe('journal API integration', () => {
       const body = await response.json() as { entries: unknown[]; limit: number; hasMore: boolean };
       assert.equal(expenseArgs.take, 501);
       assert.deepEqual(expenseArgs.where, { userId: 'journal-user' });
+      assert.deepEqual(expenseArgs.orderBy, [{ date: 'desc' }, { id: 'asc' }]);
+      assert.deepEqual(exchangeArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
+      assert.deepEqual(movementArgs.orderBy, [{ occurredAt: 'desc' }, { id: 'asc' }]);
       assert.equal(body.entries.length, 500);
       assert.equal(body.limit, 500);
       assert.equal(body.hasMore, true);
