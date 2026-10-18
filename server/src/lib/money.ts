@@ -174,7 +174,9 @@ export function resolveExchangeVndOutcome(input: {
   }
   return {
     vndReceived,
-    vndPerUsdt: vndReceived == null ? null : (vndPerUsdt ?? vndReceived / input.usdtReceived),
+    // When actual VND is known, derive the observed rate from the actual net amount.
+    // A user-entered rate is only a consistency guard; it must not override recorded facts.
+    vndPerUsdt: vndReceived == null ? null : vndReceived / input.usdtReceived,
   };
 }
 
