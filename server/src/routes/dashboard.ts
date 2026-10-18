@@ -2,7 +2,7 @@ import {Router} from 'express';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
-import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt } from '../lib/money.js';
+import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapRubUsdtExchanges } from '../lib/money.js';
 
 const router=Router();
 router.use(auth);
@@ -27,7 +27,13 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
 
     // Weighted by USDT received, using the same RUB/USDT helper as expense saving.
     const effectiveRubPerUsdt=calculateRubPerUsdt(
-      exchanges.map(x=>({rubSpent:Number(x.rubSpent),usdtReceived:Number(x.usdtReceived)}))
+      mapRubUsdtExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+        targetCurrency: x.targetCurrency,
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+      })))
     );
     const knownVndExchanges=exchanges.filter(x=>x.mode!=='RUB_VND'&&x.usdtReceived!=null&&x.vndReceived!=null);
     const exchangeVnd=knownVndExchanges.reduce((sum,x)=>sum+Number(x.vndReceived),0);
