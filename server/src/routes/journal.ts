@@ -27,7 +27,7 @@ router.get('/', async (req: AuthedRequest, res, next) => {
     const [expenses, exchanges, movements] = await Promise.all([
       prisma.expense.findMany({
         where: { userId },
-        orderBy: { date: 'desc' },
+        orderBy: [{ date: 'desc' }, { id: 'asc' }],
         take,
         select: {
           id: true, title: true, category: true, amount: true, currency: true,
@@ -36,7 +36,7 @@ router.get('/', async (req: AuthedRequest, res, next) => {
       }),
       prisma.exchange.findMany({
         where: { userId },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
         take,
         select: {
           id: true, mode: true, rubSpent: true, usdtReceived: true, vndReceived: true,
@@ -45,7 +45,7 @@ router.get('/', async (req: AuthedRequest, res, next) => {
       }),
       prisma.walletMovement.findMany({
         where: { userId },
-        orderBy: { occurredAt: 'desc' },
+        orderBy: [{ occurredAt: 'desc' }, { id: 'asc' }],
         take,
         select: { id: true, currency: true, amountDelta: true, kind: true, note: true, occurredAt: true },
       }),
