@@ -47,6 +47,30 @@ describe('wallet ledger mapping', () => {
     ]);
   });
 
+  it('credits actual USDT received in a direct RUB to USDT exchange', () => {
+    const drafts = exchangeLedgerDrafts({
+      id: 'x4', userId: 'u1', mode: 'RUB_TARGET', rubSpent: 8300,
+      usdtReceived: null, vndReceived: null, targetCurrency: 'USDT',
+      targetReceived: 93.7853, createdAt: new Date('2026-10-16T07:00:00.000Z'),
+    });
+    assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [
+      ['RUB', -8300],
+      ['USDT', 93.7853],
+    ]);
+  });
+
+  it('credits only the actual target currency amount, not its estimated VND equivalent', () => {
+    const drafts = exchangeLedgerDrafts({
+      id: 'x5', userId: 'u1', mode: 'RUB_TARGET', rubSpent: 1000,
+      usdtReceived: null, vndReceived: null, targetCurrency: 'VND',
+      targetReceived: 250000, createdAt: new Date('2026-10-16T07:00:00.000Z'),
+    });
+    assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [
+      ['RUB', -1000],
+      ['VND', 250000],
+    ]);
+  });
+
   it('does not count target VND equivalent as a real VND wallet inflow', () => {
     const drafts = exchangeLedgerDrafts({
       id: 'x3', userId: 'u1', mode: 'RUB_TARGET', rubSpent: 1000,
