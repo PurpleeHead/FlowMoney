@@ -62,7 +62,7 @@ function isMetadataLine(text: string): boolean {
   // Monetary adjustments affect the printed payable total but are not purchased items.
   // Excluding them prevents discounts, VAT, service fees, refunds, tendered cash, and change
   // from being misread as positive product prices by the trailing-price parser.
-  return /(?:tien can thanh toan|tong cong|thanh toan|phieu tinh tien|hoa don|xuat hoa don|ma so|khach|hotline|truy cap|cqt|subtotal|total|thank you|cash|change|diem|discount|voucher|coupon|service charge|service fee|tax|vat|refund|return|giam gia|khuyen mai|chiet khau|phi dich vu|phi phuc vu|thue|hoan tien|tra hang|tien khach dua|tien thua)/i.test(fold(text));
+  return /(?:tien can thanh toan|tong cong|thanh toan|phieu tinh tien|hoa don|xuat hoa don|ma so|khach|hotline|truy cap|cqt|\bsubtotal\b|\btotal\b|\bthank\s+you\b|\bcash\b|\bchange\b|diem|\bdiscount\b|\bvoucher\b|\bcoupon\b|\bservice\s+charge\b|\bservice\s+fee\b|\btax\b|\bvat\b|\brefund\b|\breturn\b|giam gia|khuyen mai|chiet khau|phi dich vu|phi phuc vu|thue|hoan tien|tra hang|tien khach dua|tien thua)/i.test(fold(text));
 }
 
 function parseQuantity(value: string): number {
