@@ -5,6 +5,9 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import type { AddressInfo } from 'node:net';
 import { prisma } from '../services/prisma.js';
+
+const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
+const originalUserFindFirst = userModel.findFirst;
 import authRoutes from './auth.js';
 
 const userModel = prisma.user as unknown as {
@@ -18,6 +21,7 @@ const originalCreate = userModel.create;
 const previousSecret = process.env.JWT_SECRET;
 
 afterEach(() => {
+  userModel.findFirst = originalUserFindFirst;
   userModel.findUnique = originalFindUnique;
   userModel.update = originalUpdate;
   userModel.create = originalCreate;
@@ -26,6 +30,7 @@ afterEach(() => {
 });
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
+  userModel.findFirst = async () => ({ tokenVersion: 0 });
   process.env.JWT_SECRET = 'auth-profile-test-secret-which-is-long-enough';
   const app = express();
   app.use(express.json());
