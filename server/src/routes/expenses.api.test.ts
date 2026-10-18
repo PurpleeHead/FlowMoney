@@ -458,6 +458,46 @@ describe('expense API ledger synchronization', () => {
   });
 
 
+  it('keeps a planning VND/USDT rate out of saved factual expense valuations', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_USDT_VND',
+      rubSpent: 1000,
+      usdtReceived: 100,
+      vndReceived: null,
+      planningVndPerUsdt: 25000,
+      targetCurrency: 'VND',
+      targetReceived: null,
+      targetVndEquivalent: null,
+    }];
+    let createdData: any;
+    const tx = {
+      expense: {
+        create: async (args: any) => {
+          createdData = args.data;
+          return { id: 'expense-planning-rate', ...args.data, date: new Date('2026-10-18T08:00:00.000Z') };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'USDT purchase', category: 'Other', amount: 10, currency: 'USDT' }),
+      });
+
+      assert.equal(response.status, 201);
+      assert.equal(createdData.amountVnd, null, 'a planning rate must not be persisted as actual VND');
+      assert.equal(createdData.amountRub, 100, 'known RUB/USDT exchange rate can still value the source amount in RUB');
+    });
+  });
+
   it('does not infer a RUB expense VND amount from an unrelated target rate when RUB/VND is unknown', async () => {
     expenseModel.findMany = async () => [];
     exchangeModel.findMany = async () => [];
