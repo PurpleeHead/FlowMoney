@@ -85,6 +85,32 @@ describe('dashboard unpriced USDT balance', () => {
   });
 });
 
+describe('dashboard confirmed and estimated VND totals', () => {
+  it('keeps non-VND target equivalents in estimates rather than confirmed VND received', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [exchangeFixture()];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.confirmedExchangeVnd, 0);
+      assert.equal(body.estimatedUnconvertedVnd, 2382146.62);
+      assert.equal(body.balanceIsEstimated, true);
+    });
+  });
+});
+
 describe('dashboard exchange rates', () => {
   it('includes direct RUB-to-USDT target exchanges in the effective RUB/USDT rate', async () => {
     expenseModel.findMany = async () => [];
