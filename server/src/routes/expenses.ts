@@ -17,7 +17,7 @@ export const expenseSchema = z.object({
   currency: z.string().trim().min(3).max(8),
   amountVnd: z.number().positive().finite().min(0.0001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 4), 'VND amount supports at most 4 decimal places.').nullable().optional(),
   targetToVndRate: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'Target rate supports at most 8 decimal places.').nullable().optional(),
-  usdtCharged: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'USDT charge supports at most 8 decimal places.').optional(),
+  usdtCharged: z.number().positive().finite().min(0.00000001).max(MAX_STORED_AMOUNT).refine(value => hasDecimalScale(value, 8), 'USDT charge supports at most 8 decimal places.').nullable().optional(),
   date: z.string().datetime().optional(),
   receiptId: z.string().optional(),
 }).superRefine((value, ctx) => {
@@ -277,7 +277,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
           currency: input.currency,
           amountVnd,
           amountRub,
-          usdtCharged: input.usdtCharged ?? null,
+          usdtCharged: input.usdtCharged === undefined ? existing.usdtCharged : input.usdtCharged,
           date: expenseDate,
           receiptId: input.receiptId ?? existing.receiptId,
         },

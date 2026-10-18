@@ -83,7 +83,7 @@ export function exchangeLedgerDrafts(exchange: ExchangeLedgerSource): LedgerMove
   if (exchange.mode === 'RUB_TARGET') {
     const targetCurrency = exchange.targetCurrency.trim().toUpperCase();
     const targetAmount = amount(exchange.targetReceived);
-    if (targetAmount != null && ['RUB', 'USDT', 'VND'].includes(targetCurrency)) {
+    if (targetAmount != null && ['USDT', 'VND'].includes(targetCurrency)) {
       movements.push({
         userId: exchange.userId, currency: targetCurrency, amountDelta: targetAmount, kind: 'EXCHANGE',
         sourceKey: `exchange:${exchange.id}:${targetCurrency}`, occurredAt: exchange.createdAt,

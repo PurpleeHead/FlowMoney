@@ -82,6 +82,48 @@ describe('exchange API ledger synchronization', () => {
     });
   });
 
+  it('returns an error when ledger synchronization fails during exchange update', async () => {
+    let transactionCompleted = false;
+    const tx = {
+      exchange: {
+        updateMany: async (args: any) => {
+          assert.deepEqual(args.where, { id: 'exchange-rollback', userId: 'user-42' });
+          return { count: 1 };
+        },
+        findFirst: async () => ({
+          id: 'exchange-rollback', userId: 'user-42', mode: 'RUB_USDT_VND',
+          rubSpent: 8300, usdtReceived: 93.7853, vndReceived: null,
+          targetCurrency: 'VND', targetReceived: null,
+        }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 1 }),
+        createMany: async () => { throw new Error('simulated ledger write failure'); },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+      try {
+        return await callback(tx);
+      } finally {
+        transactionCompleted = true;
+      }
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/exchange-rollback`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853,
+          vndFee: 0, targetCurrency: 'VND',
+        }),
+      });
+
+      assert.equal(response.status, 500);
+      assert.equal(transactionCompleted, true);
+    });
+  });
+
   it('deletes an exchange and its ledger rows in one transaction scoped to its owner', async () => {
     let deleteArgs: any;
     const deletedMovements: any[] = [];
@@ -105,6 +147,32 @@ describe('exchange API ledger synchronization', () => {
       assert.deepEqual(deletedMovements, [{
         where: { userId: 'user-42', sourceKey: { startsWith: 'exchange:exchange-1:' } },
       }]);
+    });
+  });
+
+  it('returns 404 and leaves ledger rows untouched when the exchange is absent or owned by someone else', async () => {
+    const movementDeleteArgs: any[] = [];
+    const tx = {
+      exchange: {
+        deleteMany: async (args: any) => {
+          assert.deepEqual(args.where, { id: 'another-users-exchange', userId: 'user-42' });
+          return { count: 0 };
+        },
+      },
+      walletMovement: {
+        deleteMany: async (args: any) => { movementDeleteArgs.push(args); return { count: 1 }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/another-users-exchange`, {
+        method: 'DELETE',
+        headers: { authorization: bearer('user-42') },
+      });
+
+      assert.equal(response.status, 404);
+      assert.deepEqual(movementDeleteArgs, [], 'ledger deletion must not run if the owner-scoped exchange delete matched no row');
     });
   });
 });

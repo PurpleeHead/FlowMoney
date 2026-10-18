@@ -45,3 +45,108 @@ jobs:
         run: npm test
       - name: Build production bundles
         run: npm run build
+
+
+  verify-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: flowmoney_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d flowmoney_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flowmoney_test?schema=public
+      PSQL_URL: postgresql://postgres:postgres@localhost:5432/flowmoney_test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate Prisma client
+        run: npm run db:generate
+      - name: Apply all migrations to disposable PostgreSQL
+        run: npx prisma migrate deploy --schema=server/prisma/schema.prisma
+      - name: Verify transaction rollback when ledger write fails
+        run: npx tsx server/prisma/tests/verify-transaction-rollback.ts
+      - name: Verify exchange transaction rollback when ledger sync fails
+        run: npx tsx server/prisma/tests/verify-exchange-transaction-rollback.ts
+      - name: Verify expense and exchange delete rollback
+        run: npx tsx server/prisma/tests/verify-delete-transaction-rollback.ts
+      - name: Seed legacy records and an existing ledger row
+        run: psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/tests/wallet-movement-backfill-fixture.sql
+      - name: Verify backfill is idempotent
+        shell: bash
+        run: |
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $backfill$
+          DECLARE
+            movement_count integer;
+            card_count integer;
+            rub_count integer;
+            exchange_usdt_count integer;
+            exchange_vnd_count integer;
+            card_delta numeric;
+          BEGIN
+            SELECT count(*) INTO movement_count FROM "WalletMovement" WHERE "userId" = 'backfill-test-user';
+            IF movement_count <> 10 THEN
+              RAISE EXCEPTION 'Expected 10 unique movements after two backfills, got %', movement_count;
+            END IF;
+            SELECT count(*), min("amountDelta") INTO card_count, card_delta
+              FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-card-expense:USDT';
+            IF card_count <> 1 OR card_delta <> -2.19 THEN
+              RAISE EXCEPTION 'Card expense duplicated or incorrect: count %, delta %', card_count, card_delta;
+            END IF;
+            SELECT count(*) INTO rub_count FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-rub-expense:RUB' AND "amountDelta" = -100;
+            IF rub_count <> 1 THEN RAISE EXCEPTION 'RUB expense debit missing or duplicated'; END IF;
+            SELECT count(*) INTO exchange_usdt_count FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-exchange:USDT' AND "amountDelta" = 93.7853;
+            IF exchange_usdt_count <> 1 THEN RAISE EXCEPTION 'USDT exchange credit missing or duplicated'; END IF;
+            SELECT count(*) INTO exchange_vnd_count FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-exchange:VND' AND "amountDelta" = 250000;
+            IF exchange_vnd_count <> 1 THEN RAISE EXCEPTION 'VND exchange credit missing or duplicated'; END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-unknown-vnd:VND') <> 0 THEN
+              RAISE EXCEPTION 'Unknown VND outcome must not create a VND movement';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-unknown-vnd:USDT' AND "amountDelta" = 5) <> 1 THEN
+              RAISE EXCEPTION 'Known USDT credit with unknown VND outcome is missing';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-direct-vnd:RUB' AND "amountDelta" = -1000) <> 1 THEN
+              RAISE EXCEPTION 'Direct RUB/VND exchange RUB debit missing';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-direct-vnd:VND' AND "amountDelta" = 30000) <> 1 THEN
+              RAISE EXCEPTION 'Direct RUB/VND exchange VND credit missing';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" LIKE 'exchange:backfill-direct-vnd:USDT') <> 0 THEN
+              RAISE EXCEPTION 'Direct RUB/VND exchange must not create a USDT movement';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-invalid-rub-target:RUB' AND "amountDelta" = -200) <> 1 THEN
+              RAISE EXCEPTION 'Invalid historical RUB target must preserve the RUB outflow';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-invalid-rub-target:RUB' AND "amountDelta" > 0) <> 0 THEN
+              RAISE EXCEPTION 'Invalid historical RUB target must not credit RUB';
+            END IF;
+            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -10100 THEN
+              RAISE EXCEPTION 'RUB movement total does not reconcile';
+            END IF;
+            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'USDT') <> 96.5953 THEN
+              RAISE EXCEPTION 'USDT movement total does not reconcile';
+            END IF;
+            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'VND') <> 280000 THEN
+              RAISE EXCEPTION 'VND movement total does not reconcile';
+            END IF;
+          END $backfill$;
+          SQL
