@@ -82,6 +82,48 @@ describe('exchange API ledger synchronization', () => {
     });
   });
 
+  it('returns an error when ledger synchronization fails during exchange update', async () => {
+    let transactionCompleted = false;
+    const tx = {
+      exchange: {
+        updateMany: async (args: any) => {
+          assert.deepEqual(args.where, { id: 'exchange-rollback', userId: 'user-42' });
+          return { count: 1 };
+        },
+        findFirst: async () => ({
+          id: 'exchange-rollback', userId: 'user-42', mode: 'RUB_USDT_VND',
+          rubSpent: 8300, usdtReceived: 93.7853, vndReceived: null,
+          targetCurrency: 'VND', targetReceived: null,
+        }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 1 }),
+        createMany: async () => { throw new Error('simulated ledger write failure'); },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+      try {
+        return await callback(tx);
+      } finally {
+        transactionCompleted = true;
+      }
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/exchange-rollback`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853,
+          vndFee: 0, targetCurrency: 'VND',
+        }),
+      });
+
+      assert.equal(response.status, 500);
+      assert.equal(transactionCompleted, true);
+    });
+  });
+
   it('deletes an exchange and its ledger rows in one transaction scoped to its owner', async () => {
     let deleteArgs: any;
     const deletedMovements: any[] = [];
