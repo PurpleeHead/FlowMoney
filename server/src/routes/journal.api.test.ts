@@ -4,6 +4,9 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import type { AddressInfo } from 'node:net';
 import { prisma } from '../services/prisma.js';
+
+const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
+const originalUserFindFirst = userModel.findFirst;
 import journalRoutes from './journal.js';
 
 const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any> };
@@ -15,6 +18,7 @@ const originalMovementFindMany = movementModel.findMany;
 const previousSecret = process.env.JWT_SECRET;
 
 afterEach(() => {
+  userModel.findFirst = originalUserFindFirst;
   expenseModel.findMany = originalExpenseFindMany;
   exchangeModel.findMany = originalExchangeFindMany;
   movementModel.findMany = originalMovementFindMany;
@@ -23,6 +27,7 @@ afterEach(() => {
 });
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
+  userModel.findFirst = async () => ({ tokenVersion: 0 });
   process.env.JWT_SECRET = 'journal-api-test-secret-long-enough-for-jwt-middleware';
   const app = express();
   app.use('/api/journal', journalRoutes);
