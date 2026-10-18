@@ -44,6 +44,31 @@ function bearer(userId = 'user-1') {
 }
 
 describe('direct RUB to USDT top-up without VND rate', () => {
+  it('rejects a VND fee in direct-target mode instead of silently ignoring it', async () => {
+    let createCalls = 0;
+    const tx = {
+      exchange: { create: async ({ data }: any) => { createCalls += 1; return { id: 'exchange-test', ...data }; } },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async ({ data }: any) => ({ count: data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_TARGET', rubSpent: 1000, targetCurrency: 'VND',
+          targetReceived: 250000, vndFee: 5000,
+        }),
+      });
+      assert.equal(response.status, 400);
+      assert.equal(createCalls, 0, 'an ignored fee must not be persisted as if no fee existed');
+    });
+  });
+
   it('accepts actual USDT without requiring a VND conversion rate', async () => {
     const tx = {
       exchange: { create: async ({ data }: any) => ({ id: 'exchange-test', ...data, createdAt: new Date() }) },
