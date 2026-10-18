@@ -70,19 +70,28 @@ describe('wallet API integration', () => {
     });
   });
 
-  it('returns 409 when an opening balance already exists for that currency', async () => {
-    model.create = async () => {
-      throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+  it('allows only one of two concurrent opening-balance requests for the same user and currency', async () => {
+    const createdSourceKeys = new Set<string>();
+    model.create = async ({ data }: any) => {
+      if (createdSourceKeys.has(data.sourceKey)) {
+        throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+      }
+      createdSourceKeys.add(data.sourceKey);
+      const now = new Date();
+      return { id: 'movement-1', ...data, occurredAt: now, createdAt: now };
     };
 
     await withApi(async baseUrl => {
-      const response = await fetch(`${baseUrl}/api/wallets/movements`, {
+      const request = () => fetch(`${baseUrl}/api/wallets/movements`, {
         method: 'POST',
         headers: { authorization: bearer(), 'content-type': 'application/json' },
         body: JSON.stringify({ kind: 'OPENING', currency: 'USDT', amount: 93.7853 }),
       });
-      assert.equal(response.status, 409);
-      assert.deepEqual(await response.json(), {
+      const responses = await Promise.all([request(), request()]);
+      assert.deepEqual(responses.map(response => response.status).sort(), [201, 409]);
+      assert.equal(createdSourceKeys.size, 1);
+      const conflict = responses.find(response => response.status === 409)!;
+      assert.deepEqual(await conflict.json(), {
         message: 'An opening balance has already been recorded for this currency.',
       });
     });
