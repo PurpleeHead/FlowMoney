@@ -1,4 +1,19 @@
 export type ReceiptItem = { name: string; price: number; quantity: number; needsReview?: boolean };
+export type ReceiptPrintedTotal = { amount: number; line: string; needsReview?: boolean };
+
+/** Extract only clearly labelled receipt totals; never infer a total from item prices. */
+export function parseReceiptPrintedTotal(text: string): ReceiptPrintedTotal | null {
+  const totalLabel = /(?:tong\s*(?:thanh\s*toan|cong)|tien\s*can\s*thanh\s*toan|can\s*thanh\s*toan|phai\s*tra|grand\s*total|total\s*(?:due|payable)|amount\s*due|payment\s*due)/i;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+/g, ' ').trim();
+    if (!line || !totalLabel.test(fold(line)) || /subtotal|tien\s*khach\s*dua|tien\s*thua/i.test(fold(line))) continue;
+    const match = line.match(/([\d][\d.,'’]*(?:\s+\d{3})*)\s*(?:₫|đ|VND|VNĐ)?\s*$/i);
+    if (!match) continue;
+    const parsed = normalizeVndPrice(match[1]);
+    if (parsed) return { amount: parsed.price, line, ...(parsed.needsReview ? { needsReview: true } : {}) };
+  }
+  return null;
+}
 
 function normalizeVndPrice(value: string): { price: number; needsReview: boolean } | null {
   const raw = value.replace(/[\s'’]/g, '');
