@@ -55,7 +55,7 @@ function exchangeFixture() {
     targetCurrency: 'USDT',
     targetReceived: 93.7853,
     targetToVndRate: 25400,
-    targetVndEquivalent: 2382156.62,
+    targetVndEquivalent: 2382146.62,
     createdAt: new Date('2026-10-18T08:00:00.000Z'),
   };
 }
