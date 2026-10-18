@@ -4,6 +4,9 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import type { AddressInfo } from 'node:net';
 import { prisma } from '../services/prisma.js';
+
+const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
+const originalUserFindFirst = userModel.findFirst;
 import walletRoutes from './wallets.js';
 
 const model = prisma.walletMovement as unknown as {
@@ -15,6 +18,7 @@ const originalCreate = model.create;
 const previousSecret = process.env.JWT_SECRET;
 
 afterEach(() => {
+  userModel.findFirst = originalUserFindFirst;
   model.findMany = originalFindMany;
   model.create = originalCreate;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
@@ -22,6 +26,7 @@ afterEach(() => {
 });
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
+  userModel.findFirst = async () => ({ tokenVersion: 0 });
   process.env.JWT_SECRET = 'wallet-api-test-secret-long-enough-for-jwt-middleware';
   const app = express();
   app.use(express.json());
