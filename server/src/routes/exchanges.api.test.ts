@@ -148,5 +148,30 @@ describe('exchange API ledger synchronization', () => {
         where: { userId: 'user-42', sourceKey: { startsWith: 'exchange:exchange-1:' } },
       }]);
     });
+  it('returns 404 and leaves ledger rows untouched when the exchange is absent or owned by someone else', async () => {
+    const movementDeleteArgs: any[] = [];
+    const tx = {
+      exchange: {
+        deleteMany: async (args: any) => {
+          assert.deepEqual(args.where, { id: 'another-users-exchange', userId: 'user-42' });
+          return { count: 0 };
+        },
+      },
+      walletMovement: {
+        deleteMany: async (args: any) => { movementDeleteArgs.push(args); return { count: 1 }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/another-users-exchange`, {
+        method: 'DELETE',
+        headers: { authorization: bearer('user-42') },
+      });
+
+      assert.equal(response.status, 404);
+      assert.deepEqual(movementDeleteArgs, [], 'ledger deletion must not run if the owner-scoped exchange delete matched no row');
+    });
+  });
   });
 });
