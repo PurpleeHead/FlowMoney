@@ -79,3 +79,37 @@ jobs:
         run: npm run db:generate
       - name: Apply all migrations to disposable PostgreSQL
         run: npx prisma migrate deploy --schema=server/prisma/schema.prisma
+      - name: Seed legacy records and an existing ledger row
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/prisma/tests/wallet-movement-backfill-fixture.sql
+      - name: Verify backfill is idempotent
+        shell: bash
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/prisma/migrations/20261018023500_backfill_wallet_movements/migration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $
+          DECLARE
+            movement_count integer;
+            card_count integer;
+            rub_count integer;
+            exchange_usdt_count integer;
+            exchange_vnd_count integer;
+            card_delta numeric;
+          BEGIN
+            SELECT count(*) INTO movement_count FROM "WalletMovement" WHERE "userId" = 'backfill-test-user';
+            IF movement_count <> 5 THEN
+              RAISE EXCEPTION 'Expected 5 unique movements after two backfills, got %', movement_count;
+            END IF;
+            SELECT count(*), min("amountDelta") INTO card_count, card_delta
+              FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-card-expense:USDT';
+            IF card_count <> 1 OR card_delta <> -2.19 THEN
+              RAISE EXCEPTION 'Card expense duplicated or incorrect: count %, delta %', card_count, card_delta;
+            END IF;
+            SELECT count(*) INTO rub_count FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-rub-expense:RUB' AND "amountDelta" = -100;
+            IF rub_count <> 1 THEN RAISE EXCEPTION 'RUB expense debit missing or duplicated'; END IF;
+            SELECT count(*) INTO exchange_usdt_count FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-exchange:USDT' AND "amountDelta" = 93.7853;
+            IF exchange_usdt_count <> 1 THEN RAISE EXCEPTION 'USDT exchange credit missing or duplicated'; END IF;
+            SELECT count(*) INTO exchange_vnd_count FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-exchange:VND' AND "amountDelta" = 250000;
+            IF exchange_vnd_count <> 1 THEN RAISE EXCEPTION 'VND exchange credit missing or duplicated'; END IF;
+          END $;
+          SQL
