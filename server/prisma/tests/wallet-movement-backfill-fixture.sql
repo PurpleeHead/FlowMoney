@@ -45,3 +45,9 @@ INSERT INTO "WalletMovement" (
   'expense:backfill-card-expense:USDT', 'Existing synchronized row', CURRENT_TIMESTAMP
 );
 
+-- Legacy-invalid RUB -> RUB target record: retain the RUB outflow but never credit RUB back.
+INSERT INTO "Exchange" (
+  "id", "userId", "mode", "targetCurrency", "targetReceived", "rubSpent", "createdAt"
+) VALUES (
+  'backfill-invalid-rub-target', 'backfill-test-user', 'RUB_TARGET', 'RUB', 100, 200, CURRENT_TIMESTAMP
+);
