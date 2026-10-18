@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseReceiptLines } from './receiptParser';
+import { parseReceiptLines, parseReceiptPrintedTotal } from './receiptParser';
 
 describe('Vietnamese receipt line parsing', () => {
   it('parses dot- and comma-separated VND thousands', () => {
@@ -37,5 +37,28 @@ describe('Vietnamese receipt line parsing', () => {
   });
   it('ignores lines without a recognizable product and trailing price', () => {
     expect(parseReceiptLines('THANK YOU\n0562 X 246,00), ~ZZ2 6,289')).toEqual([]);
+  });
+});
+
+
+describe('printed receipt total detection', () => {
+  it('extracts a clearly labelled Vietnamese amount due', () => {
+    expect(parseReceiptPrintedTotal('Banh mi 25.000\\nTổng thanh toán: 25.000 ₫')).toEqual({ amount: 25000, line: 'Tổng thanh toán: 25.000 ₫' });
+  });
+
+  it('extracts English grand total labels', () => {
+    expect(parseReceiptPrintedTotal('Coffee 40,000\\nGrand total 40,000 VND')).toEqual({ amount: 40000, line: 'Grand total 40,000 VND' });
+  });
+
+  it('does not mistake subtotal, cash tendered, or change for the payable total', () => {
+    expect(parseReceiptPrintedTotal('Subtotal 40.000\\nCash 50.000\\nChange 10.000')).toBeNull();
+  });
+
+  it('does not infer a printed total when no labelled total exists', () => {
+    expect(parseReceiptPrintedTotal('Coffee 40.000\\nWater 12.000')).toBeNull();
+  });
+
+  it('flags ambiguous printed totals for manual review', () => {
+    expect(parseReceiptPrintedTotal('Tổng cộng 12.500,50')).toEqual({ amount: 12500.5, line: 'Tổng cộng 12.500,50', needsReview: true });
   });
 });
