@@ -26,7 +26,11 @@ Status: authenticated journal API and manual wallet opening/adjustment endpoints
 - [x] Add `POST /api/wallets/movements` for one opening balance per currency or signed manual adjustments.
 - [x] Add `GET /api/wallets/balances`; it returns a numeric balance only when an opening balance is recorded, otherwise `balance: null` plus net movement.
 - [x] Add an additive `WalletMovement` Prisma model and forward-only SQL migration (not applied).
-- Add opening balance / adjustment operations and derive per-currency balances from signed ledger movements.
-- Synchronize create, edit, and delete of expenses/exchanges transactionally.
-- Add API/integration coverage for duplicate prevention, user ownership, card-debit accounting, edits/deletes, and unknown rates.
-- Prepare forward-only migrations; do not apply them to any database without explicit permission.
+- [x] Add opening balance / adjustment operations and derive per-currency balances from signed ledger movements.
+- [x] Synchronize create, edit, and delete of expenses/exchanges transactionally.
+- [x] Add API/integration coverage for duplicate prevention, user ownership, card-debit accounting, edits/deletes, and unknown rates.
+- [x] Add an idempotent forward-only backfill migration for pre-existing expenses/exchanges. It preserves already-synchronized source keys and never treats card purchases as a second VND debit.
+- [ ] Validate the backfill against a disposable PostgreSQL database and compare expected per-currency movement totals before deployment.
+- [ ] Run browser smoke tests against a preview built from the final candidate branch.
+
+Do not apply migrations to any database without explicit approval.
