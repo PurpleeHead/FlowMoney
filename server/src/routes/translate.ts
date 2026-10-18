@@ -1,8 +1,18 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 import { auth } from '../middleware/auth.js';
 
 const router = Router();
+// Translation calls may fan out to external providers; cap requests before auth
+// and provider work to limit resource consumption and upstream abuse.
+router.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many translation requests. Try again later.' },
+}));
 router.use(auth);
 
 async function fetchTranslation(url: URL): Promise<Response> {
