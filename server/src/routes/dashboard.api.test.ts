@@ -60,6 +60,31 @@ function exchangeFixture() {
   };
 }
 
+describe('dashboard unpriced USDT balance', () => {
+  it('does not present an unknown VND balance as zero after a direct USDT top-up', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { balanceVnd: number | null; estimatedUnconvertedVnd: number };
+      assert.equal(body.balanceVnd, null);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+    });
+  });
+});
+
 describe('dashboard exchange rates', () => {
   it('includes direct RUB-to-USDT target exchanges in the effective RUB/USDT rate', async () => {
     expenseModel.findMany = async () => [];
