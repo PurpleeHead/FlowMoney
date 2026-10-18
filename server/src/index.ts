@@ -15,6 +15,9 @@ import journalRoutes from './routes/journal.js';
 import walletRoutes from './routes/wallets.js';
 import { errorHandler } from './middleware/errors.js';
 import { prisma } from './services/prisma.js';
+import { assertProductionSecurityConfiguration } from './config/security.js';
+
+assertProductionSecurityConfiguration();
 
 const app = express();
 // Render forwards requests through one trusted proxy hop.
