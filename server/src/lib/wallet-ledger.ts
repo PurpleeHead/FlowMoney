@@ -71,7 +71,8 @@ export function exchangeLedgerDrafts(exchange: ExchangeLedgerSource): LedgerMove
   }
 
   if (exchange.mode === 'RUB_VND') {
-    const vnd = amount(exchange.targetReceived) ?? amount(exchange.vndReceived);
+    // Prefer the net VND outcome. Legacy targetReceived may contain the gross amount before fees.
+    const vnd = amount(exchange.vndReceived) ?? amount(exchange.targetReceived);
     if (vnd != null) movements.push({
       userId: exchange.userId, currency: 'VND', amountDelta: vnd, kind: 'EXCHANGE',
       sourceKey: `exchange:${exchange.id}:VND`, occurredAt: exchange.createdAt,
