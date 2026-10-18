@@ -44,10 +44,10 @@ jobs:
           }
           if (report.error) console.log('Audit error:', JSON.stringify(report.error));
           NODE
-      - name: Report production dependency audit (non-blocking)
+      - name: Report server production dependency audit (non-blocking)
         shell: bash
         run: |
-          npm audit --omit=dev --json > "$RUNNER_TEMP/npm-audit-production.json" || true
+          npm audit --workspace=@flowmoney/server --omit=dev --json > "$RUNNER_TEMP/npm-audit-production.json" || true
           node - "$RUNNER_TEMP/npm-audit-production.json" <<'NODE'
           const fs = require('node:fs');
           const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
