@@ -87,6 +87,23 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+  it('rejects a VND expense whose source amount conflicts with amountVnd', async () => {
+    expenseModel.findMany = async () => { throw new Error('database should not be queried for invalid input'); };
+    exchangeModel.findMany = async () => { throw new Error('database should not be queried for invalid input'); };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Groceries', category: 'Food', amount: 100000, currency: 'VND', amountVnd: 1,
+        }),
+      });
+
+      assert.equal(response.status, 400);
+    });
+  });
+
   it('creates an expense and records its source-currency debit atomically', async () => {
     expenseModel.findMany = async () => [];
     exchangeModel.findMany = async () => [];
