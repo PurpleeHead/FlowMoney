@@ -128,7 +128,9 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       normalizedCurrency === 'VND' ? input.amount :
       normalizedCurrency === 'USDT' && historicalVndPerUsdt != null ? input.amount * historicalVndPerUsdt :
       normalizedCurrency === 'RUB' && historicalVndPerRub != null ? input.amount * historicalVndPerRub :
-      input.targetToVndRate != null ? input.amount * input.targetToVndRate : null
+      !['RUB', 'USDT', 'VND'].includes(normalizedCurrency) && input.targetToVndRate != null
+        ? input.amount * input.targetToVndRate
+        : null
     );
     const amountRub = calculateExpenseRub({
       currency: input.currency,
@@ -259,7 +261,9 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       normalizedCurrency === 'VND' ? input.amount :
       normalizedCurrency === 'USDT' && vndPerUsdt != null ? input.amount * vndPerUsdt :
       normalizedCurrency === 'RUB' && vndPerRub != null ? input.amount * vndPerRub :
-      input.targetToVndRate != null ? input.amount * input.targetToVndRate : null
+      !['RUB', 'USDT', 'VND'].includes(normalizedCurrency) && input.targetToVndRate != null
+        ? input.amount * input.targetToVndRate
+        : null
     );
     const amountRub = calculateExpenseRub({
       currency: input.currency,

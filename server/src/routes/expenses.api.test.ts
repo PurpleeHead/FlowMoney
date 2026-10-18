@@ -413,4 +413,77 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+
+  it('does not infer a RUB expense VND amount from an unrelated target rate when RUB/VND is unknown', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    let createdData: any;
+    const tx = {
+      expense: {
+        create: async (args: any) => {
+          createdData = args.data;
+          return { id: 'expense-unknown-rub-vnd', ...args.data, date: new Date('2026-10-18T08:00:00.000Z') };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Cash expense', category: 'Other', amount: 100, currency: 'RUB',
+          targetToVndRate: 25000,
+        }),
+      });
+
+      assert.equal(response.status, 201);
+      assert.equal(createdData.amountVnd, null);
+      assert.equal(createdData.amountRub, 100);
+    });
+  });
+
+  it('does not infer a patched USDT expense VND amount from an unrelated target rate when USDT/VND is unknown', async () => {
+    const existing = {
+      id: 'expense-unknown-usdt-vnd', userId: 'user-42', title: 'Old title', category: 'Other',
+      amount: 10, currency: 'USDT', amountVnd: null, amountRub: null,
+      usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    let updateData: any;
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    const tx = {
+      expense: {
+        updateMany: async (args: any) => { updateData = args.data; return { count: 1 }; },
+        findFirst: async () => ({ ...existing, ...updateData }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-unknown-usdt-vnd`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Updated expense', category: 'Other', amount: 10, currency: 'USDT',
+          targetToVndRate: 25000,
+        }),
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(updateData.amountVnd, null);
+      assert.equal(updateData.amountRub, null);
+    });
+  });
+
 });
