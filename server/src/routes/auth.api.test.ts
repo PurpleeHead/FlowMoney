@@ -87,6 +87,27 @@ describe('auth profile ownership', () => {
       assert.equal(queryCalled, false);
     });
   });
+
+  it('rejects tokens signed with an algorithm outside the HS256 allowlist', async () => {
+    let queryCalled = false;
+    userModel.findFirst = async () => {
+      queryCalled = true;
+      return { tokenVersion: 0 };
+    };
+    const nonAllowlistedToken = jwt.sign(
+      { id: 'user-1', email: 'user-1@example.com' },
+      'auth-profile-test-secret-which-is-long-enough',
+      { algorithm: 'HS384' },
+    );
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/auth/me`, {
+        headers: { authorization: `Bearer ${nonAllowlistedToken}` },
+      });
+      assert.equal(response.status, 401);
+      assert.equal(queryCalled, false, 'non-allowlisted JWT algorithms must be rejected before database access');
+    });
+  });
 });
 
 describe('password change safeguards', () => {

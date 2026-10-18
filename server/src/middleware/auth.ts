@@ -15,7 +15,7 @@ export async function auth(req: AuthedRequest, res: Response, next: NextFunction
     if (!secret || secret.length < 32) {
       throw new Error('JWT_SECRET must be configured with at least 32 characters');
     }
-    const payload = jwt.verify(header.slice(7), secret);
+    const payload = jwt.verify(header.slice(7), secret, { algorithms: ['HS256'] });
     if (
       typeof payload !== 'object' ||
       payload === null ||
