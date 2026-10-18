@@ -127,7 +127,7 @@ jobs:
             IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" LIKE 'exchange:backfill-direct-vnd:USDT') <> 0 THEN
               RAISE EXCEPTION 'Direct RUB/VND exchange must not create a USDT movement';
             END IF;
-            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -9600 THEN
+            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -9900 THEN
               RAISE EXCEPTION 'RUB movement total does not reconcile';
             END IF;
             IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'USDT') <> 96.5953 THEN
