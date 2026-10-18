@@ -3,16 +3,21 @@ import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import { auth } from './auth.js';
 import type { AuthedRequest } from '../types.js';
+import { prisma } from '../services/prisma.js';
+
+const userModel = prisma.user as unknown as { findUnique: (...args: any[]) => Promise<any> };
+const originalFindUnique = userModel.findUnique;
 
 const secret = 'auth-middleware-test-secret-at-least-32-characters';
 const previousSecret = process.env.JWT_SECRET;
 
 afterEach(() => {
+  userModel.findUnique = originalFindUnique;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
 
-function runAuth(authorization?: string) {
+async function runAuth(authorization?: string) {
   let statusCode = 200;
   let body: unknown;
   let nextCalled = false;
@@ -30,21 +35,22 @@ function runAuth(authorization?: string) {
     },
   };
   const next = () => { nextCalled = true; };
-  auth(req, res as never, next as never);
+  await auth(req, res as never, next as never);
   return { statusCode, body, nextCalled, user: req.user };
 }
 
 describe('auth middleware used by wallet and journal APIs', () => {
   it('rejects requests without a bearer token', () => {
     process.env.JWT_SECRET = secret;
-    const result = runAuth();
+    userModel.findUnique = async () => ({ tokenVersion: 0 });
+    const result = await runAuth();
     assert.equal(result.statusCode, 401);
     assert.equal(result.nextCalled, false);
   });
 
   it('rejects malformed tokens', () => {
     process.env.JWT_SECRET = secret;
-    const result = runAuth('Bearer not-a-valid-token');
+    const result = await runAuth('Bearer not-a-valid-token');
     assert.equal(result.statusCode, 401);
     assert.equal(result.nextCalled, false);
   });
@@ -52,7 +58,8 @@ describe('auth middleware used by wallet and journal APIs', () => {
   it('rejects expired tokens', () => {
     process.env.JWT_SECRET = secret;
     const token = jwt.sign({ id: 'user-1', email: 'user@example.com' }, secret, { expiresIn: -1 });
-    const result = runAuth(`Bearer ${token}`);
+    userModel.findUnique = async () => ({ tokenVersion: 0 });
+    const result = await runAuth(`Bearer ${token}`);
     assert.equal(result.statusCode, 401);
     assert.equal(result.nextCalled, false);
   });
