@@ -247,6 +247,9 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       rubPerUsdt,
     });
     const normalizedCurrency = input.currency.trim().toUpperCase();
+    const effectiveUsdtCharged = input.usdtCharged === undefined && normalizedCurrency === 'VND'
+      ? (existing.usdtCharged == null ? null : Number(existing.usdtCharged))
+      : input.usdtCharged ?? null;
     const amountVnd = input.amountVnd ?? (
       normalizedCurrency === 'VND' ? input.amount :
       normalizedCurrency === 'USDT' && vndPerUsdt != null ? input.amount * vndPerUsdt :
@@ -258,7 +261,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
       amount: input.amount,
       amountVnd,
       targetToVndRate: input.targetToVndRate,
-      usdtCharged: input.usdtCharged,
+      usdtCharged: effectiveUsdtCharged,
     }, rubPerUsdt, vndPerUsdt, vndPerRub);
     if (!areSupportedStoredAmounts([amountVnd, amountRub]) || !areRepresentableDecimals([
       { value: amountVnd, scale: 4 }, { value: amountRub, scale: 4 },
@@ -277,7 +280,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
           currency: input.currency,
           amountVnd,
           amountRub,
-          usdtCharged: input.usdtCharged === undefined ? existing.usdtCharged : input.usdtCharged,
+          usdtCharged: effectiveUsdtCharged,
           date: expenseDate,
           receiptId: input.receiptId ?? existing.receiptId,
         },
