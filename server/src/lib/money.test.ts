@@ -67,6 +67,17 @@ describe('unified RUB cost formula', () => {
     });
   });
 
+  it('derives the observed rate from actual VND instead of preserving a supplied estimate', () => {
+    assert.deepEqual(resolveExchangeVndOutcome({
+      usdtReceived: 100,
+      vndReceived: 2_490_000,
+      vndPerUsdt: 25_000,
+    }), {
+      vndReceived: 2_490_000,
+      vndPerUsdt: 24_900,
+    });
+  });
+
   it('allows recording RUB to USDT while VND is still unknown', () => {
     assert.deepEqual(resolveExchangeVndOutcome({ usdtReceived: 100 }), {
       vndReceived: null,
