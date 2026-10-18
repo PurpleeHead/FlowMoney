@@ -177,6 +177,45 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+  it('preserves the existing USDT card debit when PATCH omits usdtCharged', async () => {
+    const existing = {
+      id: 'expense-keep-card-debit', userId: 'user-42', title: 'Old title', category: 'Food',
+      amount: 100000, currency: 'VND', amountVnd: 100000, amountRub: null,
+      usdtCharged: 4, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    let updateArgs: any;
+    const createdMovements: any[] = [];
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    const tx = {
+      expense: {
+        updateMany: async (args: any) => { updateArgs = args; return { count: 1 }; },
+        findFirst: async () => ({ ...existing, title: 'Updated title' }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 1 }),
+        createMany: async (args: any) => { createdMovements.push(args); return { count: args.data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-keep-card-debit`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Updated title', category: 'Food', amount: 100000, currency: 'VND',
+        }),
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(updateArgs.data.usdtCharged, 4, 'omitting usdtCharged must preserve the existing actual card debit');
+      const movements = createdMovements[0].data as Array<{ currency: string; amountDelta: number }>;
+      assert.deepEqual(movements.map(item => [item.currency, item.amountDelta]), [['USDT', -4]]);
+    });
+  });
+
   it('deletes an expense and its ledger rows in one owner-scoped transaction', async () => {
     let expenseDeleteArgs: any;
     const movementDeleteArgs: any[] = [];
