@@ -50,6 +50,35 @@ function bearer(userId = 'user-1') {
 }
 
 describe('expense API ledger synchronization', () => {
+  it('does not return success when wallet ledger synchronization fails during creation', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    const tx = {
+      expense: {
+        create: async () => ({
+          id: 'expense-failing', userId: 'user-42', title: 'Lunch', category: 'Food',
+          amount: 100, currency: 'RUB', amountVnd: null, amountRub: 100,
+          usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+        }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async () => { throw new Error('simulated ledger write failure'); },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Lunch', category: 'Food', amount: 100, currency: 'RUB' }),
+      });
+
+      assert.equal(response.status, 500);
+    });
+  });
+
   it('creates an expense and records its source-currency debit atomically', async () => {
     expenseModel.findMany = async () => [];
     exchangeModel.findMany = async () => [];
