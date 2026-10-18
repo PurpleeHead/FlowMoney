@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
-  process.env.JWT_SECRET = 'journal-api-test-secret';
+  process.env.JWT_SECRET = 'journal-api-test-secret-long-enough-for-jwt-middleware';
   const app = express();
   app.use('/api/journal', journalRoutes);
   const server = app.listen(0, '127.0.0.1');
@@ -40,7 +40,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
 }
 
 function bearer() {
-  return `Bearer ${jwt.sign({ id: 'journal-user', email: 'journal-user@example.com' }, 'journal-api-test-secret')}`;
+  return `Bearer ${jwt.sign({ id: 'journal-user', email: 'journal-user@example.com' }, 'journal-api-test-secret-long-enough-for-jwt-middleware')}`;
 }
 
 describe('journal API integration', () => {
