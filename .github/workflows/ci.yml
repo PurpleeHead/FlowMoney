@@ -84,6 +84,8 @@ jobs:
         run: npx tsx server/prisma/tests/verify-transaction-rollback.ts
       - name: Verify exchange transaction rollback when ledger sync fails
         run: npx tsx server/prisma/tests/verify-exchange-transaction-rollback.ts
+      - name: Verify expense and exchange delete rollback
+        run: npx tsx server/prisma/tests/verify-delete-transaction-rollback.ts
       - name: Seed legacy records and an existing ledger row
         run: psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/tests/wallet-movement-backfill-fixture.sql
       - name: Verify backfill is idempotent
