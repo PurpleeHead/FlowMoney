@@ -3,7 +3,7 @@ export type ReceiptPrintedTotal = { amount: number; line: string; needsReview?: 
 
 /** Extract only clearly labelled receipt totals; never infer a total from item prices. */
 export function parseReceiptPrintedTotal(text: string): ReceiptPrintedTotal | null {
-  const totalLabel = /(?:tong\s*(?:thanh\s*toan|cong)|tien\s*can\s*thanh\s*toan|can\s*thanh\s*toan|phai\s*tra|grand\s*total|total\s*(?:due|payable)|amount\s*due|payment\s*due|thanh\s*toan)/i;
+  const totalLabel = /(?:tong\s*(?:thanh\s*toan|cong)|tien\s*can\s*thanh\s*toan|can\s*thanh\s*toan|phai\s*tra|grand\s*total|total\s*(?:due|payable)|amount\s*due|payment\s*due)/i;
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.replace(/\s+/g, ' ').trim();
     if (!line || !totalLabel.test(fold(line)) || /subtotal|tien\s*khach\s*dua|tien\s*thua/i.test(fold(line))) continue;
