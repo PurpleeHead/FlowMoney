@@ -7,7 +7,7 @@ export function parseReceiptPrintedTotal(text: string): ReceiptPrintedTotal | nu
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.replace(/\s+/g, ' ').trim();
     if (!line || !totalLabel.test(fold(line)) || /subtotal|tien\s*khach\s*dua|tien\s*thua/i.test(fold(line))) continue;
-    const match = line.match(/([\d][\d.,'’]*(?:\s+\d{3})*)\\s*(?:₫|đ|VND|VNĐ)?\\s*$/i);
+    const match = line.match(/([\d][\d.,'’]*(?:\s+\d{3})*)\s*(?:₫|đ|VND|VNĐ)?\s*$/i);
     if (!match) continue;
     const parsed = normalizeVndPrice(match[1]);
     if (parsed) return { amount: parsed.price, line, ...(parsed.needsReview ? { needsReview: true } : {}) };
