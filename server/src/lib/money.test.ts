@@ -7,8 +7,10 @@ import {
   calculateObservedVndPerRub,
   calculateRubPerUsdt,
   mapDirectVndExchanges,
+  mapRubUsdtExchanges,
   estimateRubFromVnd,
   resolveExchangeVndOutcome,
+  isExchangeVndOutcomeConsistent,
 } from './money.js';
 
 describe('unified RUB cost formula', () => {
@@ -65,6 +67,17 @@ describe('unified RUB cost formula', () => {
     });
   });
 
+  it('derives the observed rate from actual VND instead of preserving a supplied estimate', () => {
+    assert.deepEqual(resolveExchangeVndOutcome({
+      usdtReceived: 100,
+      vndReceived: 2_490_000,
+      vndPerUsdt: 25_000,
+    }), {
+      vndReceived: 2_490_000,
+      vndPerUsdt: 24_900,
+    });
+  });
+
   it('allows recording RUB to USDT while VND is still unknown', () => {
     assert.deepEqual(resolveExchangeVndOutcome({ usdtReceived: 100 }), {
       vndReceived: null,
@@ -79,6 +92,22 @@ describe('unified RUB cost formula', () => {
   it('returns null rather than inventing a RUB estimate when rates are missing', () => {
     assert.equal(estimateRubFromVnd(100000, null, 88.5), null);
     assert.equal(estimateRubFromVnd(100000, 25451, null), null);
+  });
+});
+
+describe('RUB-to-USDT exchange observations', () => {
+  it('includes direct RUB_TARGET → USDT acquisitions in the weighted RUB/USDT rate', () => {
+    const observations = mapRubUsdtExchanges([
+      { mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853 },
+      { mode: 'RUB_TARGET', rubSpent: 5000, targetCurrency: 'USDT', targetReceived: 56 },
+      { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'GEL', targetReceived: 100 },
+      { mode: 'RUB_VND', rubSpent: 1000, usdtReceived: null },
+    ]);
+    assert.deepEqual(observations, [
+      { rubSpent: 8300, usdtReceived: 93.7853 },
+      { rubSpent: 5000, usdtReceived: 56 },
+    ]);
+    assert.ok(Math.abs(calculateRubPerUsdt(observations)! - (13300 / 149.7853)) < 1e-10);
   });
 });
 
@@ -176,5 +205,43 @@ describe('expenses with unknown or explicit target-currency conversion', () => {
     assert.equal(calculateExpenseRub({
       currency: 'GEL', amount: 100, amountVnd: null, targetToVndRate: 9_200,
     }, 88.5, 25_000, 2_600), null);
+  });
+});
+
+describe('exchange rate consistency', () => {
+  it('accepts gross VND within the supplied rate when fee is within the received amount', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 100, vndReceived: 2_490_000, vndPerUsdt: 25_000, vndFee: 10_000,
+    }), true);
+  });
+
+  it('rejects VND received above the rate-derived amount', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 100, vndReceived: 2_600_000, vndPerUsdt: 25_000, vndFee: 0,
+    }), false);
+  });
+
+  it('rejects a fee greater than the entered gross VND amount', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 100, vndReceived: 20_000, vndPerUsdt: 25_000, vndFee: 20_001,
+    }), false);
+  });
+
+  it('rejects VND received above the rate-derived gross amount even when fee is nonzero', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 100, vndReceived: 2_500_001, vndPerUsdt: 25_000, vndFee: 0,
+    }), false);
+  });
+
+  it('rejects a fee greater than the gross VND amount', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 1, vndReceived: 20_000, vndPerUsdt: 25_000, vndFee: 25_001,
+    }), false);
+  });
+
+  it('does not reject a missing actual VND outcome when no rate is supplied', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 100, vndReceived: null, vndPerUsdt: null, vndFee: 0,
+    }), true);
   });
 });
