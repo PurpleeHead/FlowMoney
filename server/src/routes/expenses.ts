@@ -96,13 +96,10 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const vndExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.usdtReceived != null && x.vndReceived != null);
     const exchangeVnd = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
     const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
-    const plannedExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
-    const plannedUsdt = plannedExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
-    const planningVndPerUsdt = plannedUsdt > 0
-      ? plannedExchanges.reduce((sum, x) => sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0) / plannedUsdt
-      : null;
+    // Only actual card purchases or completed exchanges establish a historical VND/USDT rate.
+    // A planning rate must never be persisted as an expense's factual VND valuation.
     const historicalVndPerUsdt = observedVndPerUsdt ??
-      (exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : planningVndPerUsdt);
+      (exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : null);
 
     const historicalVndPerRub = calculateObservedVndPerRub({
       directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
@@ -234,12 +231,9 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
     const actualExchanges = exchanges.filter(x => x.mode !== 'RUB_VND' && x.usdtReceived != null && x.vndReceived != null);
     const actualVnd = actualExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
     const actualUsdt = actualExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
-    const planned = exchanges.filter(x => x.mode !== 'RUB_VND' && x.usdtReceived != null && x.vndReceived == null && x.planningVndPerUsdt != null);
-    const plannedUsdt = planned.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
-    const plannedRate = plannedUsdt > 0
-      ? planned.reduce((sum, x) => sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0) / plannedUsdt
-      : null;
-    const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : plannedRate);
+    // Keep estimates out of the historical expense valuation. Planning rates are used
+    // by the planning UI, but an unknown actual VND outcome remains unknown here.
+    const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : null);
     const vndPerRub = calculateObservedVndPerRub({
       directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
         mode: x.mode,
