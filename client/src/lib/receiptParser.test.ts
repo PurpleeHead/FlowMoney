@@ -36,15 +36,13 @@ describe('Vietnamese receipt line parsing', () => {
     expect(parseReceiptLines('Cafe 40000000')).toEqual([{ name: 'Cafe', price: 40000, quantity: 1, needsReview: true }]);
   });
   it('does not parse discounts, tax, service fees, refunds, cash tendered, or change as purchased items', () => {
-    expect(parseReceiptLines([
-      'Coffee 40.000',
-      'Discount -5.000',
-      'VAT 8% 3.200',
-      'Service fee 2.000',
-      'Refund -10.000',
-      'Tiền khách đưa 50.000',
-      'Tiền thừa 20.000',
-    ].join('\n'))).toEqual([{ name: 'Coffee', price: 40000, quantity: 1 }]);
+    expect(parseReceiptLines(`Coffee 40.000
+Discount -5.000
+VAT 8% 3.200
+Service fee 2.000
+Refund -10.000
+Tiền khách đưa 50.000
+Tiền thừa 20.000`)).toEqual([{ name: 'Coffee', price: 40000, quantity: 1 }]);
   });
 
   it('ignores lines without a recognizable product and trailing price', () => {
