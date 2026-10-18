@@ -66,10 +66,20 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     // A budget balance is a planning estimate: actual VND received is counted as-is;
     // USDT-only top-ups are converted using the observed VND/USDT rate when available.
     const confirmedExchangeVnd = exchanges.reduce((sum, x) => sum + (x.vndReceived != null ? Number(x.vndReceived) : 0) + (x.targetVndEquivalent != null ? Number(x.targetVndEquivalent) : 0), 0);
-    const unpricedUsdtTopUps = exchanges.some(x => x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null);
+    const isUnpricedUsdtTopUp = (x: typeof exchanges[number]) =>
+      (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
+      (x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null);
+    const unpricedUsdtTopUps = exchanges.some(isUnpricedUsdtTopUp);
     const estimatedUnconvertedVnd = balanceRateVndPerUsdt == null ? 0 : exchanges
-      .filter(x => x.mode !== 'RUB_VND' && x.vndReceived == null && x.usdtReceived != null)
-      .reduce((sum, x) => sum + Number(x.usdtReceived) * balanceRateVndPerUsdt, 0);
+      .filter(x => x.mode !== 'RUB_VND' && x.vndReceived == null &&
+        ((x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null) ||
+         (x.usdtReceived != null)))
+      .reduce((sum, x) => {
+        const usdt = x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT'
+          ? Number(x.targetReceived)
+          : Number(x.usdtReceived);
+        return sum + usdt * balanceRateVndPerUsdt;
+      }, 0);
     const balanceVnd = exchanges.length===0 || (unpricedUsdtTopUps && balanceRateVndPerUsdt == null)
       ? null
       : confirmedExchangeVnd + estimatedUnconvertedVnd - totalVnd;
