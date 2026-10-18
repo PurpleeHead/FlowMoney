@@ -12,10 +12,12 @@ const expenseModel = prisma.expense as unknown as {
   findMany: (...args: any[]) => Promise<any>;
 };
 const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
+const receiptModel = prisma.receipt as unknown as { findFirst: (...args: any[]) => Promise<any> };
 const originalTransaction = client.$transaction;
 const originalExpenseFindFirst = expenseModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
 const originalExchangeFindMany = exchangeModel.findMany;
+const originalReceiptFindFirst = receiptModel.findFirst;
 const previousSecret = process.env.JWT_SECRET;
 
 afterEach(() => {
@@ -23,6 +25,7 @@ afterEach(() => {
   expenseModel.findFirst = originalExpenseFindFirst;
   expenseModel.findMany = originalExpenseFindMany;
   exchangeModel.findMany = originalExchangeFindMany;
+  receiptModel.findFirst = originalReceiptFindFirst;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
@@ -302,6 +305,43 @@ describe('expense API ledger synchronization', () => {
 
       assert.equal(response.status, 404);
       assert.equal(transactionCalls, 0, 'must not start a write transaction for another user expense');
+    });
+  });
+
+
+  it('rejects attaching another user receipt to an expense', async () => {
+    const existing = {
+      id: 'expense-owned', userId: 'user-42', title: 'Groceries', category: 'Food',
+      amount: 100000, currency: 'VND', amountVnd: 100000, amountRub: null,
+      usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    let transactionCalls = 0;
+    expenseModel.findFirst = async args => {
+      assert.deepEqual(args.where, { id: 'expense-owned', userId: 'user-42' });
+      return existing;
+    };
+    receiptModel.findFirst = async args => {
+      assert.deepEqual(args.where, { id: 'foreign-receipt', userId: 'user-42' });
+      return null;
+    };
+    const originalTx = client.$transaction;
+    client.$transaction = async (...args: any[]) => {
+      transactionCalls += 1;
+      return originalTx(...args);
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-owned`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Groceries', category: 'Food', amount: 100000,
+          currency: 'VND', receiptId: 'foreign-receipt',
+        }),
+      });
+
+      assert.equal(response.status, 400);
+      assert.equal(transactionCalls, 0, 'must not write expense or ledger when receipt ownership check fails');
     });
   });
 
