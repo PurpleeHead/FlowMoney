@@ -2,7 +2,10 @@
   "name": "flowmoney",
   "private": true,
   "version": "1.0.0",
-  "workspaces": ["client", "server"],
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "dev": "concurrently -n API,WEB \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "npm --workspace server run dev",
@@ -13,8 +16,10 @@
     "db:migrate": "npm --workspace server run db:migrate",
     "start": "npm --workspace server run start"
   },
-  "devDependencies": { "concurrently": "^9.1.2" },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
   "overrides": {
-    "deepmerge-ts": "^8.0.2"
+    "deepmerge-ts": "8.0.2"
   }
 }
