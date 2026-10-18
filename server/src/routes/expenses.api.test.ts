@@ -50,6 +50,47 @@ function bearer(userId = 'user-1') {
 }
 
 describe('expense API ledger synchronization', () => {
+  it('creates an expense and records its source-currency debit atomically', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    const createdMovements: any[] = [];
+    const deletedMovements: any[] = [];
+    const createdExpense = {
+      id: 'expense-new', userId: 'user-42', title: 'Lunch', category: 'Food',
+      amount: 100, currency: 'RUB', amountVnd: null, amountRub: 100,
+      usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    const tx = {
+      expense: {
+        create: async (args: any) => {
+          assert.equal(args.data.userId, 'user-42');
+          assert.equal(args.data.title, 'Lunch');
+          return createdExpense;
+        },
+      },
+      walletMovement: {
+        deleteMany: async (args: any) => { deletedMovements.push(args); return { count: 0 }; },
+        createMany: async (args: any) => { createdMovements.push(args); return { count: args.data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Lunch', category: 'Food', amount: 100, currency: 'RUB' }),
+      });
+
+      assert.equal(response.status, 201);
+      assert.deepEqual(deletedMovements, [{
+        where: { userId: 'user-42', sourceKey: { startsWith: 'expense:expense-new:' } },
+      }]);
+      const movements = createdMovements[0].data as Array<{ currency: string; amountDelta: number }>;
+      assert.deepEqual(movements.map(item => [item.currency, item.amountDelta]), [['RUB', -100]]);
+    });
+  });
+
   it('updates an expense and replaces its wallet debit in the same owner-scoped transaction', async () => {
     const existing = {
       id: 'expense-1', userId: 'user-42', title: 'Old title', category: 'Food',
