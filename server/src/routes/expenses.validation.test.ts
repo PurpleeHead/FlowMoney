@@ -35,6 +35,12 @@ describe('expense request validation', () => {
     assert.equal(expenseSchema.safeParse({ ...validExpense, usdtCharged: 1.123456789 }).success, false);
   });
 
+  it('only allows a USDT card debit on a VND purchase', () => {
+    assert.equal(expenseSchema.safeParse({ ...validExpense, currency: 'VND', usdtCharged: 1.25 }).success, true);
+    assert.equal(expenseSchema.safeParse({ ...validExpense, currency: 'RUB', usdtCharged: 1.25 }).success, false);
+    assert.equal(expenseSchema.safeParse({ ...validExpense, currency: 'USDT', usdtCharged: 1.25 }).success, false);
+  });
+
   it('rejects source amounts and optional conversions outside the supported range', () => {
     assert.equal(expenseSchema.safeParse({ ...validExpense, amount: MAX_STORED_AMOUNT + 1 }).success, false);
     assert.equal(expenseSchema.safeParse({ ...validExpense, amountVnd: MAX_STORED_AMOUNT + 1 }).success, false);
