@@ -70,6 +70,35 @@ describe('wallet API integration', () => {
     });
   });
 
+  it('always assigns a new wallet movement to the authenticated user', async () => {
+    let receivedData: any;
+    model.create = async ({ data }: any) => {
+      receivedData = data;
+      const now = new Date();
+      return { id: 'movement-owned-by-user-1', ...data, occurredAt: now, createdAt: now };
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/wallets/movements`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-1'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'ADJUSTMENT',
+          currency: 'USDT',
+          amount: -1.25,
+          userId: 'another-user',
+        }),
+      });
+
+      assert.equal(response.status, 201);
+      assert.equal(receivedData.userId, 'user-1');
+      assert.equal(receivedData.currency, 'USDT');
+      assert.equal(receivedData.amountDelta, -1.25);
+      assert.equal(receivedData.kind, 'ADJUSTMENT');
+      assert.equal(receivedData.sourceKey.startsWith('adjustment:user-1:'), true);
+    });
+  });
+
   it('allows only one of two concurrent opening-balance requests for the same user and currency', async () => {
     const createdSourceKeys = new Set<string>();
     model.create = async ({ data }: any) => {
