@@ -32,7 +32,7 @@ jobs:
       - name: Regenerate lockfile from manifests
         run: npm install --package-lock-only --ignore-scripts --no-audit
       - name: Enforce patched deepmerge-ts in lockfile
-        run: npm update deepmerge-ts@8.0.2 --package-lock-only --ignore-scripts --no-audit
+        run: npm update deepmerge-ts --package-lock-only --ignore-scripts --no-audit
       - name: Install exact lockfile
         run: npm ci
       - name: Generate Prisma client
