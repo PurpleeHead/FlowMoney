@@ -67,6 +67,8 @@ describe('journal API integration', () => {
       const body = await response.json() as { entries: unknown[]; limit: number; hasMore: boolean };
       assert.equal(expenseArgs.take, 501);
       assert.deepEqual(expenseArgs.where, { userId: 'journal-user' });
+      assert.deepEqual(exchangeArgs.where, { userId: 'journal-user' });
+      assert.deepEqual(movementArgs.where, { userId: 'journal-user' });
       assert.deepEqual(expenseArgs.orderBy, [{ date: 'desc' }, { id: 'asc' }]);
       assert.deepEqual(exchangeArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
       assert.deepEqual(movementArgs.orderBy, [{ occurredAt: 'desc' }, { id: 'asc' }]);
