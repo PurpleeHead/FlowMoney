@@ -54,18 +54,23 @@ function areExchangeDataRepresentable(data: {
 
 function directTargetData(x: z.infer<typeof exchangeSchema>) {
   if (x.targetReceived == null) throw new Error('Enter the amount received in the target currency.');
-  const rate = x.targetCurrency === 'VND' ? 1 : x.targetToVndRate;
-  if (rate == null || !Number.isFinite(rate) || rate <= 0) {
+  // A RUB → USDT top-up does not imply a known USDT → VND rate.
+  // Keep the actual USDT received even when its VND equivalent is not yet known.
+  const rate = x.targetCurrency === 'VND' ? 1 : x.targetToVndRate ?? null;
+  if (x.targetCurrency !== 'USDT' && (rate == null || !Number.isFinite(rate) || rate <= 0)) {
     throw new Error('Enter how many VND equal one unit of the target currency.');
   }
-  const targetVndEquivalent = calculateTargetVndEquivalent(x.targetCurrency, x.targetReceived, rate);
-  if (!Number.isFinite(targetVndEquivalent) || targetVndEquivalent <= 0) {
+  const targetVndEquivalent = rate == null
+    ? null
+    : calculateTargetVndEquivalent(x.targetCurrency, x.targetReceived, rate);
+  if (targetVndEquivalent != null && (!Number.isFinite(targetVndEquivalent) || targetVndEquivalent <= 0)) {
     throw new Error('The VND equivalent must be a positive amount.');
   }
   return {
     mode: 'RUB_TARGET', rubSpent: x.rubSpent, usdtReceived: null, vndPerUsdt: null,
     planningVndPerUsdt: null, vndFee: 0, vndReceived: null,
-    effectiveVndPerRub: targetVndEquivalent / x.rubSpent, effectiveRubPerUsdt: null,
+    effectiveVndPerRub: targetVndEquivalent == null ? null : targetVndEquivalent / x.rubSpent,
+    effectiveRubPerUsdt: null,
     targetCurrency: x.targetCurrency, targetReceived: x.targetReceived,
     targetToVndRate: rate, targetVndEquivalent,
   };

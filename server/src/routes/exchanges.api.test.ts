@@ -43,6 +43,31 @@ function bearer(userId = 'user-1') {
   return `Bearer ${jwt.sign({ id: userId, email: `${userId}@example.com` }, 'exchange-api-test-secret-long-enough-for-jwt-middleware')}`;
 }
 
+describe('direct RUB to USDT top-up without VND rate', () => {
+  it('accepts actual USDT without requiring a VND conversion rate', async () => {
+    const tx = {
+      exchange: { create: async ({ data }: any) => ({ id: 'exchange-test', ...data, createdAt: new Date() }) },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async ({ data }: any) => ({ count: data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'RUB_TARGET', rubSpent: 8300, targetCurrency: 'USDT', targetReceived: 93.7853 }),
+      });
+      assert.equal(response.status, 201);
+      const body = await response.json() as any;
+      assert.equal(body.targetToVndRate, null);
+      assert.equal(body.targetVndEquivalent, null);
+      assert.equal(body.effectiveVndPerRub, null);
+    });
+  });
+});
+
 describe('exchange API ledger synchronization', () => {
   it('updates an exchange and replaces its ledger movements in the same transaction', async () => {
     let updateArgs: any;
