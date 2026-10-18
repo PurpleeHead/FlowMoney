@@ -157,6 +157,7 @@ describe('password change safeguards', () => {
       assert.equal(response.status, 200);
       assert.deepEqual(updateArgs.where, { id: 'user-1' });
       assert.equal(typeof updateArgs.data.passwordHash, 'string');
+      assert.deepEqual(updateArgs.data.tokenVersion, { increment: 1 });
       assert.notEqual(updateArgs.data.passwordHash, 'New-password-456');
       assert.equal(await bcrypt.compare('New-password-456', updateArgs.data.passwordHash), true);
       assert.equal('passwordHash' in body, false);
