@@ -30,7 +30,12 @@ app.use(helmet({
     },
   },
 }));
-const allowedOrigins = new Set([process.env.CLIENT_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173', 'https://purpleehead.github.io'].filter((value): value is string => Boolean(value)));
+const configuredOrigins = [process.env.CLIENT_ORIGIN, 'https://purpleehead.github.io'];
+// Local development origins must never be implicitly trusted in production.
+if (process.env.NODE_ENV !== 'production') {
+  configuredOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173');
+}
+const allowedOrigins = new Set(configuredOrigins.filter((value): value is string => Boolean(value)));
 app.use(cors({ origin: (origin, callback) => { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error('Origin not allowed by CORS')); } }));
 app.use(express.json({ limit: '1mb' }));
 // Keep a shared auth ceiling, then apply stricter per-endpoint limits to slow
