@@ -7,6 +7,9 @@ import { errorHandler } from './errors.js';
 async function withErrorApi(run: (baseUrl: string) => Promise<void>) {
   const app = express();
   app.get('/boom', (_req, _res, next) => next(new Error('database password=secret internal details')));
+  app.get('/cors-denied', (_req, _res, next) => next(new Error('Origin not allowed by CORS')));
+  app.get('/too-large', (_req, _res, next) => next({ status: 413, message: 'raw parser error' }));
+  app.get('/malformed', (_req, _res, next) => next({ status: 400, message: 'raw parser error' }));
   app.use(errorHandler);
   const server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve, reject) => {
@@ -37,4 +40,24 @@ describe('API error handler security', () => {
       console.error = originalError;
     }
   });
+  it('returns 403 for rejected CORS origins without exposing internal error text', async () => {
+    await withErrorApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/cors-denied`);
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), { message: 'Request origin is not allowed.' });
+    });
+  });
+
+  it('preserves safe body-parser statuses and uses generic messages', async () => {
+    await withErrorApi(async baseUrl => {
+      const tooLarge = await fetch(`${baseUrl}/too-large`);
+      assert.equal(tooLarge.status, 413);
+      assert.deepEqual(await tooLarge.json(), { message: 'Request body is too large.' });
+
+      const malformed = await fetch(`${baseUrl}/malformed`);
+      assert.equal(malformed.status, 400);
+      assert.deepEqual(await malformed.json(), { message: 'Request body is invalid.' });
+    });
+  });
+
 });
