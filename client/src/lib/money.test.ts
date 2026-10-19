@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateActualExchangeRates, calculateBalanceEquivalents, calculateExchange, calculateObservedVndPerUsdt, estimateRubFromVnd, parseAmountInput } from './money';
+import { calculateActualExchangeRates, calculateBalanceEquivalents, calculateExchange, calculateObservedVndPerUsdt, estimateRubFromVnd, formatExactDecimal, parseAmountInput } from './money';
 describe('calculateExchange', () => {
   it('records RUB to USDT even before the VND rate is known', () => {
     expect(calculateExchange({ rubSpent: 10000, usdtReceived: 100 })).toEqual({ effectiveRubPerUsdt: 100 });
@@ -99,5 +99,18 @@ describe('parseAmountInput', () => {
     expect(parseAmountInput('2.500.000')).toBe('2500000');
     expect(parseAmountInput('1.234,56')).toBe('1234.56');
     expect(parseAmountInput('1,234.56')).toBe('1234.56');
+  });
+});
+
+describe('formatExactDecimal', () => {
+  it('groups large exact amounts and preserves tiny fractional values', () => {
+    expect(formatExactDecimal('123456789012345.00000001', 'en-US')).toBe('123,456,789,012,345.00000001');
+  });
+  it('uses the locale decimal separator without rounding the fraction', () => {
+    expect(formatExactDecimal('1234567.00000001', 'ru-RU')).toBe('1 234 567,00000001');
+  });
+  it('keeps null values empty and trims insignificant trailing zeros', () => {
+    expect(formatExactDecimal(null, 'en-US')).toBe('');
+    expect(formatExactDecimal('12.34000000', 'en-US')).toBe('12.34');
   });
 });
