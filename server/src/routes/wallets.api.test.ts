@@ -75,6 +75,26 @@ describe('wallet API integration', () => {
     });
   });
 
+  it('returns exact decimal strings for large balances with tiny movements', async () => {
+    const date = new Date('2026-10-16T08:00:00.000Z');
+    model.findMany = async () => [
+      { currency: 'USDT', amountDelta: { toString: () => '90000000' }, kind: 'OPENING', createdAt: date, occurredAt: date },
+      { currency: 'USDT', amountDelta: { toString: () => '0.00000001' }, kind: 'ADJUSTMENT', createdAt: new Date(date.getTime() + 1000), occurredAt: new Date(date.getTime() + 1000) },
+      { currency: 'USDT', amountDelta: { toString: () => '-0.00000002' }, kind: 'ADJUSTMENT', createdAt: new Date(date.getTime() + 2000), occurredAt: new Date(date.getTime() + 2000) },
+    ];
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/wallets/balances`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { balances: Array<{ currency: string; balance: string | null; netMovement: string }> };
+      const usdt = body.balances.find(item => item.currency === 'USDT');
+      assert.equal(usdt?.balance, '89999999.99999999');
+      assert.equal(usdt?.netMovement, '89999999.99999999');
+    });
+  });
+
   it('always assigns a new wallet movement to the authenticated user', async () => {
     let receivedData: any;
     model.create = async ({ data }: any) => {
