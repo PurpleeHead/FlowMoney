@@ -96,10 +96,7 @@ function parsePriceOnly(line: string): { price: number; needsReview: boolean } |
 }
 
 function parsePricedItem(line: string): ReceiptItem | null {
-    // Tendered cash and change are payment bookkeeping, never purchased items.
-    // Handle these labels before generic product parsing to avoid false positives.
-    if (/^(?:tien khach dua|tien thua)(?:\\s|$)/i.test(fold(line))) { pendingName = ''; continue; }
-    if (isMetadataLine(line)) { pendingName = ''; continue; }
+  if (isMetadataLine(line)) return null;
   const match = line.match(/^(.*?)\s+([\d][\d.,'’]*(?:\s+\d{3})*)\s*(?:₫|đ|VND|VNĐ)?$/i);
   if (!match) return null;
   const rawName = match[1];
@@ -117,6 +114,9 @@ export function parseReceiptLines(text: string): ReceiptItem[] {
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.replace(/\s+/g, ' ').trim();
     if (!line) continue;
+    // Tendered cash and change are payment bookkeeping, never purchased items.
+    // Handle these labels before generic product parsing to avoid false positives.
+    if (/^(?:tien khach dua|tien thua)(?:\s|$)/i.test(fold(line))) { pendingName = ''; continue; }
     if (isMetadataLine(line)) { pendingName = ''; continue; }
     const priced = parsePricedItem(line);
     if (priced) { items.push(priced); pendingName = ''; continue; }
