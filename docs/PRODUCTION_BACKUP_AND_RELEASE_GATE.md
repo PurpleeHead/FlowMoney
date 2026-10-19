@@ -5,7 +5,7 @@
 ## Free-tier layout
 
 - Application/API: existing Render web service.
-- PostgreSQL: use a persistent managed PostgreSQL provider whose free tier does not automatically delete the database after a fixed period. Do not use the current `flowmoney-test-db` Render Free database for production; Render documents a 30-day expiry and no backups for Free Postgres.
+- PostgreSQL: **recommended first candidate: Neon Free**. It provides managed PostgreSQL with a free allowance and compute that scales to zero, rather than Render Free Postgres's fixed 30-day expiry. Confirm current limits and create the project in the account owner's control. Use a direct PostgreSQL connection URL for Prisma migrations and backups; do not use the current `flowmoney-test-db` Render Free database for production.
 - Encrypted off-site backups: Cloudflare R2 Standard, within its published free allowance (10 GB-month storage, 1 million Class A operations, 10 million Class B operations, no egress fee). Keep backup size/usage within the allowance; provider free-tier terms can change.
 - Backup cadence/retention: daily at 03:17 UTC, plus manual workflow dispatch; prune objects older than 30 days only after a new backup has been uploaded and verified.
 
@@ -13,7 +13,7 @@
 
 Configure these repository **Actions secrets** on the trusted repository before running the workflow:
 
-- `FLOWMONEY_BACKUP_DATABASE_URL`: direct PostgreSQL connection URL for the production database, with TLS enabled. Use the direct endpoint for `pg_dump` if the provider's pooled endpoint does not support administrative dump connections.
+- `FLOWMONEY_BACKUP_DATABASE_URL`: direct PostgreSQL connection URL for the production database, with TLS enabled. Use the direct endpoint for `pg_dump` and Prisma migrations.
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`: scoped to the backup bucket only, with list/read metadata/write/delete access for the backup prefix.
 - `R2_SECRET_ACCESS_KEY`
@@ -38,7 +38,7 @@ Create a private R2 bucket and a dedicated bucket-scoped access key. Do not reus
 ## Safe deployment sequence
 
 1. Keep PR #82 draft and unmerged until its own pull-request CI has run and passed, and code review is complete.
-2. Choose and provision the persistent free PostgreSQL target. Do not run production migrations yet.
+2. Provision the persistent Neon Free PostgreSQL target (or another owner-approved persistent free PostgreSQL service). Do not run production migrations yet.
 3. Set the Render service to **manual deploy / auto-deploy disabled** before changing its branch to `main`; the service currently tracks `review/pr-3-fix`. Verify this in the Render Dashboard rather than assuming a Blueprint change updated the live service.
 4. Set production environment variables, including a unique random `JWT_SECRET` with at least 32 non-whitespace characters, the production `DATABASE_URL`, `NODE_ENV=production`, and the correct `CLIENT_ORIGIN`/`APP_URL`. Never commit values.
 5. Take and verify a pre-migration backup of the target database. For a new empty database, this protects the baseline; after migration, run and verify another backup before accepting users.
