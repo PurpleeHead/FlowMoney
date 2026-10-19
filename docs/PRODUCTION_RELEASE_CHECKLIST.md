@@ -26,4 +26,4 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 - A successful CI run covers code tests, build, dependency audit, and disposable-PostgreSQL migration verification only.
 - The target production database, backup credentials/storage, and a successful production-data restore drill must be verified separately.
-- The dashboard currently loads all of a user's expense and exchange records to compute full-history totals and weighted rates. Do not add arbitrary query limits without moving those calculations to correct database aggregates and separately paginating the history response.
+- The dashboard loads all of a user's expenses and exchanges to compute full-history totals and weighted rates. Expense create/edit and receipt save also read historical exchange and card-purchase observations to calculate date-specific cost bases. Do not add arbitrary query limits: first move these calculations to date-aware database aggregates, preserve the saved historical RUB valuations, and separately paginate history/export APIs.
