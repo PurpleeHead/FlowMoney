@@ -4,47 +4,52 @@ on:
   pull_request:
     branches:
       - stage3-unified-journal-api
+      - release/production-candidate-2026-10-19
 
+# This workflow executes package lifecycle scripts and tests from the PR checkout.
+# It must never have write permission or push commits using a privileged token.
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: security-dependency-remediation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   refresh-lockfile:
-    if: github.head_ref == 'security/dependency-audit-remediation'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Check out remediation branch
+      - name: Check out pull request
         uses: actions/checkout@v4
         with:
-          ref: security/dependency-audit-remediation
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Update npm to a version with the peer-resolution fix
-        run: npm install --global npm@11.19.1
       - name: Confirm toolchain versions
         run: |
           node --version
           npm --version
       - name: Regenerate lockfile from manifests
-        run: npm install --package-lock-only --ignore-scripts --no-audit
+        run: npm install --package-lock-only --ignore-scripts --no-audit --registry=https://registry.npmjs.org/
       - name: Enforce patched deepmerge-ts in lockfile
-        run: npm update deepmerge-ts --package-lock-only --ignore-scripts --no-audit
+        run: npm update deepmerge-ts --package-lock-only --ignore-scripts --no-audit --registry=https://registry.npmjs.org/
       - name: Install exact lockfile
-        run: npm ci
+        run: npm ci --registry=https://registry.npmjs.org/
       - name: Generate Prisma client
         run: npm run db:generate
       - name: Run test suites
         run: npm test
       - name: Build production bundles
         run: npm run build
-      - name: Report remaining vulnerabilities
+      - name: Report dependency audit
         shell: bash
         run: |
-          npm audit --json > "$RUNNER_TEMP/npm-audit.json" || true
+          set -euo pipefail
+          npm audit --registry=https://registry.npmjs.org/ --json > "$RUNNER_TEMP/npm-audit.json" || audit_status=$?
           node - "$RUNNER_TEMP/npm-audit.json" <<'NODE'
           const fs = require('node:fs');
           const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -52,15 +57,24 @@ jobs:
           for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
             console.log([item.severity.toUpperCase(), name, `range=${item.range}`, `fixAvailable=${JSON.stringify(item.fixAvailable)}`].join(' | '));
           }
+          if (report.error || (report.metadata?.vulnerabilities?.total ?? 0) > 0) {
+            console.error('Dependency audit failed or reported vulnerabilities.');
+            process.exitCode = 1;
+          }
           NODE
-      - name: Commit regenerated lockfile
+      - name: Save proposed lockfile diff for review
+        if: always()
+        shell: bash
         run: |
-          if git diff --quiet -- package-lock.json; then
-            echo "Lockfile already matches the dependency manifests."
-            exit 0
+          git diff -- package-lock.json > "$RUNNER_TEMP/lockfile-diff.patch"
+          if [[ ! -s "$RUNNER_TEMP/lockfile-diff.patch" ]]; then
+            echo "No lockfile changes were generated." > "$RUNNER_TEMP/lockfile-diff.patch"
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "chore(security): refresh dependency lockfile"
-          git push origin security/dependency-audit-remediation
+      - name: Upload lockfile diff for human review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-remediation-lockfile-diff
+          path: ${{ runner.temp }}/lockfile-diff.patch
+          if-no-files-found: error
+          retention-days: 7
