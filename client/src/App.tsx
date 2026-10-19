@@ -1,18 +1,7 @@
 import {useEffect,useMemo,useState} from 'react';
 import {ArrowDownLeft,ArrowUpRight,Wallet,TrendingUp,ReceiptText,Sun,Moon,LogOut,Plus,RefreshCw,ChartNoAxesCombined,Coins,Download,ArrowRightLeft,ShieldCheck,Pencil} from 'lucide-react';
-import ReceiptScanner from './components/ReceiptScanner'; import {api,getToken,setToken} from './lib/api'; import {calculateActualExchangeRates,calculateBalanceEquivalents,DEFAULT_PLANNING_VND_PER_USDT,estimateRubFromVnd,formatMoney,parseAmountInput} from './lib/money'; import type {ReceiptItem} from './lib/receiptParser';
+import ReceiptScanner from './components/ReceiptScanner'; import {api,getToken,setToken} from './lib/api'; import {calculateActualExchangeRates,calculateBalanceEquivalents,DEFAULT_PLANNING_VND_PER_USDT,estimateRubFromVnd,formatExactDecimal,formatMoney,parseAmountInput} from './lib/money'; import type {ReceiptItem} from './lib/receiptParser';
 type User={id:string;email:string;name?:string|null;country?:string|null};type Expense={id:string;title:string;category:string;amount:number;currency:string;amountVnd:number|null;amountRub?:number|null;usdtCharged?:number|null;date:string};type Exchange={id:string;mode?:'RUB_USDT_VND'|'RUB_VND'|'RUB_TARGET';rubSpent:number;usdtReceived:number|null;vndReceived:number|null;targetCurrency?:string;targetReceived?:number|null;targetToVndRate?:number|null;targetVndEquivalent?:number|null;createdAt:string};type Summary={totalVnd:number;monthVnd:number;balanceVnd:number|null;confirmedExchangeVnd:number;estimatedUnconvertedVnd:number;balanceIsEstimated:boolean;planningVndPerUsdt:number|null;expenses:Expense[];exchanges:Exchange[];observedVndPerUsdt:number|null;effectiveRubPerUsdt:number|null;effectiveVndPerUsdt:number|null;effectiveVndPerRub:number|null;observedVnd:number;observedUsdt:number};type WalletBalance={currency:string;netMovement:string;hasOpeningBalance:boolean;balance:string|null};type JournalEntry={id:string;type:string;occurredAt:string;title:string;category?:string;amount?:number;currency?:string;amountVnd?:number|null;amountRub?:number|null;usdtCharged?:number|null;amountDelta?:number;kind?:string;note?:string|null;rubSpent?:number;usdtReceived?:number|null;vndReceived?:number|null;targetCurrency?:string;targetReceived?:number|null};
-function formatExactDecimal(value:string|number|null,locale:string):string {
-  if (value == null) return '';
-  const raw = String(value);
-  const match = raw.match(/^([+-]?)(\d+)(?:\.(\d+))?$/);
-  if (!match) return raw;
-  const sign = match[1] === '-' ? '-' : '';
-  const integer = BigInt(match[2]);
-  const grouped = new Intl.NumberFormat(locale, { maximumFractionDigits: 0, useGrouping: true }).format(integer);
-  const fraction = (match[3] ?? '').replace(/0+$/, '');
-  return sign + grouped + (fraction ? '.' + fraction : '');
-}
 const categories=['Food & groceries','Cafes & restaurants','Transport','Housing','Shopping','Health','Bills','Entertainment','Other'];
 type Lang='en'|'ru';
 type CountryCode='VN'|'GE'|'AM'|'KZ'|'EU'|'TH'|'ID'|'RS'|'TR'|'AE'|'KG'|'UZ'|'AZ'|'ME';
