@@ -34,7 +34,7 @@ describe('Vietnamese receipt line parsing', () => {
       { name: 'Cashew nuts', price: 25000, quantity: 1 },
     ]);
   });
-  it('flags implausibly small OCR fragments for review', () => {
+  it('keeps Vietnamese product names containing the word “diêm”', () => {\n    expect(parseReceiptLines('Diêm quẹt 5.000')).toEqual([{ name: 'Diêm quẹt', price: 5000, quantity: 1 }]);\n  });\n  it('flags implausibly small OCR fragments for review', () => {
     expect(parseReceiptLines('Dẻ sườn bò 900')).toEqual([{ name: 'Dẻ sườn bò', price: 900, quantity: 1, needsReview: true }]);
   });
   it('corrects likely OCR-appended zeroes and flags the result for manual review', () => {
