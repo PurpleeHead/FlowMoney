@@ -34,6 +34,9 @@ describe('Vietnamese receipt line parsing', () => {
       { name: 'Cashew nuts', price: 25000, quantity: 1 },
     ]);
   });
+  it('keeps Vietnamese product names containing the word “diêm”', () => {
+    expect(parseReceiptLines('Diêm quẹt 5.000')).toEqual([{ name: 'Diêm quẹt', price: 5000, quantity: 1 }]);
+  });
   it('flags implausibly small OCR fragments for review', () => {
     expect(parseReceiptLines('Dẻ sườn bò 900')).toEqual([{ name: 'Dẻ sườn bò', price: 900, quantity: 1, needsReview: true }]);
   });

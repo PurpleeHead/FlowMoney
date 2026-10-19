@@ -55,14 +55,14 @@ function normalizeVndPrice(value: string): { price: number; needsReview: boolean
 }
 
 function fold(text: string): string {
-  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
 }
 
 function isMetadataLine(text: string): boolean {
   // Monetary adjustments affect the printed payable total but are not purchased items.
   // Excluding them prevents discounts, VAT, service fees, refunds, tendered cash, and change
   // from being misread as positive product prices by the trailing-price parser.
-  return /(?:tien can thanh toan|tong cong|thanh toan|phieu tinh tien|hoa don|xuat hoa don|ma so|khach|hotline|truy cap|cqt|\bsubtotal\b|\btotal\b|\bthank\s+you\b|\bcash\b|\bchange\b|diem|\bdiscount\b|\bvoucher\b|\bcoupon\b|\bservice\s+charge\b|\bservice\s+fee\b|\btax\b|\bvat\b|\brefund\b|\breturn\b|giam gia|khuyen mai|chiet khau|phi dich vu|phi phuc vu|thue|hoan tien|tra hang|tien khach dua|tien thua)/i.test(fold(text));
+  return /(?:tien can thanh toan|tong cong|thanh toan|phieu tinh tien|hoa don|xuat hoa don|ma so|khach hang|khach mua|hotline|truy cap|cqt|\bsubtotal\b|\btotal\b|\bthank\s+you\b|\bcash\b|\bchange\b|diem\s+(?:tich luy|thuong|su dung|doi qua)|\bdiscount\b|\bvoucher\b|\bcoupon\b|\bservice\s+charge\b|\bservice\s+fee\b|\btax\b|\bvat\b|\brefund\b|\breturn\b|giam gia|khuyen mai|chiet khau|phi dich vu|phi phuc vu|thue\s*(?:vat|gtgt|tong)|thue\s+\d|thue\s*[:%]|hoan tien|tra hang|tien\s+khach\s+dua|tien\s+thua)/i.test(fold(text));
 }
 
 function parseQuantity(value: string): number {
@@ -114,6 +114,9 @@ export function parseReceiptLines(text: string): ReceiptItem[] {
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.replace(/\s+/g, ' ').trim();
     if (!line) continue;
+    // Tendered cash and change are payment bookkeeping, never purchased items.
+    // Handle these labels before generic product parsing to avoid false positives.
+    if (/^(?:tien khach dua|tien thua)(?:\s|$)/i.test(fold(line))) { pendingName = ''; continue; }
     if (isMetadataLine(line)) { pendingName = ''; continue; }
     const priced = parsePricedItem(line);
     if (priced) { items.push(priced); pendingName = ''; continue; }
