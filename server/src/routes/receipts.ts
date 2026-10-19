@@ -68,12 +68,9 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const actualExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.usdtReceived != null && x.vndReceived != null);
     const actualVnd = actualExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
     const actualUsdt = actualExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
-    const plannedExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.usdtReceived != null && x.vndReceived == null && x.planningVndPerUsdt != null);
-    const plannedUsdt = plannedExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
-    const planningVndPerUsdt = plannedUsdt > 0
-      ? plannedExchanges.reduce((sum, x) => sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0) / plannedUsdt
-      : null;
-    const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : planningVndPerUsdt);
+    // Planning rates are for previews only. Receipt expenses must not persist
+    // estimated VND→RUB valuations as if they were based on actual exchange outcomes.
+    const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : null);
     const vndPerRub = calculateObservedVndPerRub({
       directExchanges: [
         ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
