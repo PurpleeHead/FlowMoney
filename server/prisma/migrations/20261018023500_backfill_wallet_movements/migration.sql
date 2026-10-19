@@ -51,9 +51,9 @@ SELECT
   x."userId",
   'VND',
   CASE
-    -- Match runtime ledger sync: vndReceived is the net actual outcome;
-    -- targetReceived can be a gross/legacy amount before fees.
-    WHEN x."vndReceived" IS NOT NULL AND x."vndReceived" > 0 THEN x."vndReceived"
+    -- Match runtime ledger sync: a known vndReceived value (including zero)
+    -- takes precedence; targetReceived is only a fallback when it is NULL.
+    WHEN x."vndReceived" IS NOT NULL THEN NULLIF(x."vndReceived", 0)
     ELSE x."targetReceived"
   END,
   'EXCHANGE',
@@ -63,8 +63,12 @@ SELECT
 FROM "Exchange" x
 WHERE x."mode" = 'RUB_VND'
   AND (
-    (x."targetReceived" IS NOT NULL AND x."targetReceived" > 0)
-    OR (x."vndReceived" IS NOT NULL AND x."vndReceived" > 0)
+    (x."vndReceived" IS NOT NULL AND x."vndReceived" > 0)
+    OR (
+      x."vndReceived" IS NULL
+      AND x."targetReceived" IS NOT NULL
+      AND x."targetReceived" > 0
+    )
   )
 
 UNION ALL
