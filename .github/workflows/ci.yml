@@ -146,8 +146,8 @@ jobs:
             card_delta numeric;
           BEGIN
             SELECT count(*) INTO movement_count FROM "WalletMovement" WHERE "userId" = 'backfill-test-user';
-            IF movement_count <> 10 THEN
-              RAISE EXCEPTION 'Expected 10 unique movements after two backfills, got %', movement_count;
+            IF movement_count <> 11 THEN
+              RAISE EXCEPTION 'Expected 11 unique movements after two backfills, got %', movement_count;
             END IF;
             SELECT count(*), min("amountDelta") INTO card_count, card_delta
               FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-card-expense:USDT';
@@ -172,6 +172,12 @@ jobs:
             IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-direct-vnd:VND' AND "amountDelta" = 30000) <> 1 THEN
               RAISE EXCEPTION 'Direct RUB/VND exchange VND credit missing';
             END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-zero-vnd:RUB' AND "amountDelta" = -300) <> 1 THEN
+              RAISE EXCEPTION 'Explicit zero-VND exchange must preserve its RUB debit';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-zero-vnd:VND') <> 0 THEN
+              RAISE EXCEPTION 'Explicit zero VND outcome must not fall back to targetReceived';
+            END IF;
             IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" LIKE 'exchange:backfill-direct-vnd:USDT') <> 0 THEN
               RAISE EXCEPTION 'Direct RUB/VND exchange must not create a USDT movement';
             END IF;
@@ -181,7 +187,7 @@ jobs:
             IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-invalid-rub-target:RUB' AND "amountDelta" > 0) <> 0 THEN
               RAISE EXCEPTION 'Invalid historical RUB target must not credit RUB';
             END IF;
-            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -10100 THEN
+            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -10400 THEN
               RAISE EXCEPTION 'RUB movement total does not reconcile';
             END IF;
             IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'USDT') <> 96.5953 THEN
