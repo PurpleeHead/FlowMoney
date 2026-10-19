@@ -1,0 +1,63 @@
+# FLOWMONEY production backup and release gate
+
+**Status:** prepared on `release/production-candidate-2026-10-19`; not yet active in production.
+
+## Free-tier layout
+
+- Application/API: existing Render web service.
+- PostgreSQL: use a persistent managed PostgreSQL provider whose free tier does not automatically delete the database after a fixed period. Do not use the current `flowmoney-test-db` Render Free database for production; Render documents a 30-day expiry and no backups for Free Postgres.
+- Encrypted off-site backups: Cloudflare R2 Standard, within its published free allowance (10 GB-month storage, 1 million Class A operations, 10 million Class B operations, no egress fee). Keep backup size/usage within the allowance; provider free-tier terms can change.
+- Backup cadence/retention: daily at 03:17 UTC, plus manual workflow dispatch; prune objects older than 30 days only after a new backup has been uploaded and verified.
+
+## GitHub configuration required
+
+Configure these repository **Actions secrets** on the trusted repository before running the workflow:
+
+- `FLOWMONEY_BACKUP_DATABASE_URL`: direct PostgreSQL connection URL for the production database, with TLS enabled. Use the direct endpoint for `pg_dump` if the provider's pooled endpoint does not support administrative dump connections.
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`: scoped to the backup bucket only, with list/read metadata/write/delete access for the backup prefix.
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET`
+
+Configure this repository **Actions variable**:
+
+- `FLOWMONEY_BACKUP_AGE_RECIPIENT`: public age encryption recipient (usually `age1...`). Keep the corresponding private age identity offline and separately backed up. Never put the private identity in the repository, a workflow log, or R2.
+
+Create a private R2 bucket and a dedicated bucket-scoped access key. Do not reuse an application credential. Keep the bucket private; no public access or public custom domain.
+
+## Backup acceptance test (required before launch)
+
+1. Confirm the production database URL points to the intended persistent database and not `flowmoney-test-db`.
+2. Confirm the R2 bucket is private and the age private identity can be recovered offline.
+3. Run **Actions → FLOWMONEY encrypted database backup → Run workflow** on `main`.
+4. Require the workflow to finish successfully. It creates a PostgreSQL custom-format dump, validates its archive catalog, encrypts it before upload, uploads to R2, and verifies the uploaded object's non-zero size.
+5. Independently download the encrypted object, decrypt it using the offline private age identity, and restore it into a disposable PostgreSQL database. Verify tables and representative records/counts. A successful upload alone is not a restore test.
+6. Record the timestamp, object key, restore result, and the person who performed the test in the release notes. Do not store secrets or real financial data in the notes.
+7. Run the backup workflow successfully again after the production schema migration and before opening public registration. The first backup is a release gate, not a substitute for regular backups.
+
+## Safe deployment sequence
+
+1. Keep PR #82 draft and unmerged until its own pull-request CI has run and passed, and code review is complete.
+2. Choose and provision the persistent free PostgreSQL target. Do not run production migrations yet.
+3. Set the Render service to **manual deploy / auto-deploy disabled** before changing its branch to `main`; the service currently tracks `review/pr-3-fix`. Verify this in the Render Dashboard rather than assuming a Blueprint change updated the live service.
+4. Set production environment variables, including a unique random `JWT_SECRET` with at least 32 non-whitespace characters, the production `DATABASE_URL`, `NODE_ENV=production`, and the correct `CLIENT_ORIGIN`/`APP_URL`. Never commit values.
+5. Take and verify a pre-migration backup of the target database. For a new empty database, this protects the baseline; after migration, run and verify another backup before accepting users.
+6. After explicit approval to merge, merge PR #82. Do not enable deployment yet.
+7. Manually deploy the reviewed commit only after the backup gate is satisfied. The current Render start command runs `prisma migrate deploy`; therefore deploying it applies migrations. Confirm the target URL and backup immediately before triggering the deploy.
+8. Verify `/api/health`, register/login, user data isolation, create/edit/delete exchange and expense, wallet movements, actual versus estimated rates, receipt review, RU/EN switching, mobile layout, and logout.
+9. Run the encrypted backup workflow and a restore drill before public launch. Keep auto-deploy disabled until the launch checks are signed off.
+
+## Restore outline
+
+- Download the chosen `*.dump.age` object from the private R2 bucket.
+- Decrypt offline: `age --decrypt --identity /secure/offline/age-identity.txt --output flowmoney.dump flowmoney.dump.age`.
+- Restore into a **new/disposable** PostgreSQL database, never over the live database during a test: `pg_restore --no-owner --no-acl --dbname="$RESTORE_DATABASE_URL" flowmoney.dump`.
+- Verify schema and record counts, then securely delete temporary plaintext dump files.
+
+## Known limitations / explicit release gates
+
+- GitHub Actions backup workflow is only scheduled after the workflow is merged to `main`; it cannot access production secrets from an unmerged draft PR.
+- Cloudflare R2 credentials and the database backup URL must be configured by the account owner; these credentials are not currently available to this workflow.
+- The workflow validates the dump and uploaded object, but the first successful backup still requires a separate manual restore drill.
+- Free tiers are not an SLA. Keep usage under the published quota and review provider policies periodically.
+- Do not merge PR #82, switch the live service to `main`, or run production migrations until the required checks and backup/restore gate are complete.
