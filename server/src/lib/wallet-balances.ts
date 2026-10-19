@@ -1,6 +1,6 @@
 export type WalletBalanceMovement = {
   currency: string;
-  amountDelta: number | { toString(): string };
+  amountDelta: number | string | { toString(): string };
   kind: string;
   createdAt: Date;
   occurredAt: Date;
@@ -18,7 +18,7 @@ export type WalletBalance = {
 const SCALE = 8;
 const UNIT = 10n ** BigInt(SCALE);
 
-function decimalUnits(value: number | { toString(): string }): bigint {
+function decimalUnits(value: number | string | { toString(): string }): bigint {
   const raw = String(value);
   const match = raw.match(/^([+-]?)(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i);
   if (!match) throw new Error('Invalid wallet movement amount.');
