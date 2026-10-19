@@ -11,7 +11,7 @@ describe('wallet balance calculation', () => {
       { currency: 'USDT', amountDelta: -2.19, kind: 'EXPENSE', createdAt: at('2026-10-16T09:00:00Z'), occurredAt: at('2026-10-16T09:00:00Z') },
     ]);
     assert.deepEqual(balances.find(item => item.currency === 'USDT'), {
-      currency: 'USDT', netMovement: 91.5953, hasOpeningBalance: false, balance: null,
+      currency: 'USDT', netMovement: '91.5953', hasOpeningBalance: false, balance: null,
     });
     assert.deepEqual(balances.map(item => item.currency), ['RUB', 'USDT', 'VND']);
   });
@@ -23,7 +23,7 @@ describe('wallet balance calculation', () => {
       { currency: 'VND', amountDelta: -40000, kind: 'EXPENSE', createdAt: at('2026-10-16T09:00:00Z'), occurredAt: at('2026-10-16T09:00:00Z') },
     ]);
     assert.deepEqual(balances.find(item => item.currency === 'VND'), {
-      currency: 'VND', netMovement: 910000, hasOpeningBalance: true, balance: 960000,
+      currency: 'VND', netMovement: '910000', hasOpeningBalance: true, balance: '960000',
     });
   });
 
@@ -43,7 +43,7 @@ describe('wallet balance calculation', () => {
         createdAt: at('2026-10-17T09:00:00Z'), occurredAt: at('2026-10-16T09:00:00Z'),
       },
     ]);
-    assert.equal(balances.find(item => item.currency === 'USDT')?.balance, 48.5);
+    assert.equal(balances.find(item => item.currency === 'USDT')?.balance, '48.5');
   });
 
   it('excludes a pre-opening movement with the exact same occurrence timestamp', () => {
@@ -57,7 +57,7 @@ describe('wallet balance calculation', () => {
         createdAt: at('2026-10-16T08:00:00.001Z'), occurredAt: at('2026-10-16T08:00:00.000Z'),
       },
     ]);
-    assert.equal(balances.find(item => item.currency === 'USDT')?.balance, 50);
+    assert.equal(balances.find(item => item.currency === 'USDT')?.balance, '50');
   });
 
   it('returns stable currency ordering and keeps currencies independent', () => {
@@ -66,16 +66,46 @@ describe('wallet balance calculation', () => {
       { currency: 'RUB', amountDelta: 500, kind: 'OPENING', createdAt: at('2026-10-16T08:00:00Z'), occurredAt: at('2026-10-16T08:00:00Z') },
     ]);
     assert.deepEqual(balances.map(item => item.currency), ['RUB', 'USDT', 'VND']);
-    assert.deepEqual(balances.map(item => item.balance), [500, null, 100]);
+    assert.deepEqual(balances.map(item => item.balance), ['500', null, '100']);
   });
 });
 
 describe('empty wallets', () => {
   it('returns all supported currencies with unknown balances before opening snapshots', () => {
     assert.deepEqual(calculateWalletBalances([]), [
-      { currency: 'RUB', netMovement: 0, hasOpeningBalance: false, balance: null },
-      { currency: 'USDT', netMovement: 0, hasOpeningBalance: false, balance: null },
-      { currency: 'VND', netMovement: 0, hasOpeningBalance: false, balance: null },
+      { currency: 'RUB', netMovement: '0', hasOpeningBalance: false, balance: null },
+      { currency: 'USDT', netMovement: '0', hasOpeningBalance: false, balance: null },
+      { currency: 'VND', netMovement: '0', hasOpeningBalance: false, balance: null },
     ]);
+  });
+});
+
+
+describe('exact wallet arithmetic', () => {
+  it('preserves tiny USDT movements alongside a large balance', () => {
+    const balances = calculateWalletBalances([
+      { currency: 'USDT', amountDelta: '90000000', kind: 'OPENING', createdAt: at('2026-10-16T08:00:00Z'), occurredAt: at('2026-10-16T08:00:00Z') },
+      { currency: 'USDT', amountDelta: '0.00000001', kind: 'ADJUSTMENT', createdAt: at('2026-10-16T09:00:00Z'), occurredAt: at('2026-10-16T09:00:00Z') },
+      { currency: 'USDT', amountDelta: '-0.00000002', kind: 'ADJUSTMENT', createdAt: at('2026-10-16T10:00:00Z'), occurredAt: at('2026-10-16T10:00:00Z') },
+    ]);
+    assert.equal(balances.find(item => item.currency === 'USDT')?.netMovement, '89999999.99999999');
+    assert.equal(balances.find(item => item.currency === 'USDT')?.balance, '89999999.99999999');
+  });
+
+  it('sums decimal inputs without binary floating point drift', () => {
+    const balances = calculateWalletBalances([
+      { currency: 'RUB', amountDelta: '0.1', kind: 'OPENING', createdAt: at('2026-10-16T08:00:00Z'), occurredAt: at('2026-10-16T08:00:00Z') },
+      { currency: 'RUB', amountDelta: '0.2', kind: 'ADJUSTMENT', createdAt: at('2026-10-16T09:00:00Z'), occurredAt: at('2026-10-16T09:00:00Z') },
+    ]);
+    assert.equal(balances.find(item => item.currency === 'RUB')?.netMovement, '0.3');
+    assert.equal(balances.find(item => item.currency === 'RUB')?.balance, '0.3');
+  });
+
+  it('supports exponent notation from numeric inputs', () => {
+    const balances = calculateWalletBalances([
+      { currency: 'USDT', amountDelta: 1e-8, kind: 'OPENING', createdAt: at('2026-10-16T08:00:00Z'), occurredAt: at('2026-10-16T08:00:00Z') },
+    ]);
+    assert.equal(balances.find(item => item.currency === 'USDT')?.netMovement, '0.00000001');
+    assert.equal(balances.find(item => item.currency === 'USDT')?.balance, '0.00000001');
   });
 });
