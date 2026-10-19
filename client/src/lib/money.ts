@@ -103,3 +103,17 @@ export function parseAmountInput(value: string): string {
   const decimal = fraction.replace(/\D/g, '');
   return decimal ? integer + '.' + decimal : integer + '.';
 }
+
+/** Format exact decimal strings without converting the monetary value to Number. */
+export function formatExactDecimal(value: string | number | null, locale = 'en-US'): string {
+  if (value == null) return '';
+  const raw = String(value);
+  const match = raw.match(/^([+-]?)(\d+)(?:\.(\d+))?$/);
+  if (!match) return raw;
+  const sign = match[1] === '-' ? '-' : '';
+  const integer = BigInt(match[2]);
+  const grouped = new Intl.NumberFormat(locale, { maximumFractionDigits: 0, useGrouping: true }).format(integer);
+  const fraction = (match[3] ?? '').replace(/0+$/, '');
+  const decimalSeparator = new Intl.NumberFormat(locale).formatToParts(1.1).find(part => part.type === 'decimal')?.value ?? '.';
+  return sign + grouped + (fraction ? decimalSeparator + fraction : '');
+}
