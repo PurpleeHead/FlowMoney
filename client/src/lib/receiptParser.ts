@@ -55,7 +55,7 @@ function normalizeVndPrice(value: string): { price: number; needsReview: boolean
 }
 
 function fold(text: string): string {
-  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
 }
 
 function isMetadataLine(text: string): boolean {
