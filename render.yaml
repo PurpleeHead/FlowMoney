@@ -4,6 +4,9 @@ services:
     runtime: node
     plan: free
     region: singapore
+    # Keep deploys manual until the owner has verified the production database,
+    # encrypted backup, restore test, and migration gate.
+    autoDeploy: false
     buildCommand: npm ci && npm run db:generate && npm run build
     startCommand: npx prisma migrate deploy --schema server/prisma/schema.prisma && npm start
     healthCheckPath: /api/health
