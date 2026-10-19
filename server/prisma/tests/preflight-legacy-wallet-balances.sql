@@ -30,3 +30,38 @@ SELECT 'Expense' AS source_table, count(*) AS row_count FROM "Expense"
 UNION ALL
 SELECT 'Exchange' AS source_table, count(*) AS row_count FROM "Exchange"
 ORDER BY source_table;
+
+
+\\echo 'Existing ledger totals by user and currency (comparison aid only; not an automatic reconciliation)'
+WITH legacy AS (
+  SELECT "userId", upper(trim("currency")) AS currency, sum("balance") AS legacy_balance
+  FROM "Wallet"
+  GROUP BY "userId", upper(trim("currency"))
+),
+ledger AS (
+  SELECT "userId", upper(trim("currency")) AS currency,
+         count(*) AS movement_count,
+         sum("amountDelta") AS ledger_net,
+         min("occurredAt") AS first_movement_at,
+         max("occurredAt") AS last_movement_at
+  FROM "WalletMovement"
+  GROUP BY "userId", upper(trim("currency"))
+)
+SELECT
+  coalesce(legacy."userId", ledger."userId") AS user_id,
+  coalesce(legacy.currency, ledger.currency) AS currency,
+  legacy.legacy_balance,
+  coalesce(ledger.movement_count, 0) AS movement_count,
+  ledger.ledger_net,
+  ledger.first_movement_at,
+  ledger.last_movement_at
+FROM legacy
+FULL OUTER JOIN ledger
+  ON ledger."userId" = legacy."userId" AND ledger.currency = legacy.currency
+ORDER BY user_id, currency;
+
+\\echo 'Existing ledger movement counts by kind'
+SELECT "kind", count(*) AS movement_count
+FROM "WalletMovement"
+GROUP BY "kind"
+ORDER BY "kind";
