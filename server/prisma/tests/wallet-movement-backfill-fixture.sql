@@ -33,7 +33,7 @@ INSERT INTO "Exchange" (
   "id", "userId", "mode", "targetCurrency", "targetReceived", "rubSpent",
   "vndReceived", "createdAt"
 ) VALUES (
-  'backfill-direct-vnd', 'backfill-test-user', 'RUB_VND', 'VND', 30000,
+  'backfill-direct-vnd', 'backfill-test-user', 'RUB_VND', 'VND', 32000,
   1000, 30000, CURRENT_TIMESTAMP
 );
 
