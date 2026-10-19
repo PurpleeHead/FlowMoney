@@ -32,7 +32,7 @@ SELECT 'Exchange' AS source_table, count(*) AS row_count FROM "Exchange"
 ORDER BY source_table;
 
 
-\\echo 'Existing ledger totals by user and currency (comparison aid only; not an automatic reconciliation)'
+\echo 'Existing ledger totals by user and currency (comparison aid only; not an automatic reconciliation)'
 WITH legacy AS (
   SELECT "userId", upper(trim("currency")) AS currency, sum("balance") AS legacy_balance
   FROM "Wallet"
@@ -60,7 +60,7 @@ FULL OUTER JOIN ledger
   ON ledger."userId" = legacy."userId" AND ledger.currency = legacy.currency
 ORDER BY user_id, currency;
 
-\\echo 'Existing ledger movement counts by kind'
+\echo 'Existing ledger movement counts by kind'
 SELECT "kind", count(*) AS movement_count
 FROM "WalletMovement"
 GROUP BY "kind"
