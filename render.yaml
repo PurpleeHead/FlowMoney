@@ -9,7 +9,7 @@ services:
     autoDeployTrigger: "off"
     buildCommand: npm ci && npm run db:generate && npm run build
     startCommand: npx prisma migrate deploy --schema server/prisma/schema.prisma && npm start
-    healthCheckPath: /api/health
+    healthCheckPath: /api/ready
     envVars:
       - key: NODE_ENV
         value: production
