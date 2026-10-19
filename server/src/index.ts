@@ -13,6 +13,7 @@ import translateRoutes from './routes/translate.js';
 import dashboardRoutes from './routes/dashboard.js';
 import journalRoutes from './routes/journal.js';
 import walletRoutes from './routes/wallets.js';
+import healthRoutes from './routes/health.js';
 import { errorHandler } from './middleware/errors.js';
 import { prisma } from './services/prisma.js';
 import { assertProductionSecurityConfiguration } from './config/security.js';
@@ -57,7 +58,7 @@ app.use('/api/auth/register', rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 }));
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'flowmoney-api' }));
+app.use('/api', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/exchanges', exchangeRoutes);
 app.use('/api/expenses', expenseRoutes);
