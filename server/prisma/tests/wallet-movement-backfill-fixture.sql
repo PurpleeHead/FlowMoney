@@ -37,6 +37,16 @@ INSERT INTO "Exchange" (
   1000, 30000, CURRENT_TIMESTAMP
 );
 
+-- Explicit zero VND outcome: do not fall back to a positive legacy targetReceived.
+-- The RUB debit remains valid, but the VND credit must be absent.
+INSERT INTO "Exchange" (
+  "id", "userId", "mode", "targetCurrency", "targetReceived", "rubSpent",
+  "vndReceived", "createdAt"
+) VALUES (
+  'backfill-zero-vnd', 'backfill-test-user', 'RUB_VND', 'VND', 50000,
+  300, 0, CURRENT_TIMESTAMP
+);
+
 -- Simulate an already-synchronized row: the migration must preserve, not duplicate it.
 INSERT INTO "WalletMovement" (
   "id", "userId", "currency", "amountDelta", "kind", "sourceKey", "note", "occurredAt"
