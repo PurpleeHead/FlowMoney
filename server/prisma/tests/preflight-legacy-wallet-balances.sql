@@ -33,6 +33,8 @@ ORDER BY source_table;
 
 
 \echo 'Existing ledger totals by user and currency (comparison aid only; not an automatic reconciliation)'
+SELECT to_regclass('"WalletMovement"') IS NOT NULL AS has_wallet_movement \gset
+\if :has_wallet_movement
 WITH legacy AS (
   SELECT "userId", upper(trim("currency")) AS currency, sum("balance") AS legacy_balance
   FROM "Wallet"
@@ -65,3 +67,6 @@ SELECT "kind", count(*) AS movement_count
 FROM "WalletMovement"
 GROUP BY "kind"
 ORDER BY "kind";
+\else
+\echo 'WalletMovement does not exist yet; the ledger migration has not created it.'
+\endif
