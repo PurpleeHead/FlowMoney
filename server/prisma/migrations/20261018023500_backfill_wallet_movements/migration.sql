@@ -51,8 +51,10 @@ SELECT
   x."userId",
   'VND',
   CASE
-    WHEN x."targetReceived" IS NOT NULL AND x."targetReceived" > 0 THEN x."targetReceived"
-    ELSE x."vndReceived"
+    -- Match runtime ledger sync: vndReceived is the net actual outcome;
+    -- targetReceived can be a gross/legacy amount before fees.
+    WHEN x."vndReceived" IS NOT NULL AND x."vndReceived" > 0 THEN x."vndReceived"
+    ELSE x."targetReceived"
   END,
   'EXCHANGE',
   'exchange:' || x."id" || ':VND',
