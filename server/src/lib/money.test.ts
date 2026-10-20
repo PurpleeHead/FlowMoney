@@ -102,8 +102,10 @@ describe('RUB-to-USDT exchange observations', () => {
     const observations = mapRubUsdtExchanges([
       { mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853 },
       { mode: 'RUB_TARGET', rubSpent: 5000, targetCurrency: 'USDT', targetReceived: 56 },
-      { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'GEL', targetReceived: 100 },
-      { mode: 'RUB_VND', rubSpent: 1000, usdtReceived: null },
+      { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'GEL', targetReceived: 100, usdtReceived: 777 },
+      // Legacy rows may retain stale USDT values from an older form version.
+      { mode: 'RUB_TARGET', rubSpent: 1200, targetCurrency: 'VND', targetReceived: 300000, usdtReceived: 40 },
+      { mode: 'RUB_VND', rubSpent: 1000, usdtReceived: 12 },
     ]);
     assert.deepEqual(observations, [
       { rubSpent: 8300, usdtReceived: 93.7853 },
