@@ -423,3 +423,74 @@ describe('dashboard direct RUB-to-VND target exchange', () => {
     });
   });
 });
+
+describe('dashboard mixed direct VND exchange modes', () => {
+  it('weights RUB_VND and RUB_TARGET-to-VND outcomes once in the same observed rate', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async ({ where }: any) => {
+      assert.deepEqual(where, { userId: 'dashboard-user' });
+      return [
+        {
+          id: 'direct-rub-vnd',
+          mode: 'RUB_VND',
+          rubSpent: 2500,
+          usdtReceived: null,
+          vndPerUsdt: null,
+          planningVndPerUsdt: null,
+          vndFee: 0,
+          vndReceived: 500000,
+          effectiveVndPerRub: 200,
+          effectiveRubPerUsdt: null,
+          targetCurrency: null,
+          targetReceived: null,
+          targetToVndRate: null,
+          targetVndEquivalent: null,
+          createdAt: new Date('2026-10-17T08:00:00.000Z'),
+        },
+        {
+          id: 'direct-vnd-target',
+          mode: 'RUB_TARGET',
+          rubSpent: 3500,
+          usdtReceived: null,
+          vndPerUsdt: null,
+          planningVndPerUsdt: null,
+          vndFee: 0,
+          vndReceived: null,
+          effectiveVndPerRub: 1000000 / 3500,
+          effectiveRubPerUsdt: null,
+          targetCurrency: 'VND',
+          targetReceived: 1000000,
+          targetToVndRate: 1,
+          targetVndEquivalent: 1000000,
+          createdAt: new Date('2026-10-18T08:00:00.000Z'),
+        },
+      ];
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        effectiveVndPerRub: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1500000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1500000);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.ok(
+        Math.abs(body.effectiveVndPerRub - (1500000 / 6000)) < 1e-10,
+        'both direct exchange modes must contribute their actual VND and RUB exactly once',
+      );
+    });
+  });
+});
+
