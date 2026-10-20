@@ -69,7 +69,7 @@ describe('receipt API ownership', () => {
 
       assert.equal(response.status, 200);
       assert.deepEqual(findManyArgs.where, { userId: 'user-1' });
-      assert.deepEqual(findManyArgs.orderBy, { createdAt: 'desc' });
+      assert.deepEqual(findManyArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
       assert.equal(findManyArgs.take, 100);
       assert.deepEqual(Object.keys(findManyArgs.select).sort(), ['createdAt', 'id', 'items', 'rawText'].sort());
       const receipts = await response.json() as Array<{ id: string; userId?: string }>;
