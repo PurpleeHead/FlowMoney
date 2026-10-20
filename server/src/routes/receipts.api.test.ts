@@ -199,3 +199,36 @@ describe('receipt cursor pagination', () => {
     assert.deepEqual(queryArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
   });
 });
+
+
+describe('receipt cursor continuation', () => {
+  it('uses the supplied cursor to continue after the previous receipt without changing user scope', async () => {
+    let queryArgs: any;
+    receiptModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [{ id: 'receipt-next', createdAt: new Date('2026-10-18T10:00:00.000Z'), rawText: 'Next page', items: [] }];
+    };
+    const cursor = Buffer.from(JSON.stringify({
+      timestamp: '2026-10-19T10:00:00.000Z',
+      id: 'receipt-first',
+    }), 'utf8').toString('base64url');
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts?limit=1&cursor=${encodeURIComponent(cursor)}`, {
+        headers: { authorization: bearer('user-1') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['receipt-next']);
+      assert.equal(body.hasMore, false);
+      assert.equal(body.nextCursor, null);
+    });
+
+    assert.equal(queryArgs.take, 2);
+    assert.equal(queryArgs.where.userId, 'user-1');
+    assert.deepEqual(queryArgs.where.OR, [
+      { createdAt: { lt: new Date('2026-10-19T10:00:00.000Z') } },
+      { createdAt: new Date('2026-10-19T10:00:00.000Z'), id: { gt: 'receipt-first' } },
+    ]);
+  });
+});
