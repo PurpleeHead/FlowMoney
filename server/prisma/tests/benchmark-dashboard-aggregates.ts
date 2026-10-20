@@ -77,27 +77,57 @@ try {
     });
     // Force equivalent Node-side aggregation work rather than measuring fetch time alone.
     return rows.reduce((acc, row) => {
+      const target = row.targetCurrency.trim().toUpperCase();
+      const rub = Number(row.rubSpent);
+      const usdt = row.usdtReceived == null ? null : Number(row.usdtReceived);
+      const targetReceived = row.targetReceived == null ? null : Number(row.targetReceived);
+      const targetVnd = row.targetVndEquivalent == null ? null : Number(row.targetVndEquivalent);
+      const vnd = row.vndReceived == null ? null : Number(row.vndReceived);
       acc.count++;
-      if (Number(row.rubSpent) > 0 && row.usdtReceived != null && Number(row.usdtReceived) > 0) {
-        acc.rub += Number(row.rubSpent);
-        acc.usdt += Number(row.usdtReceived);
+
+      if (row.mode === 'RUB_USDT_VND' && rub > 0 && usdt != null && usdt > 0) {
+        acc.rubUsdtRub += rub;
+        acc.rubUsdtUsdt += usdt;
+      } else if (row.mode === 'RUB_TARGET' && target === 'USDT' && rub > 0 && targetReceived != null && targetReceived > 0) {
+        acc.rubUsdtRub += rub;
+        acc.rubUsdtUsdt += targetReceived;
       }
-      if (row.mode === 'RUB_TARGET' && row.targetCurrency.trim().toUpperCase() === 'VND') {
-        acc.confirmedVnd += Number(row.targetVndEquivalent ?? row.targetReceived ?? row.vndReceived ?? 0);
+
+      if (row.mode === 'RUB_USDT_VND' && usdt != null && usdt > 0 && vnd != null && vnd > 0) {
+        acc.actualVnd += vnd;
+        acc.actualUsdt += usdt;
+      }
+      if (row.mode !== 'RUB_VND' && !(row.mode === 'RUB_TARGET' && target === 'VND') &&
+          vnd == null && usdt != null && row.planningVndPerUsdt != null) {
+        acc.plannedWeightedVnd += usdt * Number(row.planningVndPerUsdt);
+        acc.plannedUsdt += usdt;
+      }
+
+      if (row.mode === 'RUB_TARGET' && target === 'VND') {
+        acc.confirmedVnd += targetVnd ?? targetReceived ?? vnd ?? 0;
       } else {
-        acc.confirmedVnd += Number(row.vndReceived ?? 0);
+        acc.confirmedVnd += vnd ?? 0;
       }
-      if (row.usdtReceived != null && row.planningVndPerUsdt != null && row.vndReceived == null) {
-        acc.plannedWeightedVnd += Number(row.usdtReceived) * Number(row.planningVndPerUsdt);
-        acc.plannedUsdt += Number(row.usdtReceived);
+      if (row.mode === 'RUB_TARGET' && target !== 'VND' && targetVnd != null) {
+        acc.estimatedTargetVnd += targetVnd;
+      }
+      if (row.mode !== 'RUB_VND' && !(row.mode === 'RUB_TARGET' && target === 'VND') &&
+          vnd == null && (
+            (row.mode === 'RUB_TARGET' && target === 'USDT' && targetReceived != null && targetVnd == null) ||
+            usdt != null
+          )) {
+        acc.estimatedUsdt += row.mode === 'RUB_TARGET' && target === 'USDT' ? targetReceived ?? 0 : usdt ?? 0;
       }
       return acc;
-    }, { count: 0, rub: 0, usdt: 0, confirmedVnd: 0, plannedWeightedVnd: 0, plannedUsdt: 0 });
+    }, { count: 0, rubUsdtRub: 0, rubUsdtUsdt: 0, actualVnd: 0, actualUsdt: 0, confirmedVnd: 0, estimatedTargetVnd: 0, estimatedUsdt: 0, plannedWeightedVnd: 0, plannedUsdt: 0 });
   };
 
   const sqlResult = await getDashboardExchangeAggregates(user.id);
   const jsResult = await fullHistory();
   assert.equal(sqlResult.exchangeCount, jsResult.count, 'SQL and Node benchmark must read the same number of rows');
+  for (const key of ['rubUsdtRub', 'rubUsdtUsdt', 'actualVnd', 'actualUsdt', 'confirmedVnd', 'estimatedTargetVnd', 'estimatedUsdt', 'plannedWeightedVnd', 'plannedUsdt'] as const) {
+    assert.ok(Math.abs(sqlResult[key] - jsResult[key]) < 0.01, `benchmark fixture SQL/Node mismatch for ${key}: ${sqlResult[key]} vs ${jsResult[key]}`);
+  }
 
   const sqlSamples: number[] = [];
   const nodeSamples: number[] = [];
