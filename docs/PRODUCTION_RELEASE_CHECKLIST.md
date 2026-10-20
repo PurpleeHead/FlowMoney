@@ -22,6 +22,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [ ] Check server logs and confirm no migration, authentication, or database errors.
 - [ ] Confirm a fresh encrypted backup after the release and record the restore-test outcome.
 
+## Verification recorded on 2026-10-20
+
+- [x] CI workflow run [#1047](https://github.com/PurpleeHead/FlowMoney/actions/runs/39363113820) passed on PR head `f5315229d4e7ac839057c6b7691a56c6bea0a290`: tests, production builds, dependency audits, and disposable-PostgreSQL migration/rollback/idempotency checks.
+- [x] Security dependency workflow run [#122](https://github.com/PurpleeHead/FlowMoney/actions/runs/39363113932) passed: lockfile remediation checks, exact lockfile install, tests, build, audit, and review artifact upload.
+- [ ] These CI results do **not** establish production DB identity, encrypted backup availability, restore success, live Render configuration, or production smoke-test success. Those remain release blockers.
+
 ## Current known gates
 
 - **Render configuration mismatch found during the 2026-10-20 audit:** the live `flowmoney-app` service was configured with auto-deploy enabled, branch `review/pr-3-fix`, and health check `/api/health`, while this repository's `render.yaml` specifies auto-deploy off and `/api/ready`. Reconcile the live Dashboard settings with the reviewed release configuration before any production release; verify the target branch and readiness endpoint explicitly. Do not assume editing `render.yaml` has changed an existing service's live settings.
