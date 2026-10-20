@@ -280,7 +280,7 @@ describe('exchange list response privacy', () => {
     exchangeModel.findMany = async (args: any) => {
       queryArgs = args;
       return [{
-        id: 'exchange-list-1', userId: 'user-42', mode: 'RUB_USDT_VND',
+        id: 'exchange-list-1', mode: 'RUB_USDT_VND',
         targetCurrency: 'VND', targetReceived: null, targetToVndRate: null,
         targetVndEquivalent: null, rubSpent: 8300, usdtReceived: 93.7853,
         vndPerUsdt: null, planningVndPerUsdt: 25400, vndFee: 0,
