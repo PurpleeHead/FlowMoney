@@ -115,7 +115,7 @@ try {
     WHERE "userId" = ${mainUserId}
   `;
 
-  const [budgetBucketsSql] = await prisma.$queryRaw<Array<{ confirmedVnd: unknown; estimatedTargetVnd: unknown; plannedRate: unknown }>>`
+  const [budgetBucketsSql] = await prisma.$queryRaw<Array<{ confirmedVnd: unknown; estimatedTargetVnd: unknown; estimatedUsdt: unknown; plannedRate: unknown }>>`
     SELECT
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
@@ -129,6 +129,16 @@ try {
           THEN "targetVndEquivalent"
         ELSE 0
       END), 0) AS "estimatedTargetVnd",
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
+          AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL
+          THEN "targetReceived"
+        WHEN "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL
+          THEN "usdtReceived"
+        ELSE 0
+      END), 0) AS "estimatedUsdt",
       SUM("usdtReceived" * "planningVndPerUsdt") FILTER (
         WHERE "mode" = 'RUB_USDT_VND'
           AND "vndReceived" IS NULL
@@ -164,6 +174,7 @@ try {
 
   assert.equal(Number(budgetBucketsSql.confirmedVnd), 3_010_000, 'confirmed VND bucket includes only actual outcomes and counts direct-target VND once');
   assert.equal(Number(budgetBucketsSql.estimatedTargetVnd), 920_000, 'non-VND target valuation remains in a separate estimate bucket');
+  assert.equal(Number(budgetBucketsSql.estimatedUsdt), 66, 'unconverted USDT-only top-ups are isolated for valuation and not treated as confirmed VND');
   near(Number(budgetBucketsSql.plannedRate), 25_000, 'planning rate is USDT-weighted and isolated from observed rates');
 
   const helperConfirmedVnd = exchangeRows.reduce((sum, x) => {
