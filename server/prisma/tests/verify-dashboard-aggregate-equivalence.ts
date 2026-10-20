@@ -93,6 +93,35 @@ try {
   assert.equal(expenseRows.length, 3, 'all expense reads must be user-scoped');
   assert.equal(Number(allExpenseAggregate._sum.amountVnd), 95_536, 'all-time expense total must include only priced expenses owned by this user');
 
+  const [budgetBucketsSql] = await prisma.$queryRaw<Array<{ confirmedVnd: unknown; estimatedTargetVnd: unknown; plannedRate: unknown }>>`
+    SELECT
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+          THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
+        WHEN "mode" NOT IN ('RUB_VND') AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          THEN "vndReceived"
+        ELSE 0
+      END), 0) AS "confirmedVnd",
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) <> 'VND'
+          THEN "targetVndEquivalent"
+        ELSE 0
+      END), 0) AS "estimatedTargetVnd",
+      SUM("usdtReceived" * "planningVndPerUsdt") FILTER (
+        WHERE "mode" = 'RUB_USDT_VND'
+          AND "vndReceived" IS NULL
+          AND "usdtReceived" > 0
+          AND "planningVndPerUsdt" > 0
+      ) / NULLIF(SUM("usdtReceived") FILTER (
+        WHERE "mode" = 'RUB_USDT_VND'
+          AND "vndReceived" IS NULL
+          AND "usdtReceived" > 0
+          AND "planningVndPerUsdt" > 0
+      ), 0) AS "plannedRate"
+    FROM "Exchange"
+    WHERE "userId" = ${mainUserId}
+  `;
+
   const [directTargetSql] = await prisma.$queryRaw<Array<{ totalVnd: unknown }>>`
     SELECT COALESCE(SUM(COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")), 0) AS "totalVnd"
     FROM "Exchange"
@@ -110,6 +139,34 @@ try {
       AND "vndReceived" > 0
       AND "usdtReceived" > 0
   `;
+
+  assert.equal(Number(budgetBucketsSql.confirmedVnd), 3_010_000, 'confirmed VND bucket includes only actual outcomes and counts direct-target VND once');
+  assert.equal(Number(budgetBucketsSql.estimatedTargetVnd), 920_000, 'non-VND target valuation remains in a separate estimate bucket');
+  near(Number(budgetBucketsSql.plannedRate), 25_000, 'planning rate is USDT-weighted and isolated from observed rates');
+
+  const helperConfirmedVnd = exchangeRows.reduce((sum, x) => {
+    if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') {
+      const directVnd = x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived;
+      return sum + (directVnd == null ? 0 : Number(directVnd));
+    }
+    return sum + (x.vndReceived == null ? 0 : Number(x.vndReceived));
+  }, 0);
+  const helperEstimatedTargetVnd = exchangeRows.reduce((sum, x) =>
+    sum + (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() !== 'VND' && x.targetVndEquivalent != null
+      ? Number(x.targetVndEquivalent) : 0), 0);
+  const eligiblePlanned = exchangeRows.filter(x =>
+    x.mode === 'RUB_USDT_VND' && x.vndReceived == null &&
+    x.usdtReceived != null && Number(x.usdtReceived) > 0 &&
+    x.planningVndPerUsdt != null && Number(x.planningVndPerUsdt) > 0
+  );
+  const helperPlannedRate = eligiblePlanned.length
+    ? eligiblePlanned.reduce((sum, x) => sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0) /
+      eligiblePlanned.reduce((sum, x) => sum + Number(x.usdtReceived), 0)
+    : null;
+  assert.equal(Number(budgetBucketsSql.confirmedVnd), helperConfirmedVnd, 'PostgreSQL confirmed budget bucket matches the legacy TypeScript calculation');
+  assert.equal(Number(budgetBucketsSql.estimatedTargetVnd), helperEstimatedTargetVnd, 'PostgreSQL estimate bucket matches the legacy TypeScript calculation');
+  near(budgetBucketsSql.plannedRate == null ? null : Number(budgetBucketsSql.plannedRate), helperPlannedRate, 'PostgreSQL planning-rate bucket matches the legacy TypeScript calculation');
+
   assert.equal(Number(directTargetSql.totalVnd), 460_000, 'PostgreSQL direct-target aggregate must prefer the canonical value over stale legacy vndReceived');
   assert.equal(Number(indirectActualSql.totalVnd), 2_300_000, 'PostgreSQL confirmed indirect VND total must exclude planning-only rows');
   assert.equal(Number(indirectActualSql.totalUsdt), 93.7853, 'PostgreSQL confirmed indirect USDT denominator must exclude planning-only rows');
