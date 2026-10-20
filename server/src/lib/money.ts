@@ -212,3 +212,20 @@ export function isExchangeVndOutcomeConsistent(input: {
   return Number.isFinite(grossVnd) && grossVnd > 0 &&
     input.vndReceived <= grossVnd + 0.01;
 }
+
+
+/** Map indirect exchange records with an actual VND outcome; direct target-currency
+ * records are valued separately and must not be counted a second time. */
+export function mapActualVndExchanges(exchanges: Array<{
+  mode: string;
+  rubSpent: number;
+  vndReceived?: number | null;
+  targetCurrency?: string | null;
+}>): DirectVndObservation[] {
+  return exchanges.flatMap((exchange) => {
+    const isDirectVndTarget = exchange.mode === 'RUB_TARGET' &&
+      exchange.targetCurrency?.trim().toUpperCase() === 'VND';
+    if (exchange.mode === 'RUB_VND' || isDirectVndTarget || exchange.vndReceived == null) return [];
+    return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
+  });
+}
