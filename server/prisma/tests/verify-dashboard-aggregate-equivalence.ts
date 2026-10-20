@@ -105,11 +105,13 @@ try {
     (Number(exchangeAggregate._sum.usdtReceived ?? 0) + 56);
   near(sqlRubUsdt, helperRubUsdt, 'weighted RUB/USDT rate including direct RUB→USDT target');
 
-  const helperObservedVndUsdt = calculateObservedVndPerUsdt(mapActualVndUsdtExchanges(exchangeRows.map(x => ({
+  const observedExchangeRows = mapActualVndUsdtExchanges(exchangeRows.map(x => ({
     mode: x.mode,
     usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
     vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
-  }))));
+  })));
+  assert.deepEqual(observedExchangeRows, [{ usdtReceived: 93.7853, vndReceived: 2_300_000 }], 'only actual indirect exchange outcomes should become observed rate inputs');
+  const helperObservedVndUsdt = calculateObservedVndPerUsdt(observedExchangeRows);
   near(helperObservedVndUsdt, 2_300_000 / 93.7853, 'observed VND/USDT excludes planning-only rows');
 
   const directRows = mapDirectVndExchanges(exchangeRows.map(x => ({
