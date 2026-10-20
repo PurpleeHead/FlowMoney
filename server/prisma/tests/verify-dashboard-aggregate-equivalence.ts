@@ -213,8 +213,8 @@ try {
     targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
   }))));
   const sqlRubUsdt = Number(rubUsdtSql.rubTotal) / Number(rubUsdtSql.usdtTotal);
-  near(Number(rubUsdtSql.rubTotal), 8300 + 5000, 'PostgreSQL RUB/USDT numerator includes both eligible acquisition modes');
-  near(Number(rubUsdtSql.usdtTotal), 93.7853 + 56, 'PostgreSQL RUB/USDT denominator includes actual received USDT only');
+  near(Number(rubUsdtSql.rubTotal), 8300 + 5000 + 1000, 'PostgreSQL RUB/USDT numerator includes all eligible USDT acquisitions, including planning-only VND outcomes');
+  near(Number(rubUsdtSql.usdtTotal), 93.7853 + 56 + 10, 'PostgreSQL RUB/USDT denominator includes all eligible received USDT, even when VND outcome is not yet known');
   near(sqlRubUsdt, helperRubUsdt, 'weighted RUB/USDT rate including direct RUB→USDT target');
 
   const observedExchangeRows = mapActualVndUsdtExchanges(exchangeRows.map(x => ({
