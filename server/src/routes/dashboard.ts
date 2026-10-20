@@ -11,11 +11,14 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
   try {
     const now=new Date();
     const start=new Date(now.getFullYear(),now.getMonth(),1);
+    // The chart only displays the last 12 calendar months; financial totals/rates below
+    // are computed from unbounded database aggregates so history size cannot change them.
+    const chartStart=new Date(now.getFullYear(),now.getMonth()-11,1);
     // Return only fields consumed by dashboard calculations and the client. This keeps
     // internal ownership/audit metadata out of the response and avoids fetching unused columns.
-    const [expenses,exchanges]=await Promise.all([
+    const [expenses,exchanges,totalExpenseAggregate,monthExpenseAggregate,purchaseAggregate]=await Promise.all([
       prisma.expense.findMany({
-        where:{userId:req.user!.id},
+        where:{userId:req.user!.id,date:{gte:chartStart}},
         orderBy:{date:'desc'},
         select:{
           id:true,title:true,category:true,amount:true,currency:true,amountVnd:true,
@@ -31,17 +34,22 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
           planningVndPerUsdt:true,vndReceived:true,effectiveVndPerRub:true,
           effectiveRubPerUsdt:true,createdAt:true,
         },
-      })
+      }),
+      prisma.expense.aggregate({where:{userId:req.user!.id},_sum:{amountVnd:true}}),
+      prisma.expense.aggregate({where:{userId:req.user!.id,date:{gte:start},},_sum:{amountVnd:true}}),
+      prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{gt:0},usdtCharged:{gt:0}},_sum:{amountVnd:true,usdtCharged:true}}),
     ]);
 
-    const totalVnd=expenses.reduce((sum,x)=>sum+Number(x.amountVnd),0);
-    const monthVnd=expenses.filter(x=>x.date>=start).reduce((sum,x)=>sum+Number(x.amountVnd),0);
-    const purchases=expenses.filter(x=>x.amountVnd!=null && x.usdtCharged!=null && Number(x.usdtCharged)>0);
-    const observedVnd=purchases.reduce((sum,x)=>sum+Number(x.amountVnd),0);
-    const observedUsdt=purchases.reduce((sum,x)=>sum+Number(x.usdtCharged),0);
-    const observedVndPerUsdt=calculateObservedVndPerUsdt(
-      purchases.map(x=>({amountVnd:Number(x.amountVnd),usdtCharged:Number(x.usdtCharged)}))
-    );
+    const totalVnd=Number(totalExpenseAggregate._sum.amountVnd ?? 0);
+    const monthVnd=Number(monthExpenseAggregate._sum.amountVnd ?? 0);
+    const observedVnd=Number(purchaseAggregate._sum.amountVnd ?? 0);
+    const observedUsdt=Number(purchaseAggregate._sum.usdtCharged ?? 0);
+    // Aggregate sums preserve weighted rates exactly: sum(VND) / sum(USDT), not
+    // an average of individual rates. One synthetic observation carries those sums.
+    const purchases = observedVnd > 0 && observedUsdt > 0
+      ? [{amountVnd:observedVnd,usdtCharged:observedUsdt}]
+      : [];
+    const observedVndPerUsdt=calculateObservedVndPerUsdt(purchases);
 
     // Weighted by USDT received, using the same RUB/USDT helper as expense saving.
     const effectiveRubPerUsdt=calculateRubPerUsdt(
