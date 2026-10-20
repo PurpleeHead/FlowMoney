@@ -642,3 +642,29 @@ describe('expense list response privacy', () => {
     assert.equal('userId' in queryArgs.select, false);
   });
 });
+
+describe('expense cursor pagination', () => {
+  it('returns a page and next cursor without crossing user scope', async () => {
+    let queryArgs: any;
+    expenseModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [
+        { id: 'expense-a', date: new Date('2026-10-19T10:00:00.000Z') },
+        { id: 'expense-b', date: new Date('2026-10-18T10:00:00.000Z') },
+      ];
+    };
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses?limit=1`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['expense-a']);
+      assert.equal(body.hasMore, true);
+      assert.equal(typeof body.nextCursor, 'string');
+    });
+    assert.equal(queryArgs.take, 2);
+    assert.deepEqual(queryArgs.where.userId, 'user-42');
+    assert.deepEqual(queryArgs.orderBy, [{ date: 'desc' }, { id: 'asc' }]);
+  });
+});
