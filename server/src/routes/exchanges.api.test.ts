@@ -306,3 +306,30 @@ describe('exchange list response privacy', () => {
     assert.equal('userId' in queryArgs.select, false);
   });
 });
+
+describe('exchange cursor pagination', () => {
+  it('returns a page and next cursor without exposing owner identifiers', async () => {
+    let queryArgs: any;
+    exchangeModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [
+        { id: 'exchange-a', createdAt: new Date('2026-10-19T10:00:00.000Z') },
+        { id: 'exchange-b', createdAt: new Date('2026-10-18T10:00:00.000Z') },
+      ];
+    };
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges?limit=1`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string; userId?: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['exchange-a']);
+      assert.equal('userId' in body.items[0], false);
+      assert.equal(body.hasMore, true);
+      assert.equal(typeof body.nextCursor, 'string');
+    });
+    assert.equal(queryArgs.take, 2);
+    assert.deepEqual(queryArgs.where.userId, 'user-42');
+    assert.deepEqual(queryArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
+  });
+});
