@@ -70,3 +70,11 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Added a dashboard API regression assertion that a legacy direct `RUB_TARGET → VND` record with a stale `usdtReceived` value cannot produce a fictitious effective RUB/USDT rate.
 - [ ] PostgreSQL aggregate-equivalence comparison and realistic query/payload measurements remain open.
 - [ ] Production DB identity, encrypted backup/restore, live Render configuration reconciliation, legacy wallet preflight, and production smoke tests remain release blockers. PR #83 remains Draft; no merge or deployment is authorized by CI.
+
+## Latest release-candidate check — 2026-10-20
+
+- [x] On PR #83 head `d56fa7d25ef3a5ef524353390f7e342aa1a4ba0e`, CI run [#1181](https://github.com/PurpleeHead/FlowMoney/actions/runs/39421191957) and security/dependency run [#187](https://github.com/PurpleeHead/FlowMoney/actions/runs/39421191964) both passed.
+- [x] The latest UI fix prevents the direct-exchange preview from displaying a VND equivalent when the target-currency-to-VND conversion rate is missing, and prevents a VND/RUB preview without a valid rate. The API's direct RUB → USDT flow continues to preserve actual USDT without inventing a VND conversion.
+- [ ] These checks are code-level evidence only. The release remains blocked on confirming the intended production database, encrypted backup plus successful restore drill, read-only legacy wallet reconciliation, Render configuration reconciliation, and target-environment smoke tests.
+- [ ] The live Render service still reports branch `review/pr-3-fix`, auto-deploy enabled, and `/api/health`; repository configuration specifies auto-deploy off and `/api/ready`. Do not change the live service or deploy until the configuration plan and target database are explicitly approved.
+- [ ] PR #83 remains Draft and unmerged. No production deployment, production database access/mutation, or live Render configuration change was performed as part of this check.
