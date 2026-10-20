@@ -44,12 +44,12 @@ export async function getDashboardExchangeAggregates(userId: string): Promise<Da
       COUNT(*)::int AS "exchangeCount",
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 THEN "rubSpent"
-        WHEN "mode" = 'RUB_TARGET' AND "targetCurrency" = 'USDT' AND "rubSpent" > 0 AND "targetReceived" > 0 THEN "rubSpent"
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' AND "rubSpent" > 0 AND "targetReceived" > 0 THEN "rubSpent"
         ELSE 0
       END), 0) AS "rubUsdtRub",
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 THEN "usdtReceived"
-        WHEN "mode" = 'RUB_TARGET' AND "targetCurrency" = 'USDT' AND "rubSpent" > 0 AND "targetReceived" > 0 THEN "targetReceived"
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' AND "rubSpent" > 0 AND "targetReceived" > 0 THEN "targetReceived"
         ELSE 0
       END), 0) AS "rubUsdtUsdt",
       COALESCE(SUM("vndReceived") FILTER (
@@ -60,70 +60,70 @@ export async function getDashboardExchangeAggregates(userId: string): Promise<Da
       ), 0) AS "actualUsdt",
       COALESCE(SUM("usdtReceived" * "planningVndPerUsdt") FILTER (
         WHERE "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND "targetCurrency" = 'VND')
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
           AND "vndReceived" IS NULL
           AND "usdtReceived" IS NOT NULL
           AND "planningVndPerUsdt" IS NOT NULL
       ), 0) AS "plannedWeightedVnd",
       COALESCE(SUM("usdtReceived") FILTER (
         WHERE "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND "targetCurrency" = 'VND')
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
           AND "vndReceived" IS NULL
           AND "usdtReceived" IS NOT NULL
           AND "planningVndPerUsdt" IS NOT NULL
       ), 0) AS "plannedUsdt",
       COALESCE(SUM(CASE
-        WHEN "mode" = 'RUB_TARGET' AND "targetCurrency" = 'VND'
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
           THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
         ELSE "vndReceived"
       END), 0) AS "confirmedVnd",
       COALESCE(SUM("targetVndEquivalent") FILTER (
-        WHERE "mode" = 'RUB_TARGET' AND "targetCurrency" <> 'VND' AND "targetVndEquivalent" IS NOT NULL
+        WHERE "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) <> 'VND' AND "targetVndEquivalent" IS NOT NULL
       ), 0) AS "estimatedTargetVnd",
       COALESCE(SUM(CASE
         WHEN "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND "targetCurrency" = 'VND')
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
           AND "vndReceived" IS NULL
           AND (
-            ("mode" = 'RUB_TARGET' AND "targetCurrency" = 'USDT'
+            ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
               AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
             OR "usdtReceived" IS NOT NULL
           )
         THEN CASE
-          WHEN "mode" = 'RUB_TARGET' AND "targetCurrency" = 'USDT' THEN COALESCE("targetReceived", 0)
+          WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' THEN COALESCE("targetReceived", 0)
           ELSE "usdtReceived"
         END
         ELSE 0
       END), 0) AS "estimatedUsdt",
       COALESCE(BOOL_OR(
         ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
-        OR ("mode" = 'RUB_TARGET' AND "targetCurrency" = 'USDT'
+        OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
           AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
       ), false) AS "hasUnpricedUsdtTopUp",
       COALESCE(BOOL_OR(
-        "mode" = 'RUB_TARGET' AND "targetCurrency" <> 'VND' AND "targetVndEquivalent" IS NOT NULL
+        "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) <> 'VND' AND "targetVndEquivalent" IS NOT NULL
       ), false) AS "hasEstimatedTarget",
       COALESCE(SUM("rubSpent") FILTER (WHERE
         "rubSpent" > 0 AND (
           ("mode" = 'RUB_VND' AND "vndReceived" > 0)
-          OR ("mode" = 'RUB_TARGET' AND "targetCurrency" = 'VND'
+          OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
             AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
           OR ("mode" <> 'RUB_VND'
-            AND NOT ("mode" = 'RUB_TARGET' AND "targetCurrency" = 'VND')
+            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
             AND "vndReceived" > 0)
         )
       ), 0) AS "rateExchangeRub",
       COALESCE(SUM(CASE
-        WHEN "mode" = 'RUB_TARGET' AND "targetCurrency" = 'VND'
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
           THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
         ELSE "vndReceived"
       END) FILTER (WHERE
         "rubSpent" > 0 AND (
           ("mode" = 'RUB_VND' AND "vndReceived" > 0)
-          OR ("mode" = 'RUB_TARGET' AND "targetCurrency" = 'VND'
+          OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
             AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
           OR ("mode" <> 'RUB_VND'
-            AND NOT ("mode" = 'RUB_TARGET' AND "targetCurrency" = 'VND')
+            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
             AND "vndReceived" > 0)
         )
       ), 0) AS "rateExchangeVnd"
