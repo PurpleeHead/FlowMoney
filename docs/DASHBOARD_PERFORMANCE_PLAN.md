@@ -45,7 +45,7 @@ Existing indexes on `Expense(userId, date)` and `Exchange(userId, createdAt)` al
 - Confirm planned VND rates never enter factual observed rates.
 - Confirm direct VND exchanges and non-VND target estimates are not double-counted as confirmed VND.
 - Confirm current-month totals use the same month boundary and timezone behavior as before.
-- Confirm expenses created/edited in the past only use observations available at that timestamp.
+- Confirm expenses created/edited in the past only use observations available at that timestamp. A route regression test now asserts both exchange `createdAt` and card-purchase `date` cutoffs for a backdated expense; keep this test when moving calculations to aggregates.
 - Confirm a history pagination limit does not alter any summary total or weighted rate.
 - Confirm user scoping applies to every aggregate and page query.
 
