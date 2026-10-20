@@ -105,7 +105,9 @@ describe('journal API integration', () => {
       assert.deepEqual(expenseArgs.where.userId, 'journal-user');
       assert.deepEqual(exchangeArgs.where.userId, 'journal-user');
       assert.deepEqual(movementArgs.where.userId, 'journal-user');
-      assert.equal(expenseArgs.where.OR.length, 2);
+      // buildJournal sorts equal timestamps by prefixed ID: expense, exchange, movement.
+      // After an exchange cursor, expenses at that same timestamp must not reappear.
+      assert.equal(expenseArgs.where.OR.length, 1);
       assert.equal(exchangeArgs.where.OR.length, 2);
       assert.equal(movementArgs.where.OR.length, 2);
       assert.deepEqual(exchangeArgs.where.OR[1], {
