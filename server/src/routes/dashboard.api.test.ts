@@ -780,6 +780,8 @@ describe('dashboard canonical direct VND amount precedence', () => {
       assert.equal(body.confirmedExchangeVnd, 1_000_000);
       assert.equal(body.estimatedUnconvertedVnd, 0);
       assert.equal(body.balanceVnd, 1_000_000);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.equal(body.effectiveVndPerRub, 250, 'the stale legacy VND field must not distort the observed VND/RUB rate');
     });
   });
 });
