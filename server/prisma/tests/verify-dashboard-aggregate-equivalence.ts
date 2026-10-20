@@ -111,7 +111,7 @@ try {
     vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
   })));
   assert.deepEqual(observedExchangeRows, [{ usdtReceived: 93.7853, vndReceived: 2_300_000 }], 'only actual indirect exchange outcomes should become observed rate inputs');
-  const helperObservedVndUsdt = calculateObservedVndPerUsdt(observedExchangeRows);
+  const helperObservedVndUsdt = calculateObservedVndPerUsdt(observedExchangeRows.map(x => ({ amountVnd: x.vndReceived, usdtCharged: x.usdtReceived })));
   near(helperObservedVndUsdt, 2_300_000 / 93.7853, 'observed VND/USDT excludes planning-only rows');
 
   const directRows = mapDirectVndExchanges(exchangeRows.map(x => ({
