@@ -5,14 +5,21 @@ import jwt from 'jsonwebtoken';
 import type { AddressInfo } from 'node:net';
 import { prisma } from '../services/prisma.js';
 import dashboardRoutes from './dashboard.js';
+import {
+  mapActualVndUsdtExchanges,
+  mapDirectVndExchanges,
+  mapRubUsdtExchanges,
+} from '../lib/money.js';
 
 const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
 const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any>; aggregate: (...args: any[]) => Promise<any> };
 const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
+const rawModel = prisma as unknown as { $queryRaw: (...args: any[]) => Promise<any> };
 const originalUserFindFirst = userModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
 const originalExpenseAggregate = expenseModel.aggregate;
 const originalExchangeFindMany = exchangeModel.findMany;
+const originalQueryRaw = rawModel.$queryRaw;
 const previousSecret = process.env.JWT_SECRET;
 let dashboardAggregateArgs: any[] = [];
 
@@ -21,14 +28,88 @@ afterEach(() => {
   expenseModel.findMany = originalExpenseFindMany;
   expenseModel.aggregate = originalExpenseAggregate;
   exchangeModel.findMany = originalExchangeFindMany;
+  rawModel.$queryRaw = originalQueryRaw;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
+
+function mockDashboardExchangeAggregates(rows: any[]) {
+  const rubUsdt = mapRubUsdtExchanges(rows.map(x => ({
+    mode: x.mode,
+    rubSpent: Number(x.rubSpent),
+    usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+    targetCurrency: x.targetCurrency,
+    targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+  })));
+  const actual = mapActualVndUsdtExchanges(rows.map(x => ({
+    mode: x.mode,
+    usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+    vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+  })));
+  const planned = rows.filter(x => x.mode !== 'RUB_VND' &&
+    !(x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') &&
+    x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
+  const confirmedVnd = rows.reduce((sum, x) => {
+    if (x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') {
+      const value = x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived;
+      return sum + (value == null ? 0 : Number(value));
+    }
+    return sum + (x.vndReceived == null ? 0 : Number(x.vndReceived));
+  }, 0);
+  const estimatedTargetVnd = rows.reduce((sum, x) =>
+    sum + (x.mode === 'RUB_TARGET' && x.targetCurrency !== 'VND' && x.targetVndEquivalent != null
+      ? Number(x.targetVndEquivalent) : 0), 0);
+  const estimatedUsdt = rows.reduce((sum, x) => {
+    const eligible = x.mode !== 'RUB_VND' &&
+      !(x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') &&
+      x.vndReceived == null &&
+      ((x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null) ||
+        x.usdtReceived != null);
+    if (!eligible) return sum;
+    return sum + (x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT'
+      ? Number(x.targetReceived) : Number(x.usdtReceived));
+  }, 0);
+  const direct = mapDirectVndExchanges(rows.map(x => ({
+    mode: x.mode,
+    rubSpent: Number(x.rubSpent),
+    vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+    targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+    targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+    targetCurrency: x.targetCurrency,
+  })));
+  const indirect = rows.filter(x => x.mode !== 'RUB_VND' &&
+    !(x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') && x.vndReceived != null)
+    .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) }));
+  const rateRows = [...direct, ...indirect].filter(x =>
+    Number.isFinite(x.rubSpent) && x.rubSpent > 0 && Number.isFinite(x.vndReceived) && x.vndReceived > 0);
+  return [{
+    exchangeCount: rows.length,
+    rubUsdtRub: rubUsdt.reduce((sum, x) => sum + x.rubSpent, 0),
+    rubUsdtUsdt: rubUsdt.reduce((sum, x) => sum + x.usdtReceived, 0),
+    actualVnd: actual.reduce((sum, x) => sum + x.vndReceived, 0),
+    actualUsdt: actual.reduce((sum, x) => sum + x.usdtReceived, 0),
+    plannedWeightedVnd: planned.reduce((sum, x) => sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0),
+    plannedUsdt: planned.reduce((sum, x) => sum + Number(x.usdtReceived), 0),
+    confirmedVnd,
+    estimatedTargetVnd,
+    estimatedUsdt,
+    hasUnpricedUsdtTopUp: rows.some(x =>
+      (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
+      (x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null)),
+    hasEstimatedTarget: rows.some(x => x.mode === 'RUB_TARGET' && x.targetCurrency !== 'VND' && x.targetVndEquivalent != null),
+    rateExchangeRub: rateRows.reduce((sum, x) => sum + x.rubSpent, 0),
+    rateExchangeVnd: rateRows.reduce((sum, x) => sum + x.vndReceived, 0),
+  }];
+}
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
   // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
   // as PostgreSQL. This keeps route tests independent of a live database.
   dashboardAggregateArgs = [];
+  rawModel.$queryRaw = async () => {
+    const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
+    return mockDashboardExchangeAggregates(rows);
+  };
   expenseModel.aggregate = async (args: any) => {
     dashboardAggregateArgs.push(args);
     const rows = await expenseModel.findMany({});
