@@ -251,7 +251,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
     );
-    const actualExchanges = exchanges.filter(x => x.mode !== 'RUB_VND' && x.usdtReceived != null && x.vndReceived != null);
+    const actualExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.usdtReceived != null && x.vndReceived != null);
     const actualVnd = actualExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
     const actualUsdt = actualExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
     // Keep estimates out of the historical expense valuation. Planning rates are used
