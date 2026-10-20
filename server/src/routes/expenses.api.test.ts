@@ -458,6 +458,52 @@ describe('expense API ledger synchronization', () => {
   });
 
 
+  it('limits valuation observations to the expense effective date', async () => {
+    const effectiveDate = new Date('2026-10-12T09:30:00.000Z');
+    let exchangeQuery: any;
+    let purchaseQuery: any;
+    let createdData: any;
+    exchangeModel.findMany = async (args: any) => { exchangeQuery = args; return []; };
+    expenseModel.findMany = async (args: any) => { purchaseQuery = args; return []; };
+    const tx = {
+      expense: {
+        create: async (args: any) => {
+          createdData = args.data;
+          return { id: 'expense-historical-date', ...args.data };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Historical groceries', category: 'Food', amount: 120000,
+          amountVnd: 120000, currency: 'VND', date: effectiveDate.toISOString(),
+        }),
+      });
+
+      assert.equal(response.status, 201);
+      assert.equal(createdData.date.toISOString(), effectiveDate.toISOString());
+    });
+
+    assert.deepEqual(exchangeQuery.where, {
+      userId: 'user-42',
+      createdAt: { lte: effectiveDate },
+    });
+    assert.deepEqual(purchaseQuery.where, {
+      userId: 'user-42',
+      date: { lte: effectiveDate },
+      usdtCharged: { not: null },
+    });
+  });
+
   it('keeps a planning VND/USDT rate out of saved factual expense valuations', async () => {
     expenseModel.findMany = async () => [];
     exchangeModel.findMany = async () => [{
