@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
+import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapActualVndExchanges, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
 import { syncExpenseLedger, removeExpenseLedger } from '../lib/wallet-ledger.js';
 import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
@@ -110,9 +110,12 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
         targetCurrency: x.targetCurrency,
       }))),
-      actualVndExchanges: exchanges
-        .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetCurrency: x.targetCurrency,
+      }))),
       cardPurchases: previousPurchases.map(x => ({
         amountVnd: Number(x.amountVnd),
         usdtCharged: Number(x.usdtCharged),
@@ -262,8 +265,12 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
         targetCurrency: x.targetCurrency,
       }))),
-      actualVndExchanges: exchanges.filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetCurrency: x.targetCurrency,
+      }))),
       cardPurchases: otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) })),
       rubPerUsdt,
     });
