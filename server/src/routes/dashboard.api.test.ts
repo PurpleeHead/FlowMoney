@@ -409,11 +409,17 @@ describe('dashboard direct RUB-to-VND target exchange', () => {
         estimatedUnconvertedVnd: number;
         balanceVnd: number | null;
         balanceIsEstimated: boolean;
+        effectiveVndPerRub: number | null;
       };
       assert.equal(body.confirmedExchangeVnd, 1000000);
       assert.equal(body.estimatedUnconvertedVnd, 0);
       assert.equal(body.balanceVnd, 1000000);
       assert.equal(body.balanceIsEstimated, false);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.ok(
+        Math.abs(body.effectiveVndPerRub - (1000000 / 3500)) < 1e-10,
+        'direct target VND exchange must contribute exactly once to the observed VND/RUB rate',
+      );
     });
   });
 });
