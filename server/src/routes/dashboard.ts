@@ -114,7 +114,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       sum + (x.mode === 'RUB_TARGET' && x.targetCurrency !== 'VND' && x.targetVndEquivalent != null
         ? Number(x.targetVndEquivalent) : 0), 0);
     const estimatedUnconvertedVnd = estimatedTargetCurrencyVnd + (balanceRateVndPerUsdt == null ? 0 : exchanges
-      .filter(x => x.mode !== 'RUB_VND' && x.vndReceived == null &&
+      .filter(x => x.mode !== 'RUB_VND' && !(x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') && x.vndReceived == null &&
         ((x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null) ||
          x.usdtReceived != null))
       .reduce((sum, x) => {
