@@ -11,9 +11,27 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
   try {
     const now=new Date();
     const start=new Date(now.getFullYear(),now.getMonth(),1);
+    // Return only fields consumed by dashboard calculations and the client. This keeps
+    // internal ownership/audit metadata out of the response and avoids fetching unused columns.
     const [expenses,exchanges]=await Promise.all([
-      prisma.expense.findMany({where:{userId:req.user!.id},orderBy:{date:'desc'}}),
-      prisma.exchange.findMany({where:{userId:req.user!.id},orderBy:{createdAt:'desc'}})
+      prisma.expense.findMany({
+        where:{userId:req.user!.id},
+        orderBy:{date:'desc'},
+        select:{
+          id:true,title:true,category:true,amount:true,currency:true,amountVnd:true,
+          amountRub:true,usdtCharged:true,date:true,
+        },
+      }),
+      prisma.exchange.findMany({
+        where:{userId:req.user!.id},
+        orderBy:{createdAt:'desc'},
+        select:{
+          id:true,mode:true,targetCurrency:true,targetReceived:true,targetToVndRate:true,
+          targetVndEquivalent:true,rubSpent:true,usdtReceived:true,vndPerUsdt:true,
+          planningVndPerUsdt:true,vndReceived:true,effectiveVndPerRub:true,
+          effectiveRubPerUsdt:true,createdAt:true,
+        },
+      })
     ]);
 
     const totalVnd=expenses.reduce((sum,x)=>sum+Number(x.amountVnd),0);
