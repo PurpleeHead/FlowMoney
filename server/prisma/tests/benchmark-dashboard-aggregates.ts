@@ -125,6 +125,8 @@ try {
     }, { count: 0, rubUsdtRub: 0, rubUsdtUsdt: 0, actualVnd: 0, actualUsdt: 0, confirmedVnd: 0, estimatedTargetVnd: 0, estimatedUsdt: 0, plannedWeightedVnd: 0, plannedUsdt: 0 });
   };
 
+  // Refresh planner statistics after bulk fixture insertion; this runs only on the guarded disposable database.
+  await prisma.$executeRaw`ANALYZE "Exchange"`;
   const [queryPlanRow] = await prisma.$queryRaw<Array<{ 'QUERY PLAN': unknown }>>`
     EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
     SELECT
