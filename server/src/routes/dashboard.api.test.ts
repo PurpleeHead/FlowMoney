@@ -235,6 +235,17 @@ describe('dashboard query shape', () => {
     assert.deepEqual(exchangeArgs.orderBy, { createdAt: 'desc' });
     assert.equal(dashboardAggregateArgs.length, 3);
     assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
+    const allTimeAggregate = dashboardAggregateArgs.find(args => args._sum.amountVnd && !args.where.date);
+    const monthAggregate = dashboardAggregateArgs.find(args => args.where.date?.gte);
+    const purchaseAggregate = dashboardAggregateArgs.find(args => args._sum.usdtCharged);
+    assert.ok(allTimeAggregate, 'all-time expense aggregate must not have a date limit');
+    assert.ok(monthAggregate, 'month aggregate must have a date boundary');
+    assert.ok(purchaseAggregate, 'weighted card aggregate must sum VND and USDT');
+    assert.ok(monthAggregate.where.date.gte instanceof Date);
+    assert.deepEqual(purchaseAggregate.where, {
+      userId: 'dashboard-user', amountVnd: { gt: 0 }, usdtCharged: { gt: 0 },
+    });
+    assert.deepEqual(Object.keys(purchaseAggregate._sum).sort(), ['amountVnd', 'usdtCharged']);
     assert.deepEqual(Object.keys(exchangeArgs.select).sort(), [
       'createdAt', 'effectiveRubPerUsdt', 'effectiveVndPerRub', 'id', 'mode',
       'planningVndPerUsdt', 'rubSpent', 'targetCurrency', 'targetReceived',
