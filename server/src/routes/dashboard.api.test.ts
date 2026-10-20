@@ -424,6 +424,49 @@ describe('dashboard direct RUB-to-VND target exchange', () => {
   });
 });
 
+describe('dashboard direct VND target legacy compatibility', () => {
+  it('does not double-count a direct VND target if legacy vndReceived is also populated', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      id: 'legacy-direct-vnd-target',
+      mode: 'RUB_TARGET',
+      rubSpent: 3500,
+      usdtReceived: null,
+      vndPerUsdt: null,
+      planningVndPerUsdt: null,
+      vndFee: 0,
+      vndReceived: 1000000,
+      effectiveVndPerRub: 1000000 / 3500,
+      effectiveRubPerUsdt: null,
+      targetCurrency: 'VND',
+      targetReceived: 1000000,
+      targetToVndRate: 1,
+      targetVndEquivalent: 1000000,
+      createdAt: new Date('2026-10-18T08:00:00.000Z'),
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1000000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1000000);
+    });
+  });
+});
+
+
 describe('dashboard mixed direct VND exchange modes', () => {
   it('weights RUB_VND and RUB_TARGET-to-VND outcomes once in the same observed rate', async () => {
     expenseModel.findMany = async () => [];
