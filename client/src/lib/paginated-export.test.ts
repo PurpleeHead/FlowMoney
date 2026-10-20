@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fetchAllCursorPages } from './paginated-export';
+import { fetchAllCursorPages, toSafeCsvCell } from './paginated-export';
 
 describe('fetchAllCursorPages', () => {
   it('loads every page, including histories larger than one API page', async () => {
@@ -38,5 +38,23 @@ describe('fetchAllCursorPages', () => {
 
     await expect(fetchAllCursorPages(fetchPage, 2)).rejects.toThrow('safety limit of 2 pages');
     expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('toSafeCsvCell', () => {
+  it('quotes commas and doubles embedded quotes', () => {
+    expect(toSafeCsvCell('Cafe, "Da Nang"')).toBe('"Cafe, ""Da Nang"""');
+  });
+
+  it.each(['=1+1', '+cmd|/C calc', '-1+1', '@SUM(A1:A2)', '  =HYPERLINK("https://example.invalid")'])(
+    'neutralizes spreadsheet formula prefix %s',
+    value => {
+      expect(toSafeCsvCell(value).startsWith('"\'')).toBe(true);
+    },
+  );
+
+  it('keeps ordinary values and empty cells unchanged', () => {
+    expect(toSafeCsvCell('Groceries')).toBe('"Groceries"');
+    expect(toSafeCsvCell(null)).toBe('""');
   });
 });
