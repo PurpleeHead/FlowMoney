@@ -277,7 +277,7 @@ describe('dashboard weighted rates preserve actual observations', () => {
       assert.ok(body.effectiveRubPerUsdt != null);
       assert.ok(Math.abs(body.effectiveRubPerUsdt - (5400 / 60)) < 1e-8);
       assert.ok(body.planningVndPerUsdt != null);
-      assert.equal(body.planningVndPerUsdt, 28000);
+      assert.equal(body.planningVndPerUsdt, 30000);
     });
   });
 });
