@@ -427,23 +427,42 @@ describe('dashboard direct RUB-to-VND target exchange', () => {
 describe('dashboard direct VND target legacy compatibility', () => {
   it('does not double-count a direct VND target if legacy vndReceived is also populated', async () => {
     expenseModel.findMany = async () => [];
-    exchangeModel.findMany = async () => [{
-      id: 'legacy-direct-vnd-target',
-      mode: 'RUB_TARGET',
-      rubSpent: 3500,
-      usdtReceived: null,
-      vndPerUsdt: null,
-      planningVndPerUsdt: null,
-      vndFee: 0,
-      vndReceived: 1000000,
-      effectiveVndPerRub: 1000000 / 3500,
-      effectiveRubPerUsdt: null,
-      targetCurrency: 'VND',
-      targetReceived: 1000000,
-      targetToVndRate: 1,
-      targetVndEquivalent: 1000000,
-      createdAt: new Date('2026-10-18T08:00:00.000Z'),
-    }];
+    exchangeModel.findMany = async () => [
+      {
+        id: 'legacy-direct-vnd-target-with-duplicate-fields',
+        mode: 'RUB_TARGET',
+        rubSpent: 3500,
+        usdtReceived: null,
+        vndPerUsdt: null,
+        planningVndPerUsdt: null,
+        vndFee: 0,
+        vndReceived: 1000000,
+        effectiveVndPerRub: 1000000 / 3500,
+        effectiveRubPerUsdt: null,
+        targetCurrency: 'VND',
+        targetReceived: 1000000,
+        targetToVndRate: 1,
+        targetVndEquivalent: 1000000,
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+      },
+      {
+        id: 'legacy-direct-vnd-target-without-equivalent',
+        mode: 'RUB_TARGET',
+        rubSpent: 3500,
+        usdtReceived: null,
+        vndPerUsdt: null,
+        planningVndPerUsdt: null,
+        vndFee: 0,
+        vndReceived: null,
+        effectiveVndPerRub: null,
+        effectiveRubPerUsdt: null,
+        targetCurrency: 'VND',
+        targetReceived: 500000,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+      },
+    ];
 
     await withApi(async baseUrl => {
       const token = jwt.sign(
@@ -460,11 +479,11 @@ describe('dashboard direct VND target legacy compatibility', () => {
         balanceVnd: number | null;
         effectiveVndPerRub: number | null;
       };
-      assert.equal(body.confirmedExchangeVnd, 1000000);
+      assert.equal(body.confirmedExchangeVnd, 1500000);
       assert.equal(body.estimatedUnconvertedVnd, 0);
-      assert.equal(body.balanceVnd, 1000000);
+      assert.equal(body.balanceVnd, 1500000);
       assert.ok(body.effectiveVndPerRub != null);
-      assert.ok(Math.abs(body.effectiveVndPerRub - (1000000 / 3500)) < 1e-10);
+      assert.ok(Math.abs(body.effectiveVndPerRub - (1500000 / 7000)) < 1e-10);
     });
   });
 });
