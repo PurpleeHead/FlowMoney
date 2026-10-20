@@ -61,3 +61,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Added dashboard API regression coverage confirming a planning-only VND/USDT rate does not become an observed/effective rate when actual VND outcome is missing; only the estimated balance may use it.
 - [ ] PostgreSQL aggregate-equivalence comparison and realistic query/payload measurements remain open.
 - [ ] Production DB identity, encrypted backup/restore, live Render configuration reconciliation, and production smoke tests remain release blockers. PR #83 remains Draft; no merge or deployment is authorized by these checks.
+
+
+## Latest PR #83 verification — 2026-10-20 (legacy direct-target stale-field regression)
+
+- [x] CI workflow run [#1165](https://github.com/PurpleeHead/FlowMoney/actions/runs/39417174682) passed on head `3892e757ad4833579f1e6bd16f86861df389a50b`; both `verify` and `verify-migrations` succeeded.
+- [x] Security dependency workflow run [#179](https://github.com/PurpleeHead/FlowMoney/actions/runs/39417174796) passed on the same head.
+- [x] Added a dashboard API regression assertion that a legacy direct `RUB_TARGET → VND` record with a stale `usdtReceived` value cannot produce a fictitious effective RUB/USDT rate.
+- [ ] PostgreSQL aggregate-equivalence comparison and realistic query/payload measurements remain open.
+- [ ] Production DB identity, encrypted backup/restore, live Render configuration reconciliation, legacy wallet preflight, and production smoke tests remain release blockers. PR #83 remains Draft; no merge or deployment is authorized by CI.
