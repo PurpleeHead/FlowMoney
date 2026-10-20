@@ -28,7 +28,8 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       }),
       prisma.exchange.findMany({
         where:{userId:req.user!.id},
-        orderBy:{createdAt:'desc'},
+        orderBy:[{createdAt:'desc'},{id:'desc'}],
+        take:100,
         select:{
           id:true,mode:true,targetCurrency:true,targetReceived:true,targetToVndRate:true,
           targetVndEquivalent:true,rubSpent:true,usdtReceived:true,vndPerUsdt:true,
