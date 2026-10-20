@@ -131,6 +131,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Added `dashboard.api.test.ts` regression coverage for a direct RUB → VND record with canonical `targetVndEquivalent` and a stale, conflicting legacy `vndReceived` value. Expected confirmed VND and balance count the canonical amount exactly once.
 - [x] CI and Security workflows passed on the follow-up commit `16f499dcc826721f883b455940ed7cec3e01b9ee` (CI run [#39427185868](https://github.com/PurpleeHead/FlowMoney/actions/runs/39427185868), Security run [#39427185869](https://github.com/PurpleeHead/FlowMoney/actions/runs/39427185869)).
 - [ ] This is mocked route-level regression coverage, not the outstanding PostgreSQL-backed aggregate-equivalence fixture or performance evidence.
+- [x] The latest documentation-only commit `868cbe6d6d2ae16ca315786053bc753cf3921428` also passed CI [#39427595583](https://github.com/PurpleeHead/FlowMoney/actions/runs/39427595583) and Security [#39427595610](https://github.com/PurpleeHead/FlowMoney/actions/runs/39427595610).
 
 
 - [x] Extended the canonical direct-VND regression assertion to verify the observed VND/RUB rate remains `250` (1,000,000 VND / 4,000 RUB) even when stale legacy `vndReceived` is 9,999,999.
