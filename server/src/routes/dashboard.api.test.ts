@@ -694,3 +694,43 @@ describe('dashboard planning rates stay separate from factual rates', () => {
     });
   });
 });
+
+
+describe('dashboard legacy direct VND target records', () => {
+  it('does not treat a legacy direct VND target as an unconverted USDT top-up', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'legacy-direct-vnd',
+      mode: 'RUB_TARGET',
+      targetCurrency: 'VND',
+      targetReceived: 1000000,
+      targetToVndRate: 1,
+      targetVndEquivalent: 1000000,
+      // Older records may have retained this field from an earlier exchange form.
+      usdtReceived: 10,
+      vndReceived: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1000000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1000000);
+      assert.equal(body.balanceIsEstimated, false);
+    });
+  });
+});
