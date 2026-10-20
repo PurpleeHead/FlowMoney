@@ -583,3 +583,49 @@ describe('dashboard observed VND/RUB combines all actual source types once', () 
     });
   });
 });
+
+
+describe('dashboard planning rates stay separate from factual rates', () => {
+  it('does not promote a planning-only exchange rate into observed or effective VND/USDT', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'planning-only',
+      mode: 'RUB_USDT_VND',
+      targetCurrency: null,
+      targetReceived: null,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+      usdtReceived: 100,
+      vndReceived: null,
+      vndPerUsdt: null,
+      planningVndPerUsdt: 26000,
+      rubSpent: 9000,
+      effectiveVndPerRub: null,
+      effectiveRubPerUsdt: 90,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        observedVndPerUsdt: number | null;
+        effectiveVndPerUsdt: number | null;
+        planningVndPerUsdt: number | null;
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+      };
+      assert.equal(body.observedVndPerUsdt, null);
+      assert.equal(body.effectiveVndPerUsdt, null);
+      assert.equal(body.planningVndPerUsdt, 26000);
+      assert.equal(body.confirmedExchangeVnd, 0);
+      assert.equal(body.estimatedUnconvertedVnd, 2600000);
+    });
+  });
+});
