@@ -6,6 +6,8 @@ import type { AddressInfo } from 'node:net';
 import { prisma } from '../services/prisma.js';
 
 const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
+const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
+const originalExchangeFindMany = exchangeModel.findMany;
 const originalUserFindFirst = userModel.findFirst;
 import exchangeRoutes from './exchanges.js';
 
@@ -15,6 +17,7 @@ const previousSecret = process.env.JWT_SECRET;
 
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
+  exchangeModel.findMany = originalExchangeFindMany;
   client.$transaction = originalTransaction;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
@@ -267,5 +270,39 @@ describe('exchange API ledger synchronization', () => {
       assert.equal(response.status, 404);
       assert.deepEqual(movementDeleteArgs, [], 'ledger deletion must not run if the owner-scoped exchange delete matched no row');
     });
+  });
+});
+
+
+describe('exchange list response privacy', () => {
+  it('scopes the query to the authenticated user and omits the internal userId field', async () => {
+    let queryArgs: any;
+    exchangeModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [{
+        id: 'exchange-list-1', userId: 'user-42', mode: 'RUB_USDT_VND',
+        targetCurrency: 'VND', targetReceived: null, targetToVndRate: null,
+        targetVndEquivalent: null, rubSpent: 8300, usdtReceived: 93.7853,
+        vndPerUsdt: null, planningVndPerUsdt: 25400, vndFee: 0,
+        vndReceived: null, effectiveVndPerRub: null, effectiveRubPerUsdt: 88.5,
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+      }];
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as Array<Record<string, unknown>>;
+      assert.equal(body.length, 1);
+      assert.equal(body[0].id, 'exchange-list-1');
+      assert.equal('userId' in body[0], false);
+    });
+
+    assert.deepEqual(queryArgs.where, { userId: 'user-42' });
+    assert.deepEqual(queryArgs.orderBy, { createdAt: 'desc' });
+    assert.equal(queryArgs.take, 100);
+    assert.equal('userId' in queryArgs.select, false);
   });
 });
