@@ -458,10 +458,13 @@ describe('dashboard direct VND target legacy compatibility', () => {
         confirmedExchangeVnd: number;
         estimatedUnconvertedVnd: number;
         balanceVnd: number | null;
+        effectiveVndPerRub: number | null;
       };
       assert.equal(body.confirmedExchangeVnd, 1000000);
       assert.equal(body.estimatedUnconvertedVnd, 0);
       assert.equal(body.balanceVnd, 1000000);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.ok(Math.abs(body.effectiveVndPerRub - (1000000 / 3500)) < 1e-10);
     });
   });
 });
