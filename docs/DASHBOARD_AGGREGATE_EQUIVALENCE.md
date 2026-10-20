@@ -74,3 +74,14 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - [x] CI run [#1223](https://github.com/PurpleeHead/FlowMoney/actions/runs/39429935414) passed on `6daa9115a8166ee446fa2de3aee334656c3ab8e7`; its disposable-PostgreSQL fixture, migration/rollback/idempotency checks, test suite, production build, and dependency audits passed. Security workflow [#208](https://github.com/PurpleeHead/FlowMoney/actions/runs/39429935408) also passed.
 - [ ] This is the first equivalence slice, not the complete release gate. Extend database-side aggregate comparisons to canonical direct-target VND totals, confirmed/estimated budget components, and planning-rate aggregates before changing `dashboard.ts` summary calculations or bounding its exchange query.
 - [ ] Capture realistic `EXPLAIN (ANALYZE, BUFFERS)`, query timings, and response payload sizes before claiming a performance improvement.
+
+
+## Runtime aggregate rollout — 2026-10-20
+
+- [x] Added `server/src/lib/dashboard-aggregates.ts`, a user-scoped PostgreSQL aggregate query for exchange count, weighted RUB/USDT acquisition totals, actual VND/USDT outcomes, planning-rate numerator/denominator, confirmed VND, non-VND target estimates, USDT awaiting VND valuation, and exchange contribution to observed VND/RUB.
+- [x] Expanded the disposable-PostgreSQL fixture to compare these aggregate buckets with existing TypeScript helpers and verify the full confirmed-plus-estimated balance.
+- [x] Switched `GET /api/dashboard` financial summary calculations to the aggregate result while keeping the response shape stable.
+- [x] Bounded dashboard exchange activity to the latest 100 rows with deterministic `createdAt`/ID ordering. All-history summaries are independent of that activity window; the full exchange history remains available through cursor-paginated endpoints.
+- [ ] Final CI verification for the latest bounded-query commit is still required before treating this stage as complete.
+- [ ] Performance measurements and `EXPLAIN (ANALYZE, BUFFERS)` evidence are not yet recorded. No performance gain is claimed until those measurements are captured.
+- [ ] Production DB, merge, and deployment gates remain unchanged.
