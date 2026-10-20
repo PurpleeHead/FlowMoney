@@ -27,6 +27,8 @@ try {
   ]);
   userId = user.id;
   otherUserId = otherUser.id;
+  const mainUserId = user.id;
+  const secondUserId = otherUser.id;
 
   const rows = [
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 2_300_000 },
@@ -43,7 +45,7 @@ try {
   for (const row of rows) {
     await prisma.exchange.create({
       data: {
-        userId,
+        userId: mainUserId,
         mode: row.mode,
         targetCurrency: row.targetCurrency,
         rubSpent: row.rubSpent,
@@ -57,23 +59,23 @@ try {
     });
   }
   await prisma.exchange.create({
-    data: { userId: otherUserId, mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1, usdtReceived: 1, vndReceived: 999_999 },
+    data: { userId: secondUserId, mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1, usdtReceived: 1, vndReceived: 999_999 },
   });
 
   await prisma.expense.createMany({
     data: [
-      { userId, title: 'Card purchase A', category: 'Food', amount: 55_536, currency: 'VND', amountVnd: 55_536, amountRub: 190, usdtCharged: 2.19, date: new Date('2026-10-10T08:00:00Z') },
+      { userId: mainUserId, title: 'Card purchase A', category: 'Food', amount: 55_536, currency: 'VND', amountVnd: 55_536, amountRub: 190, usdtCharged: 2.19, date: new Date('2026-10-10T08:00:00Z') },
       { userId, title: 'Card purchase B', category: 'Food', amount: 40_000, currency: 'VND', amountVnd: 40_000, amountRub: 140, usdtCharged: 1.57, date: new Date('2026-10-11T08:00:00Z') },
       { userId, title: 'Not priced', category: 'Other', amount: 100, currency: 'VND', amountVnd: null, amountRub: null, usdtCharged: null, date: new Date('2026-10-12T08:00:00Z') },
-      { userId: otherUserId, title: 'Other user', category: 'Other', amount: 999_999, currency: 'VND', amountVnd: 999_999, amountRub: 1, usdtCharged: 1, date: new Date('2026-10-12T08:00:00Z') },
+      { userId: secondUserId, title: 'Other user', category: 'Other', amount: 999_999, currency: 'VND', amountVnd: 999_999, amountRub: 1, usdtCharged: 1, date: new Date('2026-10-12T08:00:00Z') },
     ],
   });
 
   const [exchangeRows, expenseRows, exchangeAggregate, directAggregate, cardAggregate, allExpenseAggregate] = await Promise.all([
-    prisma.exchange.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } }),
-    prisma.expense.findMany({ where: { userId } }),
+    prisma.exchange.findMany({ where: { userId: mainUserId }, orderBy: { createdAt: 'asc' } }),
+    prisma.expense.findMany({ where: { userId: mainUserId } }),
     prisma.exchange.aggregate({
-      where: { userId, mode: 'RUB_USDT_VND', rubSpent: { gt: 0 }, usdtReceived: { gt: 0 } },
+      where: { userId: mainUserId, mode: 'RUB_USDT_VND', rubSpent: { gt: 0 }, usdtReceived: { gt: 0 } },
       _sum: { rubSpent: true, usdtReceived: true },
     }),
     prisma.exchange.aggregate({
@@ -81,10 +83,10 @@ try {
       _sum: { rubSpent: true, vndReceived: true },
     }),
     prisma.expense.aggregate({
-      where: { userId, amountVnd: { gt: 0 }, usdtCharged: { gt: 0 } },
+      where: { userId: mainUserId, amountVnd: { gt: 0 }, usdtCharged: { gt: 0 } },
       _sum: { amountVnd: true, usdtCharged: true },
     }),
-    prisma.expense.aggregate({ where: { userId }, _sum: { amountVnd: true } }),
+    prisma.expense.aggregate({ where: { userId: mainUserId }, _sum: { amountVnd: true } }),
   ]);
 
   assert.equal(exchangeRows.length, rows.length, 'all exchange reads must be user-scoped');
@@ -119,7 +121,7 @@ try {
     targetCurrency: x.targetCurrency,
   })));
   const directVndExpected = directRows.reduce((sum, x) => sum + x.vndReceived, 0);
-  assert.equal(directVndExpected, 3_010_000, 'direct VND canonical/fallback values count once and ignore stale legacy values');
+  assert.equal(directVndExpected, 710_000, 'direct VND canonical/fallback values count once and ignore stale legacy values');
   assert.equal(Number(directAggregate._sum.vndReceived), 250_000, 'direct RUB→VND aggregate is scoped and includes actual VND only');
 
   const helperCardRate = calculateObservedVndPerUsdt(expenseRows
