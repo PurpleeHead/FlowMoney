@@ -91,7 +91,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 ## Latest verification — 2026-10-20 (operator-controlled runbook)
 
 - [x] Added [`docs/PRODUCTION_RELEASE_RUNBOOK.md`](./PRODUCTION_RELEASE_RUNBOOK.md) on commit `87f481cff80cb14a49835d6502c6f8b9074f7db9`. It specifies hard-stop conditions, secret-safe database identity verification, encrypted backup and isolated restore, read-only legacy wallet preflight, pre-deploy approval gates, and financial smoke tests.
-- [x] CI run [#1187](https://github.com/PurpleeHead/FlowMoney/actions/runs/39422300000) and security/dependency run [#190](https://github.com/PurpleeHead/FlowMoney/actions/runs/39422300001) passed on that commit. The workflow results verify repository checks only; they are not production validation.
+- [x] CI run #1187 and security/dependency run #190 passed on that commit. The workflow results verify repository checks only; they are not production validation.
 - [x] A fresh read-only Render inspection reconfirmed `flowmoney-app` is configured on `review/pr-3-fix`, with automatic deploys enabled on commits, `/api/health`, and a startup command that runs `prisma migrate deploy` before `npm start`. Latest recorded live deploy remains `bb2bb41d801f466049c9c50e7bd2da02e007d235` from 2026-10-17.
 - [x] The workspace's only listed PostgreSQL instance remains `flowmoney-test-db` / `flowmoney_test_db` (Free plan, expires 2026-11-15). This does not establish which database the live service uses.
 - [ ] Production database identity, backup/restore proof, legacy wallet reconciliation, Render configuration approval, PostgreSQL aggregate-equivalence comparison, realistic query/payload measurements, and production smoke tests remain open.
