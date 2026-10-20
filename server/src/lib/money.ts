@@ -69,6 +69,9 @@ export function mapRubUsdtExchanges(exchanges: Array<{
   return exchanges.flatMap((exchange) => {
     const isDirectUsdt = exchange.mode === 'RUB_TARGET' &&
       exchange.targetCurrency?.trim().toUpperCase() === 'USDT';
+    // Only the indirect exchange mode or an explicitly direct USDT target represents
+    // an acquisition of USDT. Ignore stale legacy fields on RUB→VND/other-target rows.
+    if (!isDirectUsdt && exchange.mode !== 'RUB_USDT_VND') return [];
     const usdtReceived = isDirectUsdt ? exchange.targetReceived : exchange.usdtReceived;
     if (usdtReceived == null || !Number.isFinite(exchange.rubSpent) || exchange.rubSpent <= 0 ||
         !Number.isFinite(usdtReceived) || usdtReceived <= 0) return [];
