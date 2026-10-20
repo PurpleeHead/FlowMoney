@@ -20,6 +20,13 @@ function near(actual: number | null, expected: number | null, label: string) {
   assert.ok(Math.abs(actual - expected) < 0.000001, `${label}: expected ${expected}, got ${actual}`);
 }
 
+function helperCardRateForBudget(expenses: Array<{ amountVnd: unknown; usdtCharged: unknown }>): number | null {
+  const valid = expenses.filter(x => x.amountVnd != null && Number(x.amountVnd) > 0 && x.usdtCharged != null && Number(x.usdtCharged) > 0);
+  const vnd = valid.reduce((sum, x) => sum + Number(x.amountVnd), 0);
+  const usdt = valid.reduce((sum, x) => sum + Number(x.usdtCharged), 0);
+  return usdt > 0 ? vnd / usdt : null;
+}
+
 try {
   const [user, otherUser] = await Promise.all([
     prisma.user.create({ data: { email: `${suffix}@example.invalid`, passwordHash: 'test-only' } }),
@@ -200,6 +207,24 @@ try {
   assert.equal(Number(budgetBucketsSql.confirmedVnd), helperConfirmedVnd, 'PostgreSQL confirmed budget bucket matches the legacy TypeScript calculation');
   assert.equal(Number(budgetBucketsSql.estimatedTargetVnd), helperEstimatedTargetVnd, 'PostgreSQL estimate bucket matches the legacy TypeScript calculation');
   near(budgetBucketsSql.plannedRate == null ? null : Number(budgetBucketsSql.plannedRate), helperPlannedRate, 'PostgreSQL planning-rate bucket matches the legacy TypeScript calculation');
+
+  const effectiveRateForBudget = helperCardRateForBudget(expenseRows);
+  const helperEstimatedUnconvertedVnd = helperEstimatedTargetVnd +
+    exchangeRows.reduce((sum, x) => {
+      if (x.mode === 'RUB_VND' || (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') || x.vndReceived != null) return sum;
+      if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null) {
+        return sum + Number(x.targetReceived) * (effectiveRateForBudget ?? helperPlannedRate ?? 0);
+      }
+      if (x.usdtReceived != null) return sum + Number(x.usdtReceived) * (effectiveRateForBudget ?? helperPlannedRate ?? 0);
+      return sum;
+    }, 0);
+  const helperBalance = helperConfirmedVnd + helperEstimatedUnconvertedVnd - Number(allExpenseAggregate._sum.amountVnd ?? 0);
+  const sqlEstimatedUnconvertedVnd = Number(budgetBucketsSql.estimatedTargetVnd) +
+    Number(budgetBucketsSql.estimatedUsdt) * (effectiveRateForBudget ?? helperPlannedRate ?? 0);
+  const sqlBalance = Number(budgetBucketsSql.confirmedVnd) + sqlEstimatedUnconvertedVnd -
+    Number(allExpenseAggregate._sum.amountVnd ?? 0);
+  near(sqlEstimatedUnconvertedVnd, helperEstimatedUnconvertedVnd, 'PostgreSQL estimated VND budget components match the legacy TypeScript calculation');
+  near(sqlBalance, helperBalance, 'PostgreSQL confirmed plus estimated balance matches the legacy TypeScript calculation');
 
   assert.equal(Number(directTargetSql.totalVnd), 460_000, 'PostgreSQL direct-target aggregate must prefer the canonical value over stale legacy vndReceived');
   assert.equal(Number(indirectActualSql.totalVnd), 2_300_000, 'PostgreSQL confirmed indirect VND total must exclude planning-only rows');
