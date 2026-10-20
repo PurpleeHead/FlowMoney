@@ -56,3 +56,10 @@ Existing indexes on `Expense(userId, date)` and `Exchange(userId, createdAt)` al
 3. Run unit/API tests, production build, migration CI, and dependency audit.
 4. Inspect query plans and payload sizes with realistic history sizes.
 5. Keep the refactor in a reviewed PR; do not merge or deploy until every gate passes.
+
+
+## Follow-up verification — 2026-10-20
+
+On head `f4c2562acab3a81f494b2ea85bdd3e3cb894ef44`, CI run [#1091](https://github.com/PurpleeHead/FlowMoney/actions/runs/39410151728) and dependency/security run [#142](https://github.com/PurpleeHead/FlowMoney/actions/runs/39410151781) passed. The follow-up adds an API regression test for a direct `RUB_TARGET → VND` exchange: its `targetVndEquivalent` is counted as confirmed VND once, does not create an unconverted-VND estimate, and does not mark the resulting balance as estimated. This verifies the direct-target shape where `vndReceived` is null and `targetVndEquivalent` carries the actual VND amount; it does not replace the still-required PostgreSQL aggregate-equivalence comparison or production release gates.
+
+The remaining dashboard performance work is to move exchange-history-derived summary calculations into user-scoped PostgreSQL aggregates without changing eligibility rules for actual versus planned outcomes. Do not implement a row limit as a substitute. Compare aggregate results against the current calculation on mixed-mode fixtures before changing runtime behavior.
