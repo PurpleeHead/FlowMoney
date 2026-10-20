@@ -410,6 +410,8 @@ describe('dashboard direct RUB-to-VND target exchange', () => {
         balanceVnd: number | null;
         balanceIsEstimated: boolean;
         effectiveVndPerRub: number | null;
+        observedVndPerUsdt: number | null;
+        effectiveVndPerUsdt: number | null;
       };
       assert.equal(body.confirmedExchangeVnd, 1000000);
       assert.equal(body.estimatedUnconvertedVnd, 0);
@@ -417,8 +419,8 @@ describe('dashboard direct RUB-to-VND target exchange', () => {
       assert.equal(body.balanceIsEstimated, false);
       // A legacy direct VND target is not a RUB→USDT→VND rate observation,
       // even when stale USDT/VND fields remain on the record.
-      assert.equal((body as { observedVndPerUsdt: number | null }).observedVndPerUsdt, null);
-      assert.equal((body as { effectiveVndPerUsdt: number | null }).effectiveVndPerUsdt, null);
+      assert.equal(body.observedVndPerUsdt, null);
+      assert.equal(body.effectiveVndPerUsdt, null);
       assert.ok(body.effectiveVndPerRub != null);
       assert.ok(
         Math.abs(body.effectiveVndPerRub - (1000000 / 3500)) < 1e-10,
@@ -730,11 +732,15 @@ describe('dashboard legacy direct VND target records', () => {
         estimatedUnconvertedVnd: number;
         balanceVnd: number | null;
         balanceIsEstimated: boolean;
+        observedVndPerUsdt: number | null;
+        effectiveVndPerUsdt: number | null;
       };
       assert.equal(body.confirmedExchangeVnd, 1000000);
       assert.equal(body.estimatedUnconvertedVnd, 0);
       assert.equal(body.balanceVnd, 1000000);
       assert.equal(body.balanceIsEstimated, false);
+      assert.equal(body.observedVndPerUsdt, null);
+      assert.equal(body.effectiveVndPerUsdt, null);
     });
   });
 });
