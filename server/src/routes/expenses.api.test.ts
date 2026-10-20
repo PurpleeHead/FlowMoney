@@ -617,7 +617,7 @@ describe('expense list response privacy', () => {
     expenseModel.findMany = async (args: any) => {
       queryArgs = args;
       return [{
-        id: 'expense-list-1', userId: 'user-42', title: 'Lunch', category: 'Food',
+        id: 'expense-list-1', title: 'Lunch', category: 'Food',
         amount: 100, currency: 'RUB', amountVnd: null, amountRub: 100,
         usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'),
         createdAt: new Date('2026-10-18T08:00:00.000Z'),
