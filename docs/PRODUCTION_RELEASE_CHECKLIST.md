@@ -96,3 +96,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] The workspace's only listed PostgreSQL instance remains `flowmoney-test-db` / `flowmoney_test_db` (Free plan, expires 2026-11-15). This does not establish which database the live service uses.
 - [ ] Production database identity, backup/restore proof, legacy wallet reconciliation, Render configuration approval, PostgreSQL aggregate-equivalence comparison, realistic query/payload measurements, and production smoke tests remain open.
 - [ ] PR #83 remains Draft and unmerged. No production database access, deployment, or live Render setting change was performed.
+
+
+## Latest checklist verification — 2026-10-20
+
+- [x] CI run #1191 passed on checklist update commit `024e78a0fea2e6e47ac51f747b4224e39906aad9`.
+- [x] Security/dependency workflow #192 passed on the same commit.
+- [x] These are repository-level checks only. No production database, backup/restore, Render configuration change, deploy, or smoke test was performed.
+- [ ] Production database identity, encrypted backup and isolated restore drill, legacy wallet reconciliation, Render config approval, PostgreSQL aggregate-equivalence comparison, realistic query/payload measurements, and target-environment smoke tests remain open.
+- [ ] PR #83 remains Draft and unmerged. Do not merge or deploy based on CI success alone.
