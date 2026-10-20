@@ -2,7 +2,8 @@ import {Router} from 'express';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
-import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapActualVndUsdtExchanges, mapRubUsdtExchanges } from '../lib/money.js';
+import { calculateObservedVndPerUsdt } from '../lib/money.js';
+import { getDashboardExchangeAggregates } from '../lib/dashboard-aggregates.js';
 
 const router=Router();
 router.use(auth);
@@ -38,6 +39,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       prisma.expense.aggregate({where:{userId:req.user!.id},_sum:{amountVnd:true}}),
       prisma.expense.aggregate({where:{userId:req.user!.id,date:{gte:start},},_sum:{amountVnd:true}}),
       prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{gt:0},usdtCharged:{gt:0}},_sum:{amountVnd:true,usdtCharged:true}}),
+      getDashboardExchangeAggregates(req.user!.id),
     ]);
 
     const totalVnd=Number(totalExpenseAggregate._sum.amountVnd ?? 0);
@@ -51,85 +53,46 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       : [];
     const observedVndPerUsdt=calculateObservedVndPerUsdt(purchases);
 
-    // Weighted by USDT received, using the same RUB/USDT helper as expense saving.
-    const effectiveRubPerUsdt=calculateRubPerUsdt(
-      mapRubUsdtExchanges(exchanges.map(x => ({
-        mode: x.mode,
-        rubSpent: Number(x.rubSpent),
-        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
-        targetCurrency: x.targetCurrency,
-        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
-      })))
-    );
-    const knownVndExchanges=mapActualVndUsdtExchanges(exchanges.map(x=>({
-      mode:x.mode,
-      usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),
-      vndReceived:x.vndReceived==null?null:Number(x.vndReceived),
-    })));
-    const exchangeVnd=knownVndExchanges.reduce((sum,x)=>sum+x.vndReceived,0);
-    const exchangeUsdt=knownVndExchanges.reduce((sum,x)=>sum+x.usdtReceived,0);
-    // Prefer actual card-purchase observations. Otherwise use only exchanges with a recorded VND outcome.
-    const effectiveVndPerUsdt=observedVndPerUsdt!=null
-      ? observedVndPerUsdt
-      : exchangeUsdt>0 ? exchangeVnd/exchangeUsdt : null;
-    const plannedExchanges=exchanges.filter(x=>x.mode!=='RUB_VND'&&!(x.mode==='RUB_TARGET'&&x.targetCurrency==='VND')&&x.vndReceived==null&&x.usdtReceived!=null&&x.planningVndPerUsdt!=null);
-    const plannedUsdt=plannedExchanges.reduce((sum,x)=>sum+Number(x.usdtReceived),0);
-    const planningVndPerUsdt=plannedUsdt>0
-      ? plannedExchanges.reduce((sum,x)=>sum+Number(x.usdtReceived)*Number(x.planningVndPerUsdt),0)/plannedUsdt
+    // Exchange-history financial totals are calculated by user-scoped PostgreSQL aggregates.
+    // The full exchange query is temporarily retained for the response until aggregate equivalence
+    // is established and the recent-activity window is enabled in the next rollout step.
+    const effectiveRubPerUsdt = exchangeAggregates.rubUsdtUsdt > 0
+      ? exchangeAggregates.rubUsdtRub / exchangeAggregates.rubUsdtUsdt
       : null;
-    const balanceRateVndPerUsdt=effectiveVndPerUsdt??planningVndPerUsdt;
-    const effectiveVndPerRub = calculateObservedVndPerRub({
-      directExchanges: [
-        ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND' && (x.targetVndEquivalent != null || x.targetReceived != null || x.vndReceived != null)).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) })),
-      ],
-      actualVndExchanges: exchanges
-        .filter(x => x.mode !== 'RUB_VND' && !(x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-      cardPurchases: purchases.map(x => ({
-        amountVnd: Number(x.amountVnd),
-        usdtCharged: Number(x.usdtCharged),
-      })),
-      rubPerUsdt: effectiveRubPerUsdt,
-    });
+    const exchangeVnd = exchangeAggregates.actualVnd;
+    const exchangeUsdt = exchangeAggregates.actualUsdt;
+    // Prefer actual card-purchase observations. Otherwise use only exchanges with a recorded actual VND outcome.
+    const effectiveVndPerUsdt = observedVndPerUsdt != null
+      ? observedVndPerUsdt
+      : exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : null;
+    const planningVndPerUsdt = exchangeAggregates.plannedUsdt > 0
+      ? exchangeAggregates.plannedWeightedVnd / exchangeAggregates.plannedUsdt
+      : null;
+    const balanceRateVndPerUsdt = effectiveVndPerUsdt ?? planningVndPerUsdt;
 
-    // A budget balance is a planning estimate: actual VND received is counted as-is;
-    // USDT-only top-ups are converted using the observed VND/USDT rate when available.
-    // Only actual VND outcomes are confirmed. A non-VND target's VND equivalent
-    // is a valuation estimate based on a manually supplied conversion rate.
-    const confirmedExchangeVnd = exchanges.reduce((sum, x) => {
-      // A direct RUB_TARGET → VND record may carry both the canonical target
-      // equivalent and a legacy vndReceived value. Count that transaction once.
-      if (x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') {
-        const directVnd = x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived;
-        return sum + (directVnd != null ? Number(directVnd) : 0);
-      }
-      return sum + (x.vndReceived != null ? Number(x.vndReceived) : 0);
-    }, 0);
-    const isUnpricedUsdtTopUp = (x: typeof exchanges[number]) =>
-      (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
-      (x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null);
-    const unpricedUsdtTopUps = exchanges.some(isUnpricedUsdtTopUp);
-    const estimatedTargetCurrencyVnd = exchanges.reduce((sum, x) =>
-      sum + (x.mode === 'RUB_TARGET' && x.targetCurrency !== 'VND' && x.targetVndEquivalent != null
-        ? Number(x.targetVndEquivalent) : 0), 0);
-    const estimatedUnconvertedVnd = estimatedTargetCurrencyVnd + (balanceRateVndPerUsdt == null ? 0 : exchanges
-      .filter(x => x.mode !== 'RUB_VND' && !(x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') && x.vndReceived == null &&
-        ((x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null) ||
-         x.usdtReceived != null))
-      .reduce((sum, x) => {
-        const usdt = x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT'
-          ? Number(x.targetReceived)
-          : Number(x.usdtReceived);
-        return sum + usdt * balanceRateVndPerUsdt;
-      }, 0));
-    const balanceVnd = exchanges.length===0 || (unpricedUsdtTopUps && balanceRateVndPerUsdt == null)
+    // Match calculateObservedVndPerRub: card purchases contribute to the RUB denominator
+    // only when a valid historical RUB/USDT cost basis exists.
+    const rateVndTotal = exchangeAggregates.rateExchangeVnd +
+      (effectiveRubPerUsdt != null && effectiveRubPerUsdt > 0 ? observedVnd : 0);
+    const rateRubTotal = exchangeAggregates.rateExchangeRub +
+      (effectiveRubPerUsdt != null && effectiveRubPerUsdt > 0 ? observedUsdt * effectiveRubPerUsdt : 0);
+    const effectiveVndPerRub = rateRubTotal > 0 && rateVndTotal > 0
+      ? rateVndTotal / rateRubTotal
+      : null;
+
+    const confirmedExchangeVnd = exchangeAggregates.confirmedVnd;
+    const unpricedUsdtTopUps = exchangeAggregates.hasUnpricedUsdtTopUp;
+    const estimatedTargetCurrencyVnd = exchangeAggregates.estimatedTargetVnd;
+    const estimatedUnconvertedVnd = estimatedTargetCurrencyVnd +
+      (balanceRateVndPerUsdt == null ? 0 : exchangeAggregates.estimatedUsdt * balanceRateVndPerUsdt);
+    const balanceVnd = exchangeAggregates.exchangeCount === 0 ||
+      (unpricedUsdtTopUps && balanceRateVndPerUsdt == null)
       ? null
       : confirmedExchangeVnd + estimatedUnconvertedVnd - totalVnd;
 
     res.json({
       totalVnd,monthVnd,balanceVnd,confirmedExchangeVnd,estimatedUnconvertedVnd,planningVndPerUsdt,
-      balanceIsEstimated: estimatedUnconvertedVnd > 0 || exchanges.some(x => x.mode === 'RUB_TARGET' && x.targetCurrency !== 'VND' && x.targetVndEquivalent != null),
+      balanceIsEstimated: estimatedUnconvertedVnd > 0 || exchangeAggregates.hasEstimatedTarget,
       observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerUsdt,effectiveVndPerRub,
       expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:x.amountVnd==null?null:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
       exchanges:exchanges.map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),planningVndPerUsdt:x.planningVndPerUsdt==null?null:Number(x.planningVndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),targetReceived:x.targetReceived==null?null:Number(x.targetReceived),targetToVndRate:x.targetToVndRate==null?null:Number(x.targetToVndRate),targetVndEquivalent:x.targetVndEquivalent==null?null:Number(x.targetVndEquivalent),targetCurrency:x.targetCurrency,effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:x.effectiveRubPerUsdt==null?null:Number(x.effectiveRubPerUsdt)}))
