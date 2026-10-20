@@ -118,11 +118,15 @@ describe('direct exchange observations', () => {
     assert.deepEqual(mapDirectVndExchanges([
       { mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250000 },
       { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'VND', targetVndEquivalent: 460000 },
+      { mode: 'RUB_TARGET', rubSpent: 1500, targetCurrency: 'VND', targetReceived: 350000 },
+      { mode: 'RUB_TARGET', rubSpent: 1200, targetCurrency: 'VND', vndReceived: 275000 },
       { mode: 'RUB_TARGET', rubSpent: 500, targetCurrency: 'USDT', targetVndEquivalent: 130000 },
       { mode: 'RUB_USDT_VND', rubSpent: 3000, vndReceived: null },
     ]), [
       { rubSpent: 1000, vndReceived: 250000 },
       { rubSpent: 2000, vndReceived: 460000 },
+      { rubSpent: 1500, vndReceived: 350000 },
+      { rubSpent: 1200, vndReceived: 275000 },
     ]);
   });
 });
