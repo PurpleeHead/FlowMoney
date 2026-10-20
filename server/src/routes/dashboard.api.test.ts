@@ -302,3 +302,52 @@ describe('dashboard weighted rates preserve actual observations', () => {
     });
   });
 });
+
+
+describe('dashboard aggregates stay independent from chart history window', () => {
+  it('keeps all-time totals and weighted purchase rates while returning only chart-window expenses', async () => {
+    const recent = {
+      id: 'recent-expense', title: 'Recent', category: 'Food', amount: 50000,
+      currency: 'VND', amountVnd: 50000, amountRub: 140, usdtCharged: 2,
+      date: new Date(), receiptId: null,
+    };
+    const old = {
+      id: 'old-expense', title: 'Old', category: 'Food', amount: 100000,
+      currency: 'VND', amountVnd: 100000, amountRub: 280, usdtCharged: 5,
+      date: new Date('2024-01-15T08:00:00.000Z'), receiptId: null,
+    };
+    expenseModel.findMany = async (args: any) => {
+      const all = [recent, old];
+      return args.where?.date?.gte
+        ? all.filter(row => row.date >= args.where.date.gte)
+        : all;
+    };
+    exchangeModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalVnd: number;
+        monthVnd: number;
+        observedVnd: number;
+        observedUsdt: number;
+        observedVndPerUsdt: number | null;
+        expenses: Array<{ id: string }>;
+      };
+      assert.equal(body.totalVnd, 150000);
+      assert.equal(body.monthVnd, 50000);
+      assert.equal(body.observedVnd, 150000);
+      assert.equal(body.observedUsdt, 7);
+      assert.ok(body.observedVndPerUsdt != null);
+      assert.ok(Math.abs(body.observedVndPerUsdt - (150000 / 7)) < 1e-8);
+      assert.deepEqual(body.expenses.map(row => row.id), ['recent-expense']);
+    });
+  });
+});
