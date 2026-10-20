@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { parseListPageQuery, encodeListCursor, listAfterCursor } from '../lib/list-pagination.js';
 import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
@@ -129,14 +130,31 @@ router.post('/', async (req: AuthedRequest, res, next) => {
 
 router.get('/', async (req: AuthedRequest, res, next) => {
   try {
+    const page = parseListPageQuery(req.query as Record<string, unknown>);
+    if (page.error) {
+      res.status(400).json({ message: 'Invalid pagination parameters.' });
+      return;
+    }
+    const where = { userId: req.user!.id, ...listAfterCursor('createdAt', page.cursor) };
     const records = await prisma.receipt.findMany({
-      where: { userId: req.user!.id },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      // Return only receipt data required by clients; never expose the owner ID.
+      where: page.requested ? where : { userId: req.user!.id },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      take: page.requested ? page.limit + 1 : 100,
       select: { id: true, rawText: true, items: true, createdAt: true },
     });
-    res.json(records);
+    if (!page.requested) {
+      res.json(records);
+      return;
+    }
+    const hasMore = records.length > page.limit;
+    const items = hasMore ? records.slice(0, page.limit) : records;
+    const last = items.at(-1);
+    res.json({
+      items,
+      limit: page.limit,
+      hasMore,
+      nextCursor: hasMore && last ? encodeListCursor(last.createdAt, last.id) : null,
+    });
   } catch (e) {
     next(e);
   }
