@@ -327,7 +327,8 @@ describe('dashboard query shape', () => {
       'id', 'title', 'usdtCharged',
     ].sort());
     assert.deepEqual(exchangeArgs.where, { userId: 'dashboard-user' });
-    assert.deepEqual(exchangeArgs.orderBy, { createdAt: 'desc' });
+    assert.deepEqual(exchangeArgs.orderBy, [{ createdAt: 'desc' }, { id: 'desc' }]);
+    assert.equal(exchangeArgs.take, 100, 'dashboard activity query must be bounded independently from all-history aggregates');
     assert.equal(dashboardAggregateArgs.length, 3);
     assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
     const allTimeAggregate = dashboardAggregateArgs.find(args => args._sum.amountVnd && !args.where.date);
