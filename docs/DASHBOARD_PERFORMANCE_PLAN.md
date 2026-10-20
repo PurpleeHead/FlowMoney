@@ -141,3 +141,18 @@ That run measured approximately **5.9× faster by median** for the SQL aggregate
 The benchmark also records `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` for a representative user-scoped `COUNT`/sum query. After `ANALYZE`, PostgreSQL estimated and scanned 10,000 rows with a sequential scan, reported about 1.53 ms for the scan and 2.60 ms for the aggregate node, 179 shared buffer hits and zero shared reads. Because every row in this disposable table belonged to the one benchmark user, a sequential scan is reasonable; this is not evidence that a multi-user production query should avoid the existing `Exchange(userId, createdAt)` index.
 
 **Still open:** obtain `EXPLAIN (ANALYZE, BUFFERS)` for the complete multi-bucket aggregate statement on a representative multi-user disposable fixture; measure end-to-end dashboard HTTP latency and response size; and repeat at multiple history sizes. Do not add indexes or claim production latency improvement based solely on this access-path sample.
+
+
+## Exact dashboard aggregate SQL plan — CI disposable PostgreSQL
+
+Workflow [39438766807](https://github.com/PurpleeHead/FlowMoney/actions/runs/39438766807) passed on 2026-10-20 at commit `26220c8dc2e1e83d32d676adf758d51b9efbccf3`. The benchmark now calls `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` on the **same parameterized SQL fragment used by `getDashboardExchangeAggregates`**, rather than a simplified representative query.
+
+With 10,000 synthetic rows for the temporary user, the complete aggregate statement reported:
+
+- Aggregate node execution: **20.304 ms**.
+- **179 shared buffer hits**, zero shared buffer reads, and zero temp blocks.
+- PostgreSQL used a sequential scan and read all 10,000 fixture rows. The benchmark table contains only that one user, so this plan is expected for the fixture; it does not establish the optimal plan for a multi-user database.
+
+The same CI run measured median **20.62 ms** for the SQL aggregate path versus **113.97 ms** for fetching all rows and aggregating in Node.js, about **5.5× faster** in this run. As above, these timings are a directional microbenchmark on a disposable CI database, not a production latency guarantee.
+
+The exact aggregate query plan is now captured automatically in CI output. Remaining performance evidence: run the benchmark with multiple users and realistic per-user history sizes, capture dashboard HTTP response time and payload size, and repeat locally or on a representative staging database. No production database, Render configuration, or deployment was changed.
