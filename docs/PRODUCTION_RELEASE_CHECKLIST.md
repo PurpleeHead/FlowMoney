@@ -105,3 +105,13 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] These are repository-level checks only. No production database, backup/restore, Render configuration change, deploy, or smoke test was performed.
 - [ ] Production database identity, encrypted backup and isolated restore drill, legacy wallet reconciliation, Render config approval, PostgreSQL aggregate-equivalence comparison, realistic query/payload measurements, and target-environment smoke tests remain open.
 - [ ] PR #83 remains Draft and unmerged. Do not merge or deploy based on CI success alone.
+
+
+## Latest checklist-only verification — 2026-10-20
+
+- [x] CI workflow run [#1193](https://github.com/PurpleeHead/FlowMoney/actions/runs/39424319112) passed on head `266b3352fa1205aa08ed741850135047454344ba`.
+- [x] Security dependency workflow run [#193](https://github.com/PurpleeHead/FlowMoney/actions/runs/39424319156) passed on the same head.
+- [x] A fresh read-only Render inspection reconfirmed that `flowmoney-app` is live on `review/pr-3-fix`, auto-deploys on commits, checks `/api/health`, and runs `prisma migrate deploy` at startup. Latest recorded live commit remains `bb2bb41d801f466049c9c50e7bd2da02e007d235` from 2026-10-17.
+- [x] The only PostgreSQL resource listed in the Render workspace is `flowmoney-test-db`, which expires 2026-11-15. Its presence does not identify the database configured for the live service.
+- [ ] No production database identity/backup/restore proof, legacy-wallet reconciliation, owner-approved Render change, aggregate-equivalence comparison, realistic query measurements, or production smoke test has been completed by these repository checks.
+- [ ] PR #83 remains Draft and unmerged. No production database access, deployment, or live configuration change was performed.
