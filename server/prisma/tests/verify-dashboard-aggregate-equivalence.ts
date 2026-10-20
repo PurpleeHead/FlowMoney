@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { prisma } from '../../src/services/prisma.js';
 import {
+  calculateObservedVndPerRub,
   calculateObservedVndPerUsdt,
   calculateRubPerUsdt,
   mapDirectVndExchanges,
@@ -162,6 +163,40 @@ try {
     WHERE "userId" = ${mainUserId}
   `;
 
+  const [vndRubBucketsSql] = await prisma.$queryRaw<Array<{ exchangeRub: unknown; exchangeVnd: unknown }>>`
+    SELECT
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+          THEN "rubSpent"
+        ELSE "rubSpent"
+      END) FILTER (WHERE
+        "rubSpent" > 0 AND (
+          ("mode" = 'RUB_VND' AND "vndReceived" > 0)
+          OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+              AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
+          OR ("mode" <> 'RUB_VND'
+              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+              AND "vndReceived" > 0)
+        )
+      ), 0) AS "exchangeRub",
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+          THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
+        ELSE "vndReceived"
+      END) FILTER (WHERE
+        "rubSpent" > 0 AND (
+          ("mode" = 'RUB_VND' AND "vndReceived" > 0)
+          OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+              AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
+          OR ("mode" <> 'RUB_VND'
+              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+              AND "vndReceived" > 0)
+        )
+      ), 0) AS "exchangeVnd"
+    FROM "Exchange"
+    WHERE "userId" = ${mainUserId}
+  `;
+
   const [directTargetSql] = await prisma.$queryRaw<Array<{ totalVnd: unknown }>>`
     SELECT COALESCE(SUM(COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")), 0) AS "totalVnd"
     FROM "Exchange"
@@ -251,6 +286,26 @@ try {
   assert.deepEqual(observedExchangeRows, [{ usdtReceived: 93.7853, vndReceived: 2_300_000 }], 'only actual indirect exchange outcomes should become observed rate inputs');
   const helperObservedVndUsdt = calculateObservedVndPerUsdt(observedExchangeRows.map(x => ({ amountVnd: x.vndReceived, usdtCharged: x.usdtReceived })));
   near(helperObservedVndUsdt, Number(indirectActualSql.totalVnd) / Number(indirectActualSql.totalUsdt), 'PostgreSQL confirmed VND/USDT aggregate matches the existing helper and excludes planning-only rows');
+
+  const helperVndPerRub = calculateObservedVndPerRub({
+    directExchanges: exchangeRows.filter(x => x.mode === 'RUB_VND' || (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND'))
+      .map(x => ({
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.mode === 'RUB_TARGET'
+          ? Number(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived ?? 0)
+          : Number(x.vndReceived ?? 0),
+      })),
+    actualVndExchanges: exchangeRows
+      .filter(x => x.mode !== 'RUB_VND' && !(x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') && x.vndReceived != null)
+      .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+    cardPurchases: expenseRows
+      .filter(x => x.amountVnd != null && Number(x.amountVnd) > 0 && x.usdtCharged != null && Number(x.usdtCharged) > 0)
+      .map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) })),
+    rubPerUsdt: helperRubUsdt,
+  });
+  const sqlVndPerRub = (Number(vndRubBucketsSql.exchangeVnd) + Number(cardAggregate._sum.amountVnd)) /
+    (Number(vndRubBucketsSql.exchangeRub) + Number(cardAggregate._sum.usdtCharged) * helperRubUsdt!);
+  near(sqlVndPerRub, helperVndPerRub, 'PostgreSQL weighted VND/RUB rate matches direct, indirect, and card-purchase TypeScript observations');
 
   const directRows = mapDirectVndExchanges(exchangeRows.map(x => ({
     mode: x.mode,
