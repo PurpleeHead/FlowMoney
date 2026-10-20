@@ -13,6 +13,7 @@ const originalUserFindFirst = userModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
 const originalExchangeFindMany = exchangeModel.findMany;
 const previousSecret = process.env.JWT_SECRET;
+let dashboardAggregateArgs: any[] = [];
 
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
@@ -25,7 +26,9 @@ afterEach(() => {
 async function withApi(run: (baseUrl: string) => Promise<void>) {
   // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
   // as PostgreSQL. This keeps route tests independent of a live database.
+  dashboardAggregateArgs = [];
   expenseModel.aggregate = async (args: any) => {
+    dashboardAggregateArgs.push(args);
     const rows = await expenseModel.findMany({});
     const where = args.where ?? {};
     const filtered = rows.filter((row: any) => {
@@ -228,6 +231,8 @@ describe('dashboard query shape', () => {
     ].sort());
     assert.deepEqual(exchangeArgs.where, { userId: 'dashboard-user' });
     assert.deepEqual(exchangeArgs.orderBy, { createdAt: 'desc' });
+    assert.equal(dashboardAggregateArgs.length, 3);
+    assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
     assert.deepEqual(Object.keys(exchangeArgs.select).sort(), [
       'createdAt', 'effectiveRubPerUsdt', 'effectiveVndPerRub', 'id', 'mode',
       'planningVndPerUsdt', 'rubSpent', 'targetCurrency', 'targetReceived',
