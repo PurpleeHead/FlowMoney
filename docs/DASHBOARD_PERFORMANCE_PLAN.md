@@ -67,3 +67,8 @@ The remaining dashboard performance work is to move exchange-history-derived sum
 ## Follow-up verification — 2026-10-20 (latest head)
 
 On PR #83 head `bcf1cef6f28460dc53f20f87115bb29acf875ef2`, CI run [#1097](https://github.com/PurpleeHead/FlowMoney/actions/runs/39410914486) and dependency/security run [#145](https://github.com/PurpleeHead/FlowMoney/actions/runs/39410914440) both passed. The added mixed-mode dashboard regression test combines a direct `RUB_VND` operation and a `RUB_TARGET → VND` operation, then asserts the confirmed VND balance and weighted observed VND/RUB rate count each actual outcome exactly once. This is a regression test only; the required old-vs-PostgreSQL aggregate equivalence fixture, realistic query-plan/payload measurements, and production DB/backup/restore/smoke-test gates remain open.
+
+
+## Follow-up verification — 2026-10-20 (combined source observations)
+
+On PR #83 head `b6f1b13cbc4efcf1fb077bf20be9876054e11a8c`, CI run [#1105](https://github.com/PurpleeHead/FlowMoney/actions/runs/39411632978) and dependency/security run [#149](https://github.com/PurpleeHead/FlowMoney/actions/runs/39411632655) both passed. The new dashboard API regression scenario combines direct `RUB_VND`, direct `RUB_TARGET → VND`, an exchange with an actual VND outcome, and a card purchase. It asserts the weighted observed VND/RUB rate, confirmed exchange VND, and that card spending reduces the budget balance without being counted as exchange proceeds. This closes that specific regression scenario only; PostgreSQL aggregate equivalence, realistic query-plan/payload measurements, and operational production gates remain open. This documentation update itself requires fresh CI/security checks.
