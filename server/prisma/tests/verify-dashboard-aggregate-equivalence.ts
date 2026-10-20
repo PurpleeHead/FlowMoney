@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { prisma } from '../../src/services/prisma.js';
+import { getDashboardExchangeAggregates } from '../../src/lib/dashboard-aggregates.js';
 import {
   calculateObservedVndPerRub,
   calculateObservedVndPerUsdt,
@@ -96,6 +97,22 @@ try {
     }),
     prisma.expense.aggregate({ where: { userId: mainUserId }, _sum: { amountVnd: true } }),
   ]);
+
+  const postgresAggregates = await getDashboardExchangeAggregates(mainUserId);
+  assert.equal(postgresAggregates.exchangeCount, rows.length, 'dashboard aggregate count is scoped to the authenticated user');
+  near(postgresAggregates.rubUsdtRub, 14_300, 'aggregate RUB/USDT RUB numerator');
+  near(postgresAggregates.rubUsdtUsdt, 159.7853, 'aggregate RUB/USDT USDT denominator');
+  near(postgresAggregates.actualVnd, 2_300_000, 'aggregate actual indirect VND');
+  near(postgresAggregates.actualUsdt, 93.7853, 'aggregate actual indirect USDT');
+  near(postgresAggregates.plannedWeightedVnd, 250_000, 'aggregate planning-rate weighted numerator');
+  near(postgresAggregates.plannedUsdt, 10, 'aggregate planning-rate denominator');
+  near(postgresAggregates.confirmedVnd, 3_010_000, 'aggregate confirmed VND budget');
+  near(postgresAggregates.estimatedTargetVnd, 920_000, 'aggregate non-VND target estimate');
+  near(postgresAggregates.estimatedUsdt, 66, 'aggregate USDT requiring VND estimate');
+  assert.equal(postgresAggregates.hasUnpricedUsdtTopUp, true, 'aggregate detects top-ups without actual VND outcome');
+  assert.equal(postgresAggregates.hasEstimatedTarget, true, 'aggregate detects non-VND target estimates');
+  near(postgresAggregates.rateExchangeRub, 11_300, 'rate aggregate RUB basis');
+  near(postgresAggregates.rateExchangeVnd, 3_010_000, 'rate aggregate VND basis');
 
   assert.equal(exchangeRows.length, rows.length, 'all exchange reads must be user-scoped');
   assert.equal(expenseRows.length, 3, 'all expense reads must be user-scoped');
