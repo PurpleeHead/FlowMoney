@@ -65,7 +65,7 @@ export function buildJournal(
   limit = 100,
   movements: JournalWalletMovement[] = [],
 ): JournalEntry[] {
-  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(500, Math.floor(limit))) : 100;
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(501, Math.floor(limit))) : 100;
   const expenseEntries: JournalEntry[] = expenses.map((expense) => ({
     id: `expense:${expense.id}`,
     type: 'expense',
@@ -106,6 +106,6 @@ export function buildJournal(
     note: movement.note,
   }));
   return [...expenseEntries, ...exchangeEntries, ...movementEntries]
-    .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || a.id.localeCompare(b.id))
+    .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .slice(0, safeLimit);
 }
