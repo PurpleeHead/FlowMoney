@@ -187,7 +187,19 @@ router.post('/', async (req: AuthedRequest, res, next) => {
 
 router.get('/', async (req: AuthedRequest, res, next) => {
   try {
-    const records = await prisma.exchange.findMany({ where: { userId: req.user!.id }, orderBy: { createdAt: 'desc' }, take: 100 });
+    const records = await prisma.exchange.findMany({
+      where: { userId: req.user!.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      // The caller already owns this scoped collection; its internal userId is not API data.
+      select: {
+        id: true, mode: true, targetCurrency: true, targetReceived: true,
+        targetToVndRate: true, targetVndEquivalent: true, rubSpent: true,
+        usdtReceived: true, vndPerUsdt: true, planningVndPerUsdt: true,
+        vndFee: true, vndReceived: true, effectiveVndPerRub: true,
+        effectiveRubPerUsdt: true, createdAt: true,
+      },
+    });
     res.json(records);
   } catch (e) { next(e); }
 });
