@@ -42,6 +42,8 @@ try {
   const rows = [
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 2_300_000 },
     { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 5000, targetReceived: 56 },
+    // Legacy casing/whitespace must behave like the normalized TypeScript helper.
+    { mode: 'RUB_TARGET', targetCurrency: ' usdt ', rubSpent: 200, targetReceived: 2 },
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
     // Canonical VND must win over a stale legacy vndReceived value.
     { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999 },
@@ -100,15 +102,15 @@ try {
 
   const postgresAggregates = await getDashboardExchangeAggregates(mainUserId);
   assert.equal(postgresAggregates.exchangeCount, rows.length, 'dashboard aggregate count is scoped to the authenticated user');
-  near(postgresAggregates.rubUsdtRub, 14_300, 'aggregate RUB/USDT RUB numerator');
-  near(postgresAggregates.rubUsdtUsdt, 159.7853, 'aggregate RUB/USDT USDT denominator');
+  near(postgresAggregates.rubUsdtRub, 14_500, 'aggregate RUB/USDT RUB numerator includes normalized legacy target currencies');
+  near(postgresAggregates.rubUsdtUsdt, 161.7853, 'aggregate RUB/USDT USDT denominator includes normalized legacy target currencies');
   near(postgresAggregates.actualVnd, 2_300_000, 'aggregate actual indirect VND');
   near(postgresAggregates.actualUsdt, 93.7853, 'aggregate actual indirect USDT');
   near(postgresAggregates.plannedWeightedVnd, 250_000, 'aggregate planning-rate weighted numerator');
   near(postgresAggregates.plannedUsdt, 10, 'aggregate planning-rate denominator');
   near(postgresAggregates.confirmedVnd, 3_010_000, 'aggregate confirmed VND budget');
   near(postgresAggregates.estimatedTargetVnd, 920_000, 'aggregate non-VND target estimate');
-  near(postgresAggregates.estimatedUsdt, 66, 'aggregate USDT requiring VND estimate');
+  near(postgresAggregates.estimatedUsdt, 68, 'aggregate USDT requiring VND estimate includes normalized legacy target currencies');
   assert.equal(postgresAggregates.hasUnpricedUsdtTopUp, true, 'aggregate detects top-ups without actual VND outcome');
   assert.equal(postgresAggregates.hasEstimatedTarget, true, 'aggregate detects non-VND target estimates');
   near(postgresAggregates.rateExchangeRub, 11_300, 'rate aggregate RUB basis');
@@ -291,8 +293,8 @@ try {
     targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
   }))));
   const sqlRubUsdt = Number(rubUsdtSql.rubTotal) / Number(rubUsdtSql.usdtTotal);
-  near(Number(rubUsdtSql.rubTotal), 8300 + 5000 + 1000, 'PostgreSQL RUB/USDT numerator includes all eligible USDT acquisitions, including planning-only VND outcomes');
-  near(Number(rubUsdtSql.usdtTotal), 93.7853 + 56 + 10, 'PostgreSQL RUB/USDT denominator includes all eligible received USDT, even when VND outcome is not yet known');
+  near(Number(rubUsdtSql.rubTotal), 8300 + 5000 + 1000 + 200, 'PostgreSQL RUB/USDT numerator includes all eligible USDT acquisitions, including normalized legacy target currencies');
+  near(Number(rubUsdtSql.usdtTotal), 93.7853 + 56 + 10 + 2, 'PostgreSQL RUB/USDT denominator includes all eligible received USDT, even when VND outcome is not yet known');
   near(sqlRubUsdt, helperRubUsdt, 'weighted RUB/USDT rate including direct RUB→USDT target');
 
   const observedExchangeRows = mapActualVndUsdtExchanges(exchangeRows.map(x => ({
