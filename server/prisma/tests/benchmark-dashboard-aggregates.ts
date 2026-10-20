@@ -125,6 +125,15 @@ try {
     }, { count: 0, rubUsdtRub: 0, rubUsdtUsdt: 0, actualVnd: 0, actualUsdt: 0, confirmedVnd: 0, estimatedTargetVnd: 0, estimatedUsdt: 0, plannedWeightedVnd: 0, plannedUsdt: 0 });
   };
 
+  const [queryPlanRow] = await prisma.$queryRaw<Array<{ 'QUERY PLAN': unknown }>>`
+    EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+    SELECT
+      COUNT(*)::int AS "exchangeCount",
+      COALESCE(SUM("rubSpent"), 0) AS "rubTotal",
+      COALESCE(SUM("usdtReceived"), 0) AS "usdtTotal"
+    FROM "Exchange"
+    WHERE "userId" = ${user.id}
+  `;
   const sqlResult = await getDashboardExchangeAggregates(user.id);
   const jsResult = await fullHistory();
   assert.equal(sqlResult.exchangeCount, jsResult.count, 'SQL and Node benchmark must read the same number of rows');
@@ -148,6 +157,8 @@ try {
     database: databaseName,
     fixtureRows: sampleSize,
     measuredRounds: rounds,
+    queryPlan: queryPlanRow?.['QUERY PLAN'] ?? null,
+    queryPlanNote: 'EXPLAIN covers the user-scoped aggregate access path (COUNT and sums), not the complete multi-bucket dashboard SQL statement.',
     timingsMs: {
       postgresAggregate: { median: Number(percentile(sqlSamples, 0.5).toFixed(2)), p95: Number(percentile(sqlSamples, 0.95).toFixed(2)), samples: sqlSamples.map(x => Number(x.toFixed(2))) },
       fetchAndAggregateInNode: { median: Number(percentile(nodeSamples, 0.5).toFixed(2)), p95: Number(percentile(nodeSamples, 0.95).toFixed(2)), samples: nodeSamples.map(x => Number(x.toFixed(2))) },
