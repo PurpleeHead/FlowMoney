@@ -24,9 +24,9 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 ## Verification recorded on 2026-10-20
 
-- [x] CI workflow run [#1054](https://github.com/PurpleeHead/FlowMoney/actions/runs/39408271221) passed on PR head `b05cec8562c32a0483fb5884099e5d73cea96132`: tests, production builds, dependency audits, and disposable-PostgreSQL migration/rollback/idempotency checks. This predates the latest dashboard aggregate code change.
-- [x] Security dependency workflow run [#125](https://github.com/PurpleeHead/FlowMoney/actions/runs/39408271180) passed on the same earlier head: lockfile remediation checks, exact lockfile install, tests, build, audit, and review artifact upload.
-- [ ] Re-run both workflows after dashboard aggregate commits `e7f8eb3` and `0058bce`; do not treat earlier CI as validation of those code changes.
+- [x] CI workflow run [#1071](https://github.com/PurpleeHead/FlowMoney/actions/runs/39408720311) passed on code head `bd2e5e99995475ac0c981822a880a79957c2c23e`: tests, production builds, dependency audits, and disposable-PostgreSQL migration/rollback/idempotency checks.
+- [x] Security dependency workflow run [#133](https://github.com/PurpleeHead/FlowMoney/actions/runs/39408720258) passed on that same head: lockfile remediation checks, exact lockfile install, tests, build, audit, and review artifact upload.
+- [ ] Confirm CI/security results for the later test-isolation cleanup commit `bacf643259bee1ee83201119358390aa20b0209c` before treating the exact current head as verified.
 - [x] Earlier baseline CI #1047 and security run #122 also passed; see [CI #1047](https://github.com/PurpleeHead/FlowMoney/actions/runs/39363113820) and [Security #122](https://github.com/PurpleeHead/FlowMoney/actions/runs/39363113932).
 - [ ] These CI results do **not** establish production DB identity, encrypted backup availability, restore success, live Render configuration, or production smoke-test success. Those remain release blockers.
 
