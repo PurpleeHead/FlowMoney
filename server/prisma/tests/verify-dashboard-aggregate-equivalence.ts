@@ -93,6 +93,27 @@ try {
   assert.equal(expenseRows.length, 3, 'all expense reads must be user-scoped');
   assert.equal(Number(allExpenseAggregate._sum.amountVnd), 95_536, 'all-time expense total must include only priced expenses owned by this user');
 
+  const [directTargetSql] = await prisma.$queryRaw<Array<{ totalVnd: unknown }>>`
+    SELECT COALESCE(SUM(COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")), 0) AS "totalVnd"
+    FROM "Exchange"
+    WHERE "userId" = ${mainUserId}
+      AND "mode" = 'RUB_TARGET'
+      AND upper(trim("targetCurrency")) = 'VND'
+      AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0
+  `;
+  const [indirectActualSql] = await prisma.$queryRaw<Array<{ totalVnd: unknown; totalUsdt: unknown }>>`
+    SELECT COALESCE(SUM("vndReceived"), 0) AS "totalVnd",
+           COALESCE(SUM("usdtReceived"), 0) AS "totalUsdt"
+    FROM "Exchange"
+    WHERE "userId" = ${mainUserId}
+      AND "mode" = 'RUB_USDT_VND'
+      AND "vndReceived" > 0
+      AND "usdtReceived" > 0
+  `;
+  assert.equal(Number(directTargetSql.totalVnd), 460_000, 'PostgreSQL direct-target aggregate must prefer the canonical value over stale legacy vndReceived');
+  assert.equal(Number(indirectActualSql.totalVnd), 2_300_000, 'PostgreSQL confirmed indirect VND total must exclude planning-only rows');
+  assert.equal(Number(indirectActualSql.totalUsdt), 93.7853, 'PostgreSQL confirmed indirect USDT denominator must exclude planning-only rows');
+
   // Compare PostgreSQL aggregates against the existing helper formulas over the same eligible records.
   const helperRubUsdt = calculateRubPerUsdt(mapRubUsdtExchanges(exchangeRows.map(x => ({
     mode: x.mode,
@@ -112,7 +133,7 @@ try {
   })));
   assert.deepEqual(observedExchangeRows, [{ usdtReceived: 93.7853, vndReceived: 2_300_000 }], 'only actual indirect exchange outcomes should become observed rate inputs');
   const helperObservedVndUsdt = calculateObservedVndPerUsdt(observedExchangeRows.map(x => ({ amountVnd: x.vndReceived, usdtCharged: x.usdtReceived })));
-  near(helperObservedVndUsdt, 2_300_000 / 93.7853, 'observed VND/USDT excludes planning-only rows');
+  near(helperObservedVndUsdt, Number(indirectActualSql.totalVnd) / Number(indirectActualSql.totalUsdt), 'PostgreSQL confirmed VND/USDT aggregate matches the existing helper and excludes planning-only rows');
 
   const directRows = mapDirectVndExchanges(exchangeRows.map(x => ({
     mode: x.mode,
@@ -124,6 +145,7 @@ try {
   })));
   const directVndExpected = directRows.reduce((sum, x) => sum + x.vndReceived, 0);
   assert.equal(directVndExpected, 710_000, 'direct VND canonical/fallback values count once and ignore stale legacy values');
+  assert.equal(Number(directTargetSql.totalVnd) + Number(directAggregate._sum.vndReceived), directVndExpected, 'PostgreSQL direct VND aggregate buckets must equal the existing TypeScript mapping');
   assert.equal(Number(directAggregate._sum.vndReceived), 250_000, 'direct RUB→VND aggregate is scoped and includes actual VND only');
 
   const helperCardRate = calculateObservedVndPerUsdt(expenseRows
