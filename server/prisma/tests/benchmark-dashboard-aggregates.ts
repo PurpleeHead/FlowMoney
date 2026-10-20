@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { prisma } from '../../src/services/prisma.js';
-import { getDashboardExchangeAggregates } from '../../src/lib/dashboard-aggregates.js';
+import { explainDashboardExchangeAggregates, getDashboardExchangeAggregates } from '../../src/lib/dashboard-aggregates.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (process.env.FLOWMONEY_BENCHMARK_DATABASE !== 'disposable') {
@@ -127,15 +127,7 @@ try {
 
   // Refresh planner statistics after bulk fixture insertion; this runs only on the guarded disposable database.
   await prisma.$executeRaw`ANALYZE "Exchange"`;
-  const [queryPlanRow] = await prisma.$queryRaw<Array<{ 'QUERY PLAN': unknown }>>`
-    EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-    SELECT
-      COUNT(*)::int AS "exchangeCount",
-      COALESCE(SUM("rubSpent"), 0) AS "rubTotal",
-      COALESCE(SUM("usdtReceived"), 0) AS "usdtTotal"
-    FROM "Exchange"
-    WHERE "userId" = ${user.id}
-  `;
+  const queryPlan = await explainDashboardExchangeAggregates(user.id);
   const sqlResult = await getDashboardExchangeAggregates(user.id);
   const jsResult = await fullHistory();
   assert.equal(sqlResult.exchangeCount, jsResult.count, 'SQL and Node benchmark must read the same number of rows');
@@ -159,8 +151,8 @@ try {
     database: databaseName,
     fixtureRows: sampleSize,
     measuredRounds: rounds,
-    queryPlan: queryPlanRow?.['QUERY PLAN'] ?? null,
-    queryPlanNote: 'EXPLAIN covers the user-scoped aggregate access path (COUNT and sums), not the complete multi-bucket dashboard SQL statement.',
+    queryPlan,
+    queryPlanNote: 'EXPLAIN ANALYZE BUFFERS covers the exact multi-bucket dashboard aggregate SQL statement.',
     timingsMs: {
       postgresAggregate: { median: Number(percentile(sqlSamples, 0.5).toFixed(2)), p95: Number(percentile(sqlSamples, 0.95).toFixed(2)), samples: sqlSamples.map(x => Number(x.toFixed(2))) },
       fetchAndAggregateInNode: { median: Number(percentile(nodeSamples, 0.5).toFixed(2)), p95: Number(percentile(nodeSamples, 0.95).toFixed(2)), samples: nodeSamples.map(x => Number(x.toFixed(2))) },
