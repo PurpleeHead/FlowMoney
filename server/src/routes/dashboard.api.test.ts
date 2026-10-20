@@ -179,3 +179,39 @@ describe('dashboard historical expense snapshots', () => {
   });
 });
 
+
+
+describe('dashboard query shape', () => {
+  it('selects only fields needed for dashboard calculations and visible history', async () => {
+    let expenseArgs: any;
+    let exchangeArgs: any;
+    expenseModel.findMany = async (args: any) => { expenseArgs = args; return []; };
+    exchangeModel.findMany = async (args: any) => { exchangeArgs = args; return []; };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+    });
+
+    assert.deepEqual(expenseArgs.where, { userId: 'dashboard-user' });
+    assert.deepEqual(expenseArgs.orderBy, { date: 'desc' });
+    assert.deepEqual(Object.keys(expenseArgs.select).sort(), [
+      'amount', 'amountRub', 'amountVnd', 'category', 'currency', 'date',
+      'id', 'title', 'usdtCharged',
+    ].sort());
+    assert.deepEqual(exchangeArgs.where, { userId: 'dashboard-user' });
+    assert.deepEqual(exchangeArgs.orderBy, { createdAt: 'desc' });
+    assert.deepEqual(Object.keys(exchangeArgs.select).sort(), [
+      'createdAt', 'effectiveRubPerUsdt', 'effectiveVndPerRub', 'id', 'mode',
+      'planningVndPerUsdt', 'rubSpent', 'targetCurrency', 'targetReceived',
+      'targetToVndRate', 'targetVndEquivalent', 'usdtReceived', 'vndPerUsdt',
+      'vndReceived',
+    ].sort());
+  });
+});
