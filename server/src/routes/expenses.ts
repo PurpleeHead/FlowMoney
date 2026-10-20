@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapActualVndExchanges, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
+import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapActualVndExchanges, mapActualVndUsdtExchanges, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
 import { syncExpenseLedger, removeExpenseLedger } from '../lib/wallet-ledger.js';
 import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
@@ -94,9 +94,13 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
     );
-    const vndExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.usdtReceived != null && x.vndReceived != null);
-    const exchangeVnd = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
-    const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const vndExchanges = mapActualVndUsdtExchanges(exchanges.map(x => ({
+      mode: x.mode,
+      usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+    })));
+    const exchangeVnd = vndExchanges.reduce((sum, x) => sum + x.vndReceived, 0);
+    const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + x.usdtReceived, 0);
     // Only actual card purchases or completed exchanges establish a historical VND/USDT rate.
     // A planning rate must never be persisted as an expense's factual VND valuation.
     const historicalVndPerUsdt = observedVndPerUsdt ??
@@ -251,9 +255,13 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
     );
-    const actualExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.usdtReceived != null && x.vndReceived != null);
-    const actualVnd = actualExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
-    const actualUsdt = actualExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const actualExchanges = mapActualVndUsdtExchanges(exchanges.map(x => ({
+      mode: x.mode,
+      usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+    })));
+    const actualVnd = actualExchanges.reduce((sum, x) => sum + x.vndReceived, 0);
+    const actualUsdt = actualExchanges.reduce((sum, x) => sum + x.usdtReceived, 0);
     // Keep estimates out of the historical expense valuation. Planning rates are used
     // by the planning UI, but an unknown actual VND outcome remains unknown here.
     const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : null);
