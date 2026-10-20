@@ -229,3 +229,19 @@ export function mapActualVndExchanges(exchanges: Array<{
     return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
   });
 }
+
+
+/** Only completed RUB→USDT→VND exchanges are observations of the VND/USDT rate. */
+export function mapActualVndUsdtExchanges(exchanges: Array<{
+  mode: string;
+  usdtReceived?: number | null;
+  vndReceived?: number | null;
+}>): Array<{ usdtReceived: number; vndReceived: number }> {
+  return exchanges.flatMap((exchange) => {
+    if (exchange.mode !== 'RUB_USDT_VND' ||
+        exchange.usdtReceived == null || exchange.vndReceived == null ||
+        !Number.isFinite(exchange.usdtReceived) || exchange.usdtReceived <= 0 ||
+        !Number.isFinite(exchange.vndReceived) || exchange.vndReceived <= 0) return [];
+    return [{ usdtReceived: exchange.usdtReceived, vndReceived: exchange.vndReceived }];
+  });
+}
