@@ -115,3 +115,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] The only PostgreSQL resource listed in the Render workspace is `flowmoney-test-db`, which expires 2026-11-15. Its presence does not identify the database configured for the live service.
 - [ ] No production database identity/backup/restore proof, legacy-wallet reconciliation, owner-approved Render change, aggregate-equivalence comparison, realistic query measurements, or production smoke test has been completed by these repository checks.
 - [ ] PR #83 remains Draft and unmerged. No production database access, deployment, or live configuration change was performed.
+
+
+## Latest aggregate-gate documentation verification — 2026-10-20
+
+- [x] CI workflow run [#1197](https://github.com/PurpleeHead/FlowMoney/actions/runs/39425529984) passed on commit `ed83d44fdb331ed2dd818df24a242acabf9c8814`.
+- [x] Security dependency workflow run [#195](https://github.com/PurpleeHead/FlowMoney/actions/runs/39425529832) passed on the same commit.
+- [x] Added `docs/DASHBOARD_AGGREGATE_EQUIVALENCE.md` describing the required mixed-mode PostgreSQL fixture, exact aggregate eligibility rules, user/time isolation assertions, and before/after query-plan and response-size measurements.
+- [ ] These checks do not mean the PostgreSQL-backed aggregate equivalence test or realistic performance measurements have been implemented; both remain open.
+- [ ] Production DB identity, encrypted backup and isolated restore, legacy wallet reconciliation, approved Render configuration reconciliation, and production smoke tests remain open. PR #83 remains Draft/unmerged; no production DB access, deploy, or live configuration change was performed.
