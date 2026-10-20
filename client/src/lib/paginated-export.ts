@@ -42,6 +42,6 @@ export async function fetchAllCursorPages<T>(
 /** Quote a CSV cell and neutralize spreadsheet formula prefixes in untrusted text. */
 export function toSafeCsvCell(value: unknown): string {
   const text = value == null ? '' : String(value);
-  const safeText = /^[\\t\\r ]*[=+@-]/.test(text) ? `'${text}` : text;
+  const safeText = /^\s*[=+@-]/.test(text) ? `'${text}` : text;
   return `"${safeText.replaceAll('"', '""')}"`;
 }
