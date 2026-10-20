@@ -132,6 +132,26 @@ describe('journal API integration', () => {
     });
   });
 
+  it('rejects a cursor whose type does not match its prefixed ID', async () => {
+    let queryCount = 0;
+    expenseModel.findMany = async () => { queryCount++; return []; };
+    exchangeModel.findMany = async () => { queryCount++; return []; };
+    movementModel.findMany = async () => { queryCount++; return []; };
+    const cursor = Buffer.from(JSON.stringify({
+      occurredAt: '2026-10-18T08:00:00.000Z',
+      id: 'expense:exp-7',
+      type: 'exchange',
+    })).toString('base64url');
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/journal?cursor=${encodeURIComponent(cursor)}`, {
+        headers: { authorization: bearer() },
+      });
+      assert.equal(response.status, 400);
+      assert.equal(queryCount, 0);
+    });
+  });
+
   it('accepts the wallet-movement cursor shape emitted by buildJournal', async () => {
     let movementArgs: any;
     expenseModel.findMany = async () => [];
