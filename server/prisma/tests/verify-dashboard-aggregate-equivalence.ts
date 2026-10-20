@@ -47,6 +47,8 @@ try {
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
     // Canonical VND must win over a stale legacy vndReceived value.
     { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999 },
+    // Legacy direct-target currency values must use the same normalized matching as TypeScript.
+    { mode: 'RUB_TARGET', targetCurrency: ' vNd ', rubSpent: 100, targetReceived: 200, targetVndEquivalent: 210, vndReceived: 999_999 },
     // Non-VND target estimates are not factual VND outcomes.
     { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000 },
     // Planning rate is not an observed VND outcome.
@@ -108,13 +110,13 @@ try {
   near(postgresAggregates.actualUsdt, 93.7853, 'aggregate actual indirect USDT');
   near(postgresAggregates.plannedWeightedVnd, 250_000, 'aggregate planning-rate weighted numerator');
   near(postgresAggregates.plannedUsdt, 10, 'aggregate planning-rate denominator');
-  near(postgresAggregates.confirmedVnd, 3_010_000, 'aggregate confirmed VND budget');
+  near(postgresAggregates.confirmedVnd, 3_010_210, 'aggregate confirmed VND budget includes normalized legacy direct-target currency');
   near(postgresAggregates.estimatedTargetVnd, 920_000, 'aggregate non-VND target estimate');
   near(postgresAggregates.estimatedUsdt, 68, 'aggregate USDT requiring VND estimate includes normalized legacy target currencies');
   assert.equal(postgresAggregates.hasUnpricedUsdtTopUp, true, 'aggregate detects top-ups without actual VND outcome');
   assert.equal(postgresAggregates.hasEstimatedTarget, true, 'aggregate detects non-VND target estimates');
-  near(postgresAggregates.rateExchangeRub, 11_300, 'rate aggregate RUB basis');
-  near(postgresAggregates.rateExchangeVnd, 3_010_000, 'rate aggregate VND basis');
+  near(postgresAggregates.rateExchangeRub, 11_400, 'rate aggregate RUB basis includes normalized legacy direct-target currency');
+  near(postgresAggregates.rateExchangeVnd, 3_010_210, 'rate aggregate VND basis includes normalized legacy direct-target currency');
 
   assert.equal(exchangeRows.length, rows.length, 'all exchange reads must be user-scoped');
   assert.equal(expenseRows.length, 3, 'all expense reads must be user-scoped');
@@ -234,7 +236,7 @@ try {
       AND "usdtReceived" > 0
   `;
 
-  assert.equal(Number(budgetBucketsSql.confirmedVnd), 3_010_000, 'confirmed VND bucket includes only actual outcomes and counts direct-target VND once');
+  assert.equal(Number(budgetBucketsSql.confirmedVnd), 3_010_210, 'confirmed VND bucket includes normalized direct-target VND once and excludes stale legacy value');
   assert.equal(Number(budgetBucketsSql.estimatedTargetVnd), 920_000, 'non-VND target valuation remains in a separate estimate bucket');
   assert.equal(Number(budgetBucketsSql.estimatedUsdt), 68, 'unconverted USDT-only top-ups are isolated for valuation and normalized legacy currencies are included');
   near(Number(budgetBucketsSql.plannedRate), 25_000, 'planning rate is USDT-weighted and isolated from observed rates');
@@ -280,7 +282,7 @@ try {
   near(sqlEstimatedUnconvertedVnd, helperEstimatedUnconvertedVnd, 'PostgreSQL estimated VND budget components match the legacy TypeScript calculation');
   near(sqlBalance, helperBalance, 'PostgreSQL confirmed plus estimated balance matches the legacy TypeScript calculation');
 
-  assert.equal(Number(directTargetSql.totalVnd), 460_000, 'PostgreSQL direct-target aggregate must prefer the canonical value over stale legacy vndReceived');
+  assert.equal(Number(directTargetSql.totalVnd), 460_210, 'PostgreSQL direct-target aggregate normalizes currency and prefers canonical values over stale legacy vndReceived');
   assert.equal(Number(indirectActualSql.totalVnd), 2_300_000, 'PostgreSQL confirmed indirect VND total must exclude planning-only rows');
   assert.equal(Number(indirectActualSql.totalUsdt), 93.7853, 'PostgreSQL confirmed indirect USDT denominator must exclude planning-only rows');
 
@@ -335,7 +337,7 @@ try {
     targetCurrency: x.targetCurrency,
   })));
   const directVndExpected = directRows.reduce((sum, x) => sum + x.vndReceived, 0);
-  assert.equal(directVndExpected, 710_000, 'direct VND canonical/fallback values count once and ignore stale legacy values');
+  assert.equal(directVndExpected, 710_210, 'direct VND canonical/fallback values count once, normalize currency, and ignore stale legacy values');
   assert.equal(Number(directTargetSql.totalVnd) + Number(directAggregate._sum.vndReceived), directVndExpected, 'PostgreSQL direct VND aggregate buckets must equal the existing TypeScript mapping');
   assert.equal(Number(directAggregate._sum.vndReceived), 250_000, 'direct RUB→VND aggregate is scoped and includes actual VND only');
 
