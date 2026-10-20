@@ -93,9 +93,15 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     // USDT-only top-ups are converted using the observed VND/USDT rate when available.
     // Only actual VND outcomes are confirmed. A non-VND target's VND equivalent
     // is a valuation estimate based on a manually supplied conversion rate.
-    const confirmedExchangeVnd = exchanges.reduce((sum, x) =>
-      sum + (x.vndReceived != null ? Number(x.vndReceived) : 0) +
-      (x.targetCurrency === 'VND' && x.targetVndEquivalent != null ? Number(x.targetVndEquivalent) : 0), 0);
+    const confirmedExchangeVnd = exchanges.reduce((sum, x) => {
+      // A direct RUB_TARGET → VND record may carry both the canonical target
+      // equivalent and a legacy vndReceived value. Count that transaction once.
+      if (x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') {
+        const directVnd = x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived;
+        return sum + (directVnd != null ? Number(directVnd) : 0);
+      }
+      return sum + (x.vndReceived != null ? Number(x.vndReceived) : 0);
+    }, 0);
     const isUnpricedUsdtTopUp = (x: typeof exchanges[number]) =>
       (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
       (x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null);
