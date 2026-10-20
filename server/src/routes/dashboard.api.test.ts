@@ -494,3 +494,92 @@ describe('dashboard mixed direct VND exchange modes', () => {
   });
 });
 
+
+
+describe('dashboard observed VND/RUB combines all actual source types once', () => {
+  it('weights direct exchanges, actual exchange outcomes, and card purchases without double counting', async () => {
+    expenseModel.findMany = async () => [{
+      id: 'card-observation',
+      title: 'Market',
+      category: 'Food',
+      amount: 50000,
+      currency: 'VND',
+      amountVnd: 50000,
+      amountRub: null,
+      usdtCharged: 5,
+      date: new Date('2026-10-19T08:00:00.000Z'),
+    }];
+    exchangeModel.findMany = async () => [
+      {
+        ...exchangeFixture(),
+        id: 'direct-rub-vnd',
+        mode: 'RUB_VND',
+        rubSpent: 1000,
+        usdtReceived: null,
+        targetCurrency: null,
+        targetReceived: null,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        vndReceived: 200000,
+        planningVndPerUsdt: null,
+        effectiveVndPerRub: 200,
+        effectiveRubPerUsdt: null,
+      },
+      {
+        ...exchangeFixture(),
+        id: 'direct-vnd-target',
+        mode: 'RUB_TARGET',
+        rubSpent: 2000,
+        usdtReceived: null,
+        targetCurrency: 'VND',
+        targetReceived: 400000,
+        targetToVndRate: 1,
+        targetVndEquivalent: 400000,
+        vndReceived: null,
+        planningVndPerUsdt: null,
+        effectiveVndPerRub: 200,
+        effectiveRubPerUsdt: null,
+      },
+      {
+        ...exchangeFixture(),
+        id: 'actual-usdt-vnd',
+        mode: 'RUB_USDT_VND',
+        rubSpent: 3000,
+        usdtReceived: 30,
+        targetCurrency: null,
+        targetReceived: null,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        vndReceived: 750000,
+        planningVndPerUsdt: null,
+        effectiveVndPerRub: 250,
+        effectiveRubPerUsdt: 100,
+      },
+    ];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        effectiveVndPerRub: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1350000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1350000);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.ok(
+        Math.abs(body.effectiveVndPerRub - (1400000 / 6500)) < 1e-10,
+        'observed VND/RUB must combine 600,000 direct VND, 750,000 exchange VND, and 50,000 card VND against 6,000 RUB plus 500 RUB card cost',
+      );
+    });
+  });
+});
