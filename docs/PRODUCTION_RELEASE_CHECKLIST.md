@@ -44,3 +44,11 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] CI workflow run [#1097](https://github.com/PurpleeHead/FlowMoney/actions/runs/39410914486) passed on head `bcf1cef6f28460dc53f20f87115bb29acf875ef2`, including the standard verification and migration verification jobs.
 - [x] Security dependency workflow run [#145](https://github.com/PurpleeHead/FlowMoney/actions/runs/39410914440) passed on the same head.
 - [ ] These results do not close the production database identity, encrypted backup/restore, live Render configuration reconciliation, or production smoke-test gates. PR #83 remains Draft; no merge or deployment is authorized by these checks.
+
+
+## Latest PR #83 verification — 2026-10-20 (combined source observations)
+
+- [x] CI workflow run [#1105](https://github.com/PurpleeHead/FlowMoney/actions/runs/39411632978) passed on `b6f1b13cbc4efcf1fb077bf20be9876054e11a8c`, including `verify` and `verify-migrations`.
+- [x] Security dependency workflow run [#149](https://github.com/PurpleeHead/FlowMoney/actions/runs/39411632655) passed on the same head.
+- [ ] PostgreSQL aggregate-equivalence comparison and realistic query/payload measurements remain open.
+- [ ] Production database identity, encrypted backup/restore, Render configuration reconciliation, and production smoke tests remain release blockers. PR #83 remains Draft; no merge or deployment is authorized by CI.
