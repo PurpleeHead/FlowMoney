@@ -112,6 +112,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         rubSpent: Number(x.rubSpent),
         vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
         targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
         targetCurrency: x.targetCurrency,
       }))),
       actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
@@ -271,6 +272,7 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         rubSpent: Number(x.rubSpent),
         vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
         targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
         targetCurrency: x.targetCurrency,
       }))),
       actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
