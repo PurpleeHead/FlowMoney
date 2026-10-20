@@ -172,3 +172,30 @@ describe('receipt API ownership', () => {
   });
 
 });
+
+describe('receipt cursor pagination', () => {
+  it('returns a page and next cursor scoped to the authenticated user', async () => {
+    let queryArgs: any;
+    receiptModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [
+        { id: 'receipt-a', createdAt: new Date('2026-10-19T10:00:00.000Z'), rawText: 'A', items: [] },
+        { id: 'receipt-b', createdAt: new Date('2026-10-18T10:00:00.000Z'), rawText: 'B', items: [] },
+      ];
+    };
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts?limit=1`, {
+        headers: { authorization: bearer('user-1') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string; userId?: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['receipt-a']);
+      assert.equal('userId' in body.items[0], false);
+      assert.equal(body.hasMore, true);
+      assert.equal(typeof body.nextCursor, 'string');
+    });
+    assert.equal(queryArgs.take, 2);
+    assert.deepEqual(queryArgs.where.userId, 'user-1');
+    assert.deepEqual(queryArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
+  });
+});
