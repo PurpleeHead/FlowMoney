@@ -78,7 +78,7 @@ try {
     // Force equivalent Node-side aggregation work rather than measuring fetch time alone.
     return rows.reduce((acc, row) => {
       acc.count++;
-      if (row.rubSpent > 0 && row.usdtReceived != null && row.usdtReceived > 0) {
+      if (Number(row.rubSpent) > 0 && row.usdtReceived != null && Number(row.usdtReceived) > 0) {
         acc.rub += Number(row.rubSpent);
         acc.usdt += Number(row.usdtReceived);
       }
