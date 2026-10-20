@@ -37,3 +37,15 @@ The repository's `render.yaml` config specifies auto-deploy off and readiness ch
 ## Evidence limitation
 
 This document records configuration returned by the Render service API on 2026-10-20. It does not prove database contents, secret availability, backup success, restore success, or production readiness. Those require explicit checks in the target environment.
+
+
+## Observability spot-check — 2026-10-20
+
+A read-only Render check was repeated after the code/documentation CI passed:
+
+- The service API still reports the live branch as `review/pr-3-fix`, auto-deploy enabled, and health path `/api/health`; the latest deployment remains the 2026-10-17 commit listed above.
+- Render returned no application error/fatal log entries in the queried 2026-10-20 UTC window. This is not proof that the application is healthy or that no errors occurred outside the queried window.
+- Render returned no HTTP request-count/latency samples for the service in that time window, so these metrics cannot establish that health/readiness endpoints were reached successfully. The web inspection interface also could not retrieve the endpoints directly.
+- CPU/memory samples were available and low in the sampled points, but the sparse samples and missing HTTP telemetry are insufficient for a release health claim.
+
+**Action:** retain endpoint smoke tests and database-backed readiness verification as explicit release gates. No service configuration, deployment, or database was changed during this check.
