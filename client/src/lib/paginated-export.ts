@@ -38,3 +38,10 @@ export async function fetchAllCursorPages<T>(
 
   throw new Error(`Export stopped after reaching the safety limit of ${maxPages} pages.`);
 }
+
+/** Quote a CSV cell and neutralize spreadsheet formula prefixes in untrusted text. */
+export function toSafeCsvCell(value: unknown): string {
+  const text = value == null ? '' : String(value);
+  const safeText = /^[\\t\\r ]*[=+@-]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
+}
