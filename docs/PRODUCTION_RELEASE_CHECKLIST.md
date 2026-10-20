@@ -124,3 +124,10 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Added `docs/DASHBOARD_AGGREGATE_EQUIVALENCE.md` describing the required mixed-mode PostgreSQL fixture, exact aggregate eligibility rules, user/time isolation assertions, and before/after query-plan and response-size measurements.
 - [ ] These checks do not mean the PostgreSQL-backed aggregate equivalence test or realistic performance measurements have been implemented; both remain open.
 - [ ] Production DB identity, encrypted backup and isolated restore, legacy wallet reconciliation, approved Render configuration reconciliation, and production smoke tests remain open. PR #83 remains Draft/unmerged; no production DB access, deploy, or live configuration change was performed.
+
+
+## Dashboard regression test — 2026-10-20
+
+- [x] Added `dashboard.api.test.ts` regression coverage for a direct RUB → VND record with canonical `targetVndEquivalent` and a stale, conflicting legacy `vndReceived` value. Expected confirmed VND and balance count the canonical amount exactly once.
+- [ ] CI and Security workflows for this test commit are still running; do not treat the test as passing until both finish successfully.
+- [ ] This is mocked route-level regression coverage, not the outstanding PostgreSQL-backed aggregate-equivalence fixture or performance evidence.
