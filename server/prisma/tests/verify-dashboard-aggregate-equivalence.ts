@@ -236,7 +236,7 @@ try {
 
   assert.equal(Number(budgetBucketsSql.confirmedVnd), 3_010_000, 'confirmed VND bucket includes only actual outcomes and counts direct-target VND once');
   assert.equal(Number(budgetBucketsSql.estimatedTargetVnd), 920_000, 'non-VND target valuation remains in a separate estimate bucket');
-  assert.equal(Number(budgetBucketsSql.estimatedUsdt), 66, 'unconverted USDT-only top-ups are isolated for valuation and not treated as confirmed VND');
+  assert.equal(Number(budgetBucketsSql.estimatedUsdt), 68, 'unconverted USDT-only top-ups are isolated for valuation and normalized legacy currencies are included');
   near(Number(budgetBucketsSql.plannedRate), 25_000, 'planning rate is USDT-weighted and isolated from observed rates');
 
   const helperConfirmedVnd = exchangeRows.reduce((sum, x) => {
