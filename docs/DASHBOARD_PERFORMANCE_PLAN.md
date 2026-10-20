@@ -88,6 +88,6 @@ This is a correctness-oriented implementation step, not yet a performance claim.
 
 ## Follow-up verification — 2026-10-20
 
-The PostgreSQL aggregate implementation now also normalizes legacy `targetCurrency` casing/whitespace in SQL predicates, matching the currency normalization used by the shared money helpers. A dedicated fixture includes `" usdt "` and asserts the RUB/USDT weighted acquisition totals include it. CI run [#1095](https://github.com/PurpleeHead/FlowMoney/actions/runs/39436007312) passed on `15621183488c6599276ffb3af297015e1e4815ec`, including the disposable-PostgreSQL aggregate-equivalence job and production build/tests.
+The PostgreSQL aggregate implementation now also normalizes legacy `targetCurrency` casing/whitespace in SQL predicates, matching the currency normalization used by the shared money helpers. A dedicated fixture includes `" usdt "` and asserts the RUB/USDT weighted acquisition totals include it. CI run [39436007312](https://github.com/PurpleeHead/FlowMoney/actions/runs/39436007312) passed on `15621183488c6599276ffb3af297015e1e4815ec`, including the disposable-PostgreSQL aggregate-equivalence job and production build/tests.
 
 Still open: benchmark old row-loading calculations against the aggregate implementation over realistic disposable histories; capture `EXPLAIN (ANALYZE, BUFFERS)`; confirm response-size/latency improvements; and close the independent production database, backup/restore, legacy reconciliation, and smoke-test gates.
