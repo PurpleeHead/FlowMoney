@@ -215,3 +215,69 @@ describe('dashboard query shape', () => {
     ].sort());
   });
 });
+
+
+describe('dashboard weighted rates preserve actual observations', () => {
+  it('weights actual card observations by charged USDT and does not use planning-only rates as actual', async () => {
+    expenseModel.findMany = async () => [
+      {
+        id: 'card-a', title: 'Groceries', category: 'Food', amount: 120000,
+        currency: 'VND', amountVnd: 120000, amountRub: 332, usdtCharged: 4,
+        date: new Date('2026-10-10T08:00:00.000Z'),
+      },
+      {
+        id: 'card-b', title: 'Dinner', category: 'Food', amount: 60000,
+        currency: 'VND', amountVnd: 60000, amountRub: 166, usdtCharged: 3,
+        date: new Date('2026-10-11T08:00:00.000Z'),
+      },
+    ];
+    exchangeModel.findMany = async () => [
+      {
+        ...exchangeFixture(),
+        id: 'actual-exchange',
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        targetReceived: 40,
+        rubSpent: 3600,
+        planningVndPerUsdt: 26000,
+        vndReceived: 1000000,
+        usdtReceived: 40,
+      },
+      {
+        ...exchangeFixture(),
+        id: 'planning-only-exchange',
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        targetReceived: 20,
+        rubSpent: 1800,
+        planningVndPerUsdt: 30000,
+        vndReceived: null,
+        usdtReceived: 20,
+      },
+    ];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        observedVndPerUsdt: number | null;
+        effectiveVndPerUsdt: number | null;
+        effectiveRubPerUsdt: number | null;
+        planningVndPerUsdt: number | null;
+      };
+      assert.ok(body.observedVndPerUsdt != null);
+      assert.ok(Math.abs(body.observedVndPerUsdt - (180000 / 7)) < 1e-8);
+      assert.equal(body.effectiveVndPerUsdt, body.observedVndPerUsdt);
+      assert.ok(body.effectiveRubPerUsdt != null);
+      assert.ok(Math.abs(body.effectiveRubPerUsdt - (5400 / 60)) < 1e-8);
+      assert.ok(body.planningVndPerUsdt != null);
+      assert.equal(body.planningVndPerUsdt, 28000);
+    });
+  });
+});
