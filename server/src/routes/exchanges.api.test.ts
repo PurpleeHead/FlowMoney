@@ -96,6 +96,59 @@ describe('direct RUB to USDT top-up without VND rate', () => {
   });
 });
 
+
+describe('editing direct RUB to USDT top-ups', () => {
+  it('allows saving a USDT top-up without inventing a VND rate or equivalent', async () => {
+    let updateArgs: any;
+    const movements: any[] = [];
+    const updated = {
+      id: 'usdt-top-up', userId: 'user-42', mode: 'RUB_TARGET',
+      rubSpent: 8300, usdtReceived: null, vndReceived: null,
+      targetCurrency: 'USDT', targetReceived: 93.7853,
+      targetToVndRate: null, targetVndEquivalent: null,
+      effectiveVndPerRub: null, effectiveRubPerUsdt: null,
+      createdAt: new Date('2026-10-18T08:00:00.000Z'),
+    };
+    const tx = {
+      exchange: {
+        updateMany: async (args: any) => { updateArgs = args; return { count: 1 }; },
+        findFirst: async () => updated,
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => { movements.push(...args.data); return { count: args.data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/usdt-top-up`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_TARGET', rubSpent: 8300,
+          targetCurrency: 'USDT', targetReceived: 93.7853,
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as any;
+      assert.equal(body.targetCurrency, 'USDT');
+      assert.equal(body.targetToVndRate, null);
+      assert.equal(body.targetVndEquivalent, null);
+      assert.equal(body.effectiveVndPerRub, null);
+    });
+
+    assert.deepEqual(updateArgs.where, { id: 'usdt-top-up', userId: 'user-42' });
+    assert.equal(updateArgs.data.targetCurrency, 'USDT');
+    assert.equal(updateArgs.data.targetToVndRate, null);
+    assert.equal(updateArgs.data.targetVndEquivalent, null);
+    assert.deepEqual(movements.map(x => [x.currency, Number(x.amountDelta)]), [
+      ['RUB', -8300],
+      ['USDT', 93.7853],
+    ]);
+  });
+});
+
 describe('exchange API ledger synchronization', () => {
   it('updates an exchange and replaces its ledger movements in the same transaction', async () => {
     let updateArgs: any;
