@@ -77,3 +77,10 @@ On PR #83 head `b6f1b13cbc4efcf1fb077bf20be9876054e11a8c`, CI run [#1105](https:
 ## Follow-up verification — 2026-10-20 (planning-rate regression)
 
 On head `08351e9b15135fd5436d508c8f01a2acebe715af`, CI run [#1111](https://github.com/PurpleeHead/FlowMoney/actions/runs/39412100339) and dependency/security run [#152](https://github.com/PurpleeHead/FlowMoney/actions/runs/39412100300) both passed. The added API regression test verifies that a planning-only VND/USDT rate does not leak into factual `observedVndPerUsdt` or `effectiveVndPerUsdt` when an exchange has no actual VND outcome; it remains available only for the estimated balance. This closes that specific test case, not the required PostgreSQL aggregate-equivalence comparison. Realistic query-plan/payload measurements and production DB/backup/restore/Render/smoke-test gates remain open.
+
+
+## Runtime aggregate rollout — 2026-10-20
+
+The dashboard now uses a user-scoped PostgreSQL aggregate query for exchange-derived financial summaries and caps its exchange activity payload at 100 recent records. The dedicated paginated exchange endpoint remains the source for full history. The new PostgreSQL fixture compares SQL buckets with the existing TypeScript formulas, including actual/planned rates, direct VND legacy precedence, estimates, and the resulting budget balance.
+
+This is a correctness-oriented implementation step, not yet a performance claim. Capture query plans, response payload sizes, and timings across small/medium/large disposable histories before claiming a speedup or adding indexes. Verify the latest CI after the bounded activity change. No production data, merge, or deployment was touched.
