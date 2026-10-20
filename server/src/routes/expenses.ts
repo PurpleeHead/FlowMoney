@@ -174,6 +174,12 @@ router.get('/', async (req: AuthedRequest, res, next) => {
       where: { userId: req.user!.id },
       orderBy: { date: 'desc' },
       take: 500,
+      // Never return the owning user's internal ID in a client-facing list.
+      select: {
+        id: true, title: true, category: true, amount: true, currency: true,
+        amountVnd: true, amountRub: true, usdtCharged: true, date: true,
+        createdAt: true, updatedAt: true, receiptId: true,
+      },
     });
     res.json(records);
   } catch (e) {
