@@ -93,6 +93,28 @@ try {
   assert.equal(expenseRows.length, 3, 'all expense reads must be user-scoped');
   assert.equal(Number(allExpenseAggregate._sum.amountVnd), 95_536, 'all-time expense total must include only priced expenses owned by this user');
 
+  const [rubUsdtSql] = await prisma.$queryRaw<Array<{ rubTotal: unknown; usdtTotal: unknown }>>`
+    SELECT
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_USDT_VND' THEN "rubSpent"
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' THEN "rubSpent"
+        ELSE 0
+      END) FILTER (WHERE
+        ("mode" = 'RUB_USDT_VND' AND "usdtReceived" > 0 AND "rubSpent" > 0)
+        OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' AND "targetReceived" > 0 AND "rubSpent" > 0)
+      ), 0) AS "rubTotal",
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_USDT_VND' THEN "usdtReceived"
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' THEN "targetReceived"
+        ELSE 0
+      END) FILTER (WHERE
+        ("mode" = 'RUB_USDT_VND' AND "usdtReceived" > 0 AND "rubSpent" > 0)
+        OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' AND "targetReceived" > 0 AND "rubSpent" > 0)
+      ), 0) AS "usdtTotal"
+    FROM "Exchange"
+    WHERE "userId" = ${mainUserId}
+  `;
+
   const [budgetBucketsSql] = await prisma.$queryRaw<Array<{ confirmedVnd: unknown; estimatedTargetVnd: unknown; plannedRate: unknown }>>`
     SELECT
       COALESCE(SUM(CASE
@@ -110,8 +132,8 @@ try {
       SUM("usdtReceived" * "planningVndPerUsdt") FILTER (
         WHERE "mode" = 'RUB_USDT_VND'
           AND "vndReceived" IS NULL
-          AND "usdtReceived" > 0
-          AND "planningVndPerUsdt" > 0
+          AND "usdtReceived" IS NOT NULL
+          AND "planningVndPerUsdt" IS NOT NULL
       ) / NULLIF(SUM("usdtReceived") FILTER (
         WHERE "mode" = 'RUB_USDT_VND'
           AND "vndReceived" IS NULL
@@ -179,8 +201,9 @@ try {
     targetCurrency: x.targetCurrency,
     targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
   }))));
-  const sqlRubUsdt = (Number(exchangeAggregate._sum.rubSpent ?? 0) + 5000) /
-    (Number(exchangeAggregate._sum.usdtReceived ?? 0) + 56);
+  const sqlRubUsdt = Number(rubUsdtSql.rubTotal) / Number(rubUsdtSql.usdtTotal);
+  near(Number(rubUsdtSql.rubTotal), 8300 + 5000, 'PostgreSQL RUB/USDT numerator includes both eligible acquisition modes');
+  near(Number(rubUsdtSql.usdtTotal), 93.7853 + 56, 'PostgreSQL RUB/USDT denominator includes actual received USDT only');
   near(sqlRubUsdt, helperRubUsdt, 'weighted RUB/USDT rate including direct RUB→USDT target');
 
   const observedExchangeRows = mapActualVndUsdtExchanges(exchangeRows.map(x => ({
