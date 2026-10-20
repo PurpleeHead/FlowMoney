@@ -11,6 +11,7 @@ const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) =
 const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
 const originalUserFindFirst = userModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
+const originalExpenseAggregate = expenseModel.aggregate;
 const originalExchangeFindMany = exchangeModel.findMany;
 const previousSecret = process.env.JWT_SECRET;
 let dashboardAggregateArgs: any[] = [];
@@ -18,6 +19,7 @@ let dashboardAggregateArgs: any[] = [];
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
   expenseModel.findMany = originalExpenseFindMany;
+  expenseModel.aggregate = originalExpenseAggregate;
   exchangeModel.findMany = originalExchangeFindMany;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
