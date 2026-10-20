@@ -18,7 +18,10 @@ assert.ok(
 
 const suffix = `dashboard-benchmark-${Date.now()}`;
 let userId: string | undefined;
-const sampleSize = Math.max(1000, Math.min(50000, Number(process.env.DASHBOARD_BENCHMARK_ROWS ?? 10000)));
+const requestedSampleSize = Number(process.env.DASHBOARD_BENCHMARK_ROWS ?? 10000);
+assert.ok(Number.isInteger(requestedSampleSize) && requestedSampleSize >= 1000 && requestedSampleSize <= 50000,
+  'DASHBOARD_BENCHMARK_ROWS must be an integer between 1000 and 50000.');
+const sampleSize = requestedSampleSize;
 const rounds = 7;
 
 function percentile(values: number[], p: number): number {
