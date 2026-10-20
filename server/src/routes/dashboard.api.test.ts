@@ -744,3 +744,42 @@ describe('dashboard legacy direct VND target records', () => {
     });
   });
 });
+
+
+describe('dashboard canonical direct VND amount precedence', () => {
+  it('counts targetVndEquivalent once and ignores a stale legacy vndReceived value', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'canonical-vnd-with-stale-legacy-value',
+      mode: 'RUB_TARGET',
+      targetCurrency: 'VND',
+      targetReceived: 1_000_000,
+      targetToVndRate: 1,
+      targetVndEquivalent: 1_000_000,
+      // This stale value must not be added to or replace the canonical target amount.
+      vndReceived: 9_999_999,
+      usdtReceived: null,
+      rubSpent: 4_000,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1_000_000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1_000_000);
+    });
+  });
+});
