@@ -2,7 +2,7 @@ import {Router} from 'express';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
-import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapRubUsdtExchanges } from '../lib/money.js';
+import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapActualVndUsdtExchanges, mapRubUsdtExchanges } from '../lib/money.js';
 
 const router=Router();
 router.use(auth);
@@ -61,14 +61,18 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
         targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
       })))
     );
-    const knownVndExchanges=exchanges.filter(x=>x.mode!=='RUB_VND'&&x.usdtReceived!=null&&x.vndReceived!=null);
-    const exchangeVnd=knownVndExchanges.reduce((sum,x)=>sum+Number(x.vndReceived),0);
-    const exchangeUsdt=knownVndExchanges.reduce((sum,x)=>sum+Number(x.usdtReceived),0);
+    const knownVndExchanges=mapActualVndUsdtExchanges(exchanges.map(x=>({
+      mode:x.mode,
+      usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),
+      vndReceived:x.vndReceived==null?null:Number(x.vndReceived),
+    })));
+    const exchangeVnd=knownVndExchanges.reduce((sum,x)=>sum+x.vndReceived,0);
+    const exchangeUsdt=knownVndExchanges.reduce((sum,x)=>sum+x.usdtReceived,0);
     // Prefer actual card-purchase observations. Otherwise use only exchanges with a recorded VND outcome.
     const effectiveVndPerUsdt=observedVndPerUsdt!=null
       ? observedVndPerUsdt
       : exchangeUsdt>0 ? exchangeVnd/exchangeUsdt : null;
-    const plannedExchanges=exchanges.filter(x=>x.mode!=='RUB_VND'&&x.vndReceived==null&&x.usdtReceived!=null&&x.planningVndPerUsdt!=null);
+    const plannedExchanges=exchanges.filter(x=>x.mode!=='RUB_VND'&&!(x.mode==='RUB_TARGET'&&x.targetCurrency==='VND')&&x.vndReceived==null&&x.usdtReceived!=null&&x.planningVndPerUsdt!=null);
     const plannedUsdt=plannedExchanges.reduce((sum,x)=>sum+Number(x.usdtReceived),0);
     const planningVndPerUsdt=plannedUsdt>0
       ? plannedExchanges.reduce((sum,x)=>sum+Number(x.usdtReceived)*Number(x.planningVndPerUsdt),0)/plannedUsdt
