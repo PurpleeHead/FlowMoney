@@ -78,3 +78,11 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [ ] These checks are code-level evidence only. The release remains blocked on confirming the intended production database, encrypted backup plus successful restore drill, read-only legacy wallet reconciliation, Render configuration reconciliation, and target-environment smoke tests.
 - [ ] The live Render service still reports branch `review/pr-3-fix`, auto-deploy enabled, and `/api/health`; repository configuration specifies auto-deploy off and `/api/ready`. Do not change the live service or deploy until the configuration plan and target database are explicitly approved.
 - [ ] PR #83 remains Draft and unmerged. No production deployment, production database access/mutation, or live Render configuration change was performed as part of this check.
+
+## Operational risk re-confirmed — live Render service inspection (2026-10-20)
+
+- [x] Read-only Render inspection reconfirmed service `flowmoney-app` is live on branch `review/pr-3-fix`, with automatic deploys triggered by commits and health check `/api/health`. The most recent recorded live deploy is commit `bb2bb41d801f466049c9c50e7bd2da02e007d235` (2026-10-17).
+- [x] The live start command is `npx prisma migrate deploy --schema server/prisma/schema.prisma && npm start`. Therefore a deployment can execute pending migrations at process startup. Combined with automatic deploys enabled, this makes the branch/configuration mismatch a high-priority operational risk until the intended database and migration plan are verified.
+- [x] The only Postgres instance returned by the current Render workspace listing is `flowmoney-test-db` / `flowmoney_test_db`, a Free test database with expiry `2026-11-15T09:36:23Z`. This is not evidence that the web service is connected to it, and it must not be assumed to be production.
+- [ ] Owner-approved operational action is required to disable live auto-deploy or otherwise prevent unreviewed startup migrations while the database target and release configuration are reconciled. No Render settings were changed during this inspection.
+- [ ] Do not run the read-only legacy wallet preflight against any database until the intended target is explicitly identified and access is confirmed; never infer the service's `DATABASE_URL` from the workspace database list.
