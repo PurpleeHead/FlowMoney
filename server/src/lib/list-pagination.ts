@@ -5,26 +5,27 @@ const cursorSchema = z.object({
   id: z.string().min(1).max(128),
 }).strict();
 
+const limitSchema = z.coerce.number().int().min(1).max(500);
 export type ListCursor = z.infer<typeof cursorSchema>;
 
 export function parseListPageQuery(query: Record<string, unknown>) {
-  const limitValue = query.limit;
-  const cursorValue = query.cursor;
-  const requested = limitValue !== undefined || cursorValue !== undefined;
-  const limitParsed = limitValue === undefined ? 100 : z.coerce.number().int().min(1).max(500).safeParse(limitValue);
-  if (limitParsed === false || (typeof limitParsed === 'object' && 'success' in limitParsed && !limitParsed.success)) {
-    return { requested, error: true as const };
+  const requested = query.limit !== undefined || query.cursor !== undefined;
+  let limit = 100;
+  if (query.limit !== undefined) {
+    const parsedLimit = limitSchema.safeParse(query.limit);
+    if (!parsedLimit.success) return { requested, error: true as const };
+    limit = parsedLimit.data;
   }
-  const limit = typeof limitParsed === 'object' && 'success' in limitParsed
-    ? (limitParsed.success ? limitParsed.data : 100)
-    : limitParsed;
+
   let cursor: ListCursor | null = null;
-  if (cursorValue !== undefined) {
-    if (typeof cursorValue !== 'string' || cursorValue.length > 512) return { requested, error: true as const };
+  if (query.cursor !== undefined) {
+    if (typeof query.cursor !== 'string' || query.cursor.length > 512) {
+      return { requested, error: true as const };
+    }
     try {
-      const decoded = Buffer.from(cursorValue, 'base64url').toString('utf8');
+      const decoded = Buffer.from(query.cursor, 'base64url').toString('utf8');
       const parsed = cursorSchema.safeParse(JSON.parse(decoded));
-      if (!parsed.success || Buffer.from(cursorValue, 'base64url').toString('base64url') !== cursorValue) {
+      if (!parsed.success || Buffer.from(query.cursor, 'base64url').toString('base64url') !== query.cursor) {
         return { requested, error: true as const };
       }
       cursor = parsed.data;
@@ -32,7 +33,7 @@ export function parseListPageQuery(query: Record<string, unknown>) {
       return { requested, error: true as const };
     }
   }
-  return { requested, error: false as const, limit: Number(limit), cursor };
+  return { requested, error: false as const, limit, cursor };
 }
 
 export function encodeListCursor(timestamp: Date, id: string): string {
