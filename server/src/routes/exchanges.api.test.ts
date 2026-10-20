@@ -301,7 +301,7 @@ describe('exchange list response privacy', () => {
     });
 
     assert.deepEqual(queryArgs.where, { userId: 'user-42' });
-    assert.deepEqual(queryArgs.orderBy, { createdAt: 'desc' });
+    assert.deepEqual(queryArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
     assert.equal(queryArgs.take, 100);
     assert.equal('userId' in queryArgs.select, false);
   });
