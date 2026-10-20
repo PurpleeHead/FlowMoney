@@ -28,7 +28,7 @@ afterEach(() => {
   expenseModel.findMany = originalExpenseFindMany;
   expenseModel.aggregate = originalExpenseAggregate;
   exchangeModel.findMany = originalExchangeFindMany;
-  rawModel.$queryRaw = originalQueryRaw;
+  Object.defineProperty(prisma, '$queryRaw', { configurable: true, writable: true, value: originalQueryRaw });
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
@@ -106,10 +106,14 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
   // as PostgreSQL. This keeps route tests independent of a live database.
   dashboardAggregateArgs = [];
-  rawModel.$queryRaw = async () => {
-    const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
-    return mockDashboardExchangeAggregates(rows);
-  };
+  Object.defineProperty(prisma, '$queryRaw', {
+    configurable: true,
+    writable: true,
+    value: async () => {
+      const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
+      return mockDashboardExchangeAggregates(rows);
+    },
+  });
   expenseModel.aggregate = async (args: any) => {
     dashboardAggregateArgs.push(args);
     const rows = await expenseModel.findMany({});
