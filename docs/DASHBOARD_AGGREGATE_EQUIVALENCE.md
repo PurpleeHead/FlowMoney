@@ -1,6 +1,6 @@
 # Dashboard exchange-summary aggregation — implementation gate
 
-Status: design and test contract only. This document does not change runtime accounting behavior or authorize a deployment.
+Status: PostgreSQL fixture implemented for the first equivalence slice. `server/prisma/tests/verify-dashboard-aggregate-equivalence.ts` now seeds disposable PostgreSQL and checks user-scoped reads, weighted RUB/USDT, actual-vs-planned VND observations, direct-VND legacy fallback behavior, weighted card-purchase rates, and cross-user exclusion. CI runs it after migrations. This does not change runtime dashboard accounting or authorize a deployment.
 
 ## Why the dashboard still has an unbounded exchange query
 
@@ -65,3 +65,12 @@ Do not claim a performance improvement without recorded before/after evidence. A
 4. Compare all response summary fields against the old implementation on the fixture.
 5. Only then bound the exchange activity query and rerun the full test matrix.
 6. Keep PR #83 Draft until the operational gates in `PRODUCTION_RELEASE_RUNBOOK.md` are independently satisfied. No production DB inspection, migration, merge, or deploy is implied by this plan.
+
+
+## Fixture implementation update — 2026-10-20
+
+- [x] Disposable PostgreSQL fixture is wired into `.github/workflows/ci.yml` immediately after migration deployment.
+- [x] The fixture seeds two users and mixed exchange/expense histories, including a direct RUB→USDT acquisition, a direct RUB→VND record, a direct VND target with conflicting legacy `vndReceived`, a non-VND target estimate, a planning-only exchange, card purchases, unpriced expense data, and a second user's rows.
+- [x] CI run [#1223](https://github.com/PurpleeHead/FlowMoney/actions/runs/39429935414) passed on `6daa9115a8166ee446fa2de3aee334656c3ab8e7`; its disposable-PostgreSQL fixture, migration/rollback/idempotency checks, test suite, production build, and dependency audits passed. Security workflow [#208](https://github.com/PurpleeHead/FlowMoney/actions/runs/39429935408) also passed.
+- [ ] This is the first equivalence slice, not the complete release gate. Extend database-side aggregate comparisons to canonical direct-target VND totals, confirmed/estimated budget components, and planning-rate aggregates before changing `dashboard.ts` summary calculations or bounding its exchange query.
+- [ ] Capture realistic `EXPLAIN (ANALYZE, BUFFERS)`, query timings, and response payload sizes before claiming a performance improvement.
