@@ -111,3 +111,17 @@ npx tsx server/prisma/tests/benchmark-dashboard-aggregates.ts
 ```
 
 Use the same machine, PostgreSQL instance, row count, and warm-up policy for comparisons. Record the JSON output with the commit SHA and database version. The benchmark deliberately does not run against Render or any non-local database. It is a microbenchmark of exchange aggregation/fetch cost, not a substitute for end-to-end HTTP latency measurements or production telemetry.
+
+
+## First benchmark result — CI disposable PostgreSQL
+
+Commit `495a12429e74aa2ea1bc2358bdab6761373e8f75`, workflow run [39437597709](https://github.com/PurpleeHead/FlowMoney/actions/runs/39437597709) completed successfully on 2026-10-20. The benchmark seeded 10,000 exchange rows for one temporary test user in the CI PostgreSQL 16 service, verified selected SQL aggregate values against the Node-side reference, ran two warm-up rounds and then seven measured rounds.
+
+| Path | Median | Highest of 7 measured rounds (reported as p95) |
+|---|---:|---:|
+| PostgreSQL aggregate query | 15.01 ms | 17.09 ms |
+| Fetch full history + aggregate in Node | 100.71 ms | 104.62 ms |
+
+In this CI environment, the aggregate path was about **6.7× faster by median** and reduced the measured operation by about **85%**. This is a directional microbenchmark: it includes one database round trip per path and Node-side transfer/aggregation work, but does not measure the full HTTP endpoint, production database contention, network conditions, or realistic multi-user load. The p95 label is only the maximum of seven samples and should not be interpreted as a statistically stable latency percentile.
+
+The CI workflow and disposable benchmark passed. Still required before any production performance claim: capture `EXPLAIN (ANALYZE, BUFFERS)` against a representative disposable history, compare end-to-end `GET /api/dashboard` response latency/payload size, and repeat locally with documented hardware/database details. Do not add indexes or claim production p95 from this benchmark alone.
