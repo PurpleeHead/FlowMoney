@@ -7,7 +7,7 @@ import { prisma } from '../services/prisma.js';
 import dashboardRoutes from './dashboard.js';
 
 const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
-const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any> };
+const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any>; aggregate: (...args: any[]) => Promise<any> };
 const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
 const originalUserFindFirst = userModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
@@ -23,6 +23,24 @@ afterEach(() => {
 });
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
+  // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
+  // as PostgreSQL. This keeps route tests independent of a live database.
+  expenseModel.aggregate = async (args: any) => {
+    const rows = await expenseModel.findMany({});
+    const where = args.where ?? {};
+    const filtered = rows.filter((row: any) => {
+      if (where.date?.gte && new Date(row.date) < where.date.gte) return false;
+      if (where.amountVnd?.gt != null && !(row.amountVnd != null && Number(row.amountVnd) > where.amountVnd.gt)) return false;
+      if (where.usdtCharged?.gt != null && !(row.usdtCharged != null && Number(row.usdtCharged) > where.usdtCharged.gt)) return false;
+      return true;
+    });
+    const sums: Record<string, number | null> = {};
+    for (const key of Object.keys(args._sum ?? {})) {
+      const values = filtered.map((row: any) => row[key]).filter((value: any) => value != null).map(Number);
+      sums[key] = values.length ? values.reduce((sum: number, value: number) => sum + value, 0) : null;
+    }
+    return { _sum: sums };
+  };
   userModel.findFirst = async () => ({ tokenVersion: 0 });
   process.env.JWT_SECRET = 'dashboard-api-test-secret-long-enough-for-jwt-middleware';
   const app = express();
@@ -185,7 +203,7 @@ describe('dashboard query shape', () => {
   it('selects only fields needed for dashboard calculations and visible history', async () => {
     let expenseArgs: any;
     let exchangeArgs: any;
-    expenseModel.findMany = async (args: any) => { expenseArgs = args; return []; };
+    expenseModel.findMany = async (args: any) => { if (args.select) expenseArgs = args; return []; };
     exchangeModel.findMany = async (args: any) => { exchangeArgs = args; return []; };
 
     await withApi(async baseUrl => {
