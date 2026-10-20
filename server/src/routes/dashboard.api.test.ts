@@ -574,7 +574,7 @@ describe('dashboard observed VND/RUB combines all actual source types once', () 
       };
       assert.equal(body.confirmedExchangeVnd, 1350000);
       assert.equal(body.estimatedUnconvertedVnd, 0);
-      assert.equal(body.balanceVnd, 1350000);
+      assert.equal(body.balanceVnd, 1300000, 'the 50,000 VND card purchase must reduce the exchange balance');
       assert.ok(body.effectiveVndPerRub != null);
       assert.ok(
         Math.abs(body.effectiveVndPerRub - (1400000 / 6500)) < 1e-10,
