@@ -7,6 +7,7 @@ import {
   calculateObservedVndPerRub,
   calculateRubPerUsdt,
   mapDirectVndExchanges,
+  mapActualVndExchanges,
   mapRubUsdtExchanges,
   estimateRubFromVnd,
   resolveExchangeVndOutcome,
@@ -121,6 +122,20 @@ describe('direct exchange observations', () => {
     ]), [
       { rubSpent: 1000, vndReceived: 250000 },
       { rubSpent: 2000, vndReceived: 460000 },
+    ]);
+  });
+});
+
+
+describe('indirect VND exchange observations', () => {
+  it('excludes legacy direct VND target records to avoid counting them twice', () => {
+    assert.deepEqual(mapActualVndExchanges([
+      { mode: 'RUB_USDT_VND', rubSpent: 8300, vndReceived: 2_300_000 },
+      { mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250_000 },
+      { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, vndReceived: 500_000 },
+      { mode: 'RUB_TARGET', targetCurrency: 'USD', rubSpent: 1500, vndReceived: null },
+    ]), [
+      { rubSpent: 8300, vndReceived: 2_300_000 },
     ]);
   });
 });
