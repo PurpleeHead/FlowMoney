@@ -217,7 +217,10 @@ describe('dashboard query shape', () => {
       assert.equal(response.status, 200);
     });
 
-    assert.deepEqual(expenseArgs.where, { userId: 'dashboard-user' });
+    assert.equal(expenseArgs.where.userId, 'dashboard-user');
+    assert.ok(expenseArgs.where.date.gte instanceof Date);
+    const expectedChartStart = new Date(new Date().getFullYear(), new Date().getMonth() - 11, 1);
+    assert.equal(expenseArgs.where.date.gte.getTime(), expectedChartStart.getTime());
     assert.deepEqual(expenseArgs.orderBy, { date: 'desc' });
     assert.deepEqual(Object.keys(expenseArgs.select).sort(), [
       'amount', 'amountRub', 'amountVnd', 'category', 'currency', 'date',
