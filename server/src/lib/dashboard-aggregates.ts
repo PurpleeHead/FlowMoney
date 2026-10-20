@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../services/prisma.js';
 
 export type DashboardExchangeAggregates = {
@@ -23,23 +24,25 @@ export type DashboardExchangeAggregates = {
  * Predicates intentionally mirror the existing dashboard/money helpers. Do not
  * add a date window here: recent activity is a separate query concern.
  */
-export async function getDashboardExchangeAggregates(userId: string): Promise<DashboardExchangeAggregates> {
-  const [row] = await prisma.$queryRaw<Array<{
-    exchangeCount: number;
-    rubUsdtRub: unknown;
-    rubUsdtUsdt: unknown;
-    actualVnd: unknown;
-    actualUsdt: unknown;
-    plannedWeightedVnd: unknown;
-    plannedUsdt: unknown;
-    confirmedVnd: unknown;
-    estimatedTargetVnd: unknown;
-    estimatedUsdt: unknown;
-    hasUnpricedUsdtTopUp: boolean;
-    hasEstimatedTarget: boolean;
-    rateExchangeRub: unknown;
-    rateExchangeVnd: unknown;
-  }>>`
+type DashboardExchangeAggregateRow = {
+  exchangeCount: number;
+  rubUsdtRub: unknown;
+  rubUsdtUsdt: unknown;
+  actualVnd: unknown;
+  actualUsdt: unknown;
+  plannedWeightedVnd: unknown;
+  plannedUsdt: unknown;
+  confirmedVnd: unknown;
+  estimatedTargetVnd: unknown;
+  estimatedUsdt: unknown;
+  hasUnpricedUsdtTopUp: boolean;
+  hasEstimatedTarget: boolean;
+  rateExchangeRub: unknown;
+  rateExchangeVnd: unknown;
+};
+
+function dashboardExchangeAggregateQuery(userId: string) {
+  return Prisma.sql`
     SELECT
       COUNT(*)::int AS "exchangeCount",
       COALESCE(SUM(CASE
@@ -130,7 +133,19 @@ export async function getDashboardExchangeAggregates(userId: string): Promise<Da
     FROM "Exchange"
     WHERE "userId" = ${userId}
   `;
+}
 
+export async function explainDashboardExchangeAggregates(userId: string): Promise<unknown> {
+  const [row] = await prisma.$queryRaw<Array<{ 'QUERY PLAN': unknown }>>(
+    Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${dashboardExchangeAggregateQuery(userId)}`,
+  );
+  return row?.['QUERY PLAN'] ?? null;
+}
+
+export async function getDashboardExchangeAggregates(userId: string): Promise<DashboardExchangeAggregates> {
+  const [row] = await prisma.$queryRaw<DashboardExchangeAggregateRow[]>(
+    dashboardExchangeAggregateQuery(userId),
+  );
   const value = (input: unknown) => Number(input ?? 0);
   return {
     exchangeCount: Number(row.exchangeCount),
