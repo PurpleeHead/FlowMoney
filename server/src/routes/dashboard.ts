@@ -55,8 +55,8 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const observedVndPerUsdt=calculateObservedVndPerUsdt(purchases);
 
     // Exchange-history financial totals are calculated by user-scoped PostgreSQL aggregates.
-    // The full exchange query is temporarily retained for the response until aggregate equivalence
-    // is established and the recent-activity window is enabled in the next rollout step.
+    // The separate exchange row query is only a bounded recent-activity payload; never use it
+    // as the source of all-history balances or weighted rates.
     const effectiveRubPerUsdt = exchangeAggregates.rubUsdtUsdt > 0
       ? exchangeAggregates.rubUsdtRub / exchangeAggregates.rubUsdtUsdt
       : null;
