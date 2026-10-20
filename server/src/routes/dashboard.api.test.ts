@@ -776,6 +776,7 @@ describe('dashboard canonical direct VND amount precedence', () => {
         confirmedExchangeVnd: number;
         estimatedUnconvertedVnd: number;
         balanceVnd: number | null;
+        effectiveVndPerRub: number | null;
       };
       assert.equal(body.confirmedExchangeVnd, 1_000_000);
       assert.equal(body.estimatedUnconvertedVnd, 0);
