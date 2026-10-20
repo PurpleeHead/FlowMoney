@@ -131,3 +131,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Added `dashboard.api.test.ts` regression coverage for a direct RUB → VND record with canonical `targetVndEquivalent` and a stale, conflicting legacy `vndReceived` value. Expected confirmed VND and balance count the canonical amount exactly once.
 - [ ] CI and Security workflows for this test commit are still running; do not treat the test as passing until both finish successfully.
 - [ ] This is mocked route-level regression coverage, not the outstanding PostgreSQL-backed aggregate-equivalence fixture or performance evidence.
+
+
+- [x] Extended the canonical direct-VND regression assertion to verify the observed VND/RUB rate remains `250` (1,000,000 VND / 4,000 RUB) even when stale legacy `vndReceived` is 9,999,999.
+- [ ] CI and Security for follow-up commit `905a25fa244c6a204932e9fd1083dd799f190468` are still in progress; re-check before marking this follow-up verified.
