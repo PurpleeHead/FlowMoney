@@ -609,3 +609,36 @@ describe('expense API ledger synchronization', () => {
   });
 
 });
+
+
+describe('expense list response privacy', () => {
+  it('scopes the query to the authenticated user and omits the internal userId field', async () => {
+    let queryArgs: any;
+    expenseModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [{
+        id: 'expense-list-1', userId: 'user-42', title: 'Lunch', category: 'Food',
+        amount: 100, currency: 'RUB', amountVnd: null, amountRub: 100,
+        usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'),
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+        updatedAt: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+      }];
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as Array<Record<string, unknown>>;
+      assert.equal(body.length, 1);
+      assert.equal(body[0].id, 'expense-list-1');
+      assert.equal('userId' in body[0], false);
+    });
+
+    assert.deepEqual(queryArgs.where, { userId: 'user-42' });
+    assert.deepEqual(queryArgs.orderBy, { date: 'desc' });
+    assert.equal(queryArgs.take, 500);
+    assert.equal('userId' in queryArgs.select, false);
+  });
+});
