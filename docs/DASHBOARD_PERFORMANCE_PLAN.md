@@ -125,3 +125,19 @@ Commit `495a12429e74aa2ea1bc2358bdab6761373e8f75`, workflow run [39437597709](ht
 In this CI environment, the aggregate path was about **6.7× faster by median** and reduced the measured operation by about **85%**. This is a directional microbenchmark: it includes one database round trip per path and Node-side transfer/aggregation work, but does not measure the full HTTP endpoint, production database contention, network conditions, or realistic multi-user load. The p95 label is only the maximum of seven samples and should not be interpreted as a statistically stable latency percentile.
 
 The CI workflow and disposable benchmark passed. Still required before any production performance claim: capture `EXPLAIN (ANALYZE, BUFFERS)` against a representative disposable history, compare end-to-end `GET /api/dashboard` response latency/payload size, and repeat locally with documented hardware/database details. Do not add indexes or claim production p95 from this benchmark alone.
+
+
+## Repeat benchmark and representative EXPLAIN — CI disposable PostgreSQL
+
+Workflow [39438237855](https://github.com/PurpleeHead/FlowMoney/actions/runs/39438237855) passed on 2026-10-20 at commit `72cba02d675f39db71d8e47a18a17f5cdac12e5a`. With planner statistics refreshed after inserting 10,000 rows, a second seven-round run reported:
+
+| Path | Median | Highest of 7 measured rounds (reported as p95) |
+|---|---:|---:|
+| PostgreSQL aggregate query | 21.65 ms | 23.99 ms |
+| Fetch full history + aggregate in Node | 128.81 ms | 134.59 ms |
+
+That run measured approximately **5.9× faster by median** for the SQL aggregate path. Absolute timings differed from the first run, reinforcing that these are CI microbenchmark numbers rather than stable service latency SLOs.
+
+The benchmark also records `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` for a representative user-scoped `COUNT`/sum query. After `ANALYZE`, PostgreSQL estimated and scanned 10,000 rows with a sequential scan, reported about 1.53 ms for the scan and 2.60 ms for the aggregate node, 179 shared buffer hits and zero shared reads. Because every row in this disposable table belonged to the one benchmark user, a sequential scan is reasonable; this is not evidence that a multi-user production query should avoid the existing `Exchange(userId, createdAt)` index.
+
+**Still open:** obtain `EXPLAIN (ANALYZE, BUFFERS)` for the complete multi-bucket aggregate statement on a representative multi-user disposable fixture; measure end-to-end dashboard HTTP latency and response size; and repeat at multiple history sizes. Do not add indexes or claim production latency improvement based solely on this access-path sample.
