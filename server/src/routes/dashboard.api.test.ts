@@ -369,3 +369,51 @@ describe('dashboard aggregates stay independent from chart history window', () =
     });
   });
 });
+
+
+describe('dashboard direct RUB-to-VND target exchange', () => {
+  it('counts the direct VND target equivalent once as confirmed VND, not as an estimate', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async ({ where }: any) => {
+      assert.deepEqual(where, { userId: 'dashboard-user' });
+      return [{
+        id: 'direct-vnd-target',
+        mode: 'RUB_TARGET',
+        rubSpent: 3500,
+        usdtReceived: null,
+        vndPerUsdt: null,
+        planningVndPerUsdt: null,
+        vndFee: 0,
+        vndReceived: null,
+        effectiveVndPerRub: 1000000 / 3500,
+        effectiveRubPerUsdt: null,
+        targetCurrency: 'VND',
+        targetReceived: 1000000,
+        targetToVndRate: 1,
+        targetVndEquivalent: 1000000,
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+      }];
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1000000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1000000);
+      assert.equal(body.balanceIsEstimated, false);
+    });
+  });
+});
