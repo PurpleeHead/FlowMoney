@@ -33,6 +33,8 @@ Do not recalculate saved `amountRub` values on dashboard reads.
 
 Return a bounded recent-activity window from the dashboard, and use cursor pagination for full expense/exchange history. Keep the existing list response shape backward-compatible during the transition, or version the API explicitly before changing it. A bounded history window must never feed all-history financial totals.
 
+**Current API limitation confirmed by route inspection:** `GET /api/journal` accepts a `limit` (1–500) and returns `hasMore`, but does not accept or return a cursor. The client currently renders its loaded journal entries without a load-more control. The dedicated list endpoints are also capped (`expenses` 500, `exchanges` 100, `receipts` 100) without cursor-based continuation. Consequently, users with larger histories cannot retrieve all records through these list views, and CSV/dashboard-derived views must not be represented as complete exports once a cap is reached. Implement stable cursor pagination and explicit client continuation before claiming full-history access. Use deterministic tie-breakers for identical timestamps and scope every cursor query to the authenticated user.
+
 ### 4. Add query support only after measuring
 
 Existing indexes on `Expense(userId, date)` and `Exchange(userId, createdAt)` already support the main user/date filters. Capture representative `EXPLAIN (ANALYZE, BUFFERS)` output before adding more indexes; avoid redundant indexes that increase write and storage costs.
