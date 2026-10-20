@@ -24,6 +24,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 ## Current known gates
 
+- **Render configuration mismatch found during the 2026-10-20 audit:** the live `flowmoney-app` service was configured with auto-deploy enabled, branch `review/pr-3-fix`, and health check `/api/health`, while this repository's `render.yaml` specifies auto-deploy off and `/api/ready`. Reconcile the live Dashboard settings with the reviewed release configuration before any production release; verify the target branch and readiness endpoint explicitly. Do not assume editing `render.yaml` has changed an existing service's live settings.
 - A successful CI run covers code tests, build, dependency audit, and disposable-PostgreSQL migration verification only.
 - The target production database, backup credentials/storage, and a successful production-data restore drill must be verified separately.
 - The dashboard loads all of a user's expenses and exchanges to compute full-history totals and weighted rates. Expense create/edit and receipt save also read historical exchange and card-purchase observations to calculate date-specific cost bases. Do not add arbitrary query limits: first move these calculations to date-aware database aggregates, preserve the saved historical RUB valuations, and separately paginate history/export APIs. The implementation sequence and mandatory regression tests are documented in `docs/DASHBOARD_PERFORMANCE_PLAN.md`.
