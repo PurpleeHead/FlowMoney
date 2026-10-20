@@ -130,4 +130,27 @@ describe('journal API integration', () => {
     });
   });
 
+  it('accepts the wallet-movement cursor shape emitted by buildJournal', async () => {
+    let movementArgs: any;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    movementModel.findMany = async args => { movementArgs = args; return []; };
+    const cursor = Buffer.from(JSON.stringify({
+      occurredAt: '2026-10-18T08:00:00.000Z',
+      id: 'movement:move-7',
+      type: 'wallet_movement',
+    })).toString('base64url');
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/journal?limit=25&cursor=${encodeURIComponent(cursor)}`, {
+        headers: { authorization: bearer() },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(movementArgs.where.OR[1], {
+        occurredAt: new Date('2026-10-18T08:00:00.000Z'),
+        id: { gt: 'move-7' },
+      });
+    });
+  });
+
 });
