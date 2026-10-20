@@ -300,7 +300,7 @@ describe('expense API ledger synchronization', () => {
     exchangeModel.findMany = async () => [{
       mode: 'RUB_TARGET', rubSpent: 2000, usdtReceived: null, vndReceived: null,
       planningVndPerUsdt: null, targetCurrency: 'VND', targetReceived: 460000,
-      targetVndEquivalent: 460000,
+      targetVndEquivalent: null, // legacy row only has targetReceived
     }];
     let updateData: any;
     const tx = {
