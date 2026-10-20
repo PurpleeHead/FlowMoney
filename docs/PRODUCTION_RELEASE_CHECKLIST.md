@@ -52,3 +52,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Security dependency workflow run [#149](https://github.com/PurpleeHead/FlowMoney/actions/runs/39411632655) passed on the same head.
 - [ ] PostgreSQL aggregate-equivalence comparison and realistic query/payload measurements remain open.
 - [ ] Production database identity, encrypted backup/restore, Render configuration reconciliation, and production smoke tests remain release blockers. PR #83 remains Draft; no merge or deployment is authorized by CI.
+
+
+## Latest PR #83 verification — 2026-10-20 (planning-rate regression)
+
+- [x] CI workflow run [#1111](https://github.com/PurpleeHead/FlowMoney/actions/runs/39412100339) passed on `08351e9b15135fd5436d508c8f01a2acebe715af`; both `verify` and `verify-migrations` succeeded.
+- [x] Security dependency workflow run [#152](https://github.com/PurpleeHead/FlowMoney/actions/runs/39412100300) passed on the same commit.
+- [x] Added dashboard API regression coverage confirming a planning-only VND/USDT rate does not become an observed/effective rate when actual VND outcome is missing; only the estimated balance may use it.
+- [ ] PostgreSQL aggregate-equivalence comparison and realistic query/payload measurements remain open.
+- [ ] Production DB identity, encrypted backup/restore, live Render configuration reconciliation, and production smoke tests remain release blockers. PR #83 remains Draft; no merge or deployment is authorized by these checks.
