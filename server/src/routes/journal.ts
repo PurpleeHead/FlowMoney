@@ -25,7 +25,10 @@ function decodeCursor(value: string | undefined): Cursor | null {
   try {
     const decoded = Buffer.from(value, 'base64url').toString('utf8');
     const parsed = cursorSchema.safeParse(JSON.parse(decoded));
-    if (!parsed.success || !parsed.data.id.startsWith(`${parsed.data.type}:`)) return null;
+    const expectedPrefix = parsed.success
+      ? ({ expense: 'expense:', exchange: 'exchange:', wallet_movement: 'movement:' } as const)[parsed.data.type]
+      : null;
+    if (!parsed.success || !expectedPrefix || !parsed.data.id.startsWith(expectedPrefix)) return null;
     return parsed.data;
   } catch {
     return null;
