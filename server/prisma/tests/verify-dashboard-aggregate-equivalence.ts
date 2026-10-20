@@ -98,7 +98,7 @@ try {
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
           THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
-        WHEN "mode" NOT IN ('RUB_VND') AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+        WHEN NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
           THEN "vndReceived"
         ELSE 0
       END), 0) AS "confirmedVnd",
