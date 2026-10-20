@@ -59,7 +59,7 @@ describe('receipt API ownership', () => {
     let findManyArgs: any;
     receiptModel.findMany = async (args: any) => {
       findManyArgs = args;
-      return [{ id: 'receipt-user-1', userId: 'user-1', rawText: 'receipt' }];
+      return [{ id: 'receipt-user-1', rawText: 'receipt', items: [], createdAt: new Date('2026-10-19T08:00:00.000Z') }];
     };
 
     await withApi(async baseUrl => {
@@ -71,8 +71,10 @@ describe('receipt API ownership', () => {
       assert.deepEqual(findManyArgs.where, { userId: 'user-1' });
       assert.deepEqual(findManyArgs.orderBy, { createdAt: 'desc' });
       assert.equal(findManyArgs.take, 100);
-      const receipts = await response.json() as Array<{ userId: string }>;
-      assert.deepEqual(receipts.map(receipt => receipt.userId), ['user-1']);
+      assert.deepEqual(Object.keys(findManyArgs.select).sort(), ['createdAt', 'id', 'items', 'rawText'].sort());
+      const receipts = await response.json() as Array<{ id: string; userId?: string }>;
+      assert.deepEqual(receipts.map(receipt => receipt.id), ['receipt-user-1']);
+      assert.equal('userId' in receipts[0], false);
     });
   });
 
