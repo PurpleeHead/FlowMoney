@@ -129,11 +129,14 @@ router.post('/', async (req: AuthedRequest, res, next) => {
 
 router.get('/', async (req: AuthedRequest, res, next) => {
   try {
-    res.json(await prisma.receipt.findMany({
+    const records = await prisma.receipt.findMany({
       where: { userId: req.user!.id },
       orderBy: { createdAt: 'desc' },
       take: 100,
-    }));
+      // Return only receipt data required by clients; never expose the owner ID.
+      select: { id: true, rawText: true, items: true, createdAt: true },
+    });
+    res.json(records);
   } catch (e) {
     next(e);
   }
