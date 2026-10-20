@@ -118,6 +118,8 @@ jobs:
         run: npm run db:generate
       - name: Apply all migrations to disposable PostgreSQL
         run: npx prisma migrate deploy --schema=server/prisma/schema.prisma
+      - name: Verify dashboard aggregate equivalence against disposable PostgreSQL
+        run: npx tsx server/prisma/tests/verify-dashboard-aggregate-equivalence.ts
       - name: Verify transaction rollback when ledger write fails
         run: npx tsx server/prisma/tests/verify-transaction-rollback.ts
       - name: Verify receipt and expense rollback when ledger write fails
