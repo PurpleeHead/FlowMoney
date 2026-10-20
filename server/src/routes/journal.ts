@@ -46,8 +46,8 @@ function encodeCursor(entry: JournalEntry): string {
 function sourceAfterCursor(cursor: Cursor | null, sourceType: Cursor['type'], timeField: 'date' | 'createdAt' | 'occurredAt') {
   if (!cursor) return {};
   const cursorTime = new Date(cursor.occurredAt);
-  // Keep this in sync with buildJournal's tie-breaker: prefixed IDs sort as exchange, expense, wallet_movement.
-  const priority: Record<Cursor['type'], number> = { exchange: 0, expense: 1, wallet_movement: 2 };
+  // Keep this in sync with buildJournal's lexical ID tie-breaker: expense:, exchange:, movement:.
+  const priority: Record<Cursor['type'], number> = { expense: 0, exchange: 1, wallet_movement: 2 };
   const sourcePriority = priority[sourceType];
   const cursorPriority = priority[cursor.type];
   const id = cursor.id.slice(cursor.id.indexOf(':') + 1);
