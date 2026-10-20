@@ -91,3 +91,23 @@ This is a correctness-oriented implementation step, not yet a performance claim.
 The PostgreSQL aggregate implementation now also normalizes legacy `targetCurrency` casing/whitespace in SQL predicates, matching the currency normalization used by the shared money helpers. A dedicated fixture includes `" usdt "` and asserts the RUB/USDT weighted acquisition totals include it. CI run [39436007312](https://github.com/PurpleeHead/FlowMoney/actions/runs/39436007312) passed on `15621183488c6599276ffb3af297015e1e4815ec`, including the disposable-PostgreSQL aggregate-equivalence job and production build/tests.
 
 Still open: benchmark old row-loading calculations against the aggregate implementation over realistic disposable histories; capture `EXPLAIN (ANALYZE, BUFFERS)`; confirm response-size/latency improvements; and close the independent production database, backup/restore, legacy reconciliation, and smoke-test gates.
+
+
+## Reproducible disposable-DB microbenchmark
+
+A guarded benchmark is available at `server/prisma/tests/benchmark-dashboard-aggregates.ts`. It creates a temporary user and synthetic exchange rows, checks representative SQL aggregate values against a Node-side full-history reference, warms up both paths, and reports median/p95 timings for seven measured rounds. It refuses to write unless all safeguards pass:
+
+- `FLOWMONEY_BENCHMARK_DATABASE=disposable` is explicitly set;
+- `DATABASE_URL` points to localhost/127.0.0.1 and a database name containing `test`, `bench`, or `disposable`;
+- schema migrations have already been applied to that disposable database.
+
+Example from the repository root (replace the credentials only with local disposable PostgreSQL credentials):
+
+```bash
+FLOWMONEY_BENCHMARK_DATABASE=disposable \
+DASHBOARD_BENCHMARK_ROWS=10000 \
+DATABASE_URL='postgresql://postgres:postgres@localhost:5432/flowmoney_test?schema=public' \
+npx tsx server/prisma/tests/benchmark-dashboard-aggregates.ts
+```
+
+Use the same machine, PostgreSQL instance, row count, and warm-up policy for comparisons. Record the JSON output with the commit SHA and database version. The benchmark deliberately does not run against Render or any non-local database. It is a microbenchmark of exchange aggregation/fetch cost, not a substitute for end-to-end HTTP latency measurements or production telemetry.
