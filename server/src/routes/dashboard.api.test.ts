@@ -403,7 +403,7 @@ describe('dashboard weighted rates preserve actual observations', () => {
       },
       {
         id: 'card-b', title: 'Dinner', category: 'Food', amount: 60000,
-        currency: 'VND', amountVnd: 60000, amountRub: 166, usdtCharged: 3,
+        currency: 'vNd', amountVnd: 60000, amountRub: 166, usdtCharged: 3,
         date: new Date('2026-10-11T08:00:00.000Z'),
       },
       {
