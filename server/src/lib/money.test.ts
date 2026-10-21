@@ -122,6 +122,8 @@ describe('direct exchange observations', () => {
       { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'VND', targetVndEquivalent: 460000 },
       { mode: 'RUB_TARGET', rubSpent: 1500, targetCurrency: 'VND', targetReceived: 350000 },
       { mode: 'RUB_TARGET', rubSpent: 1200, targetCurrency: 'VND', vndReceived: 275000 },
+      // Explicit zero net VND must not fall back to positive gross/legacy fields.
+      { mode: 'RUB_TARGET', rubSpent: 1800, targetCurrency: 'VND', targetReceived: 350000, targetVndEquivalent: 0, vndReceived: 345000 },
       { mode: 'RUB_TARGET', rubSpent: 500, targetCurrency: 'USDT', targetVndEquivalent: 130000 },
       { mode: 'RUB_USDT_VND', rubSpent: 3000, vndReceived: null },
     ]), [
@@ -129,6 +131,7 @@ describe('direct exchange observations', () => {
       { rubSpent: 2000, vndReceived: 460000 },
       { rubSpent: 1500, vndReceived: 350000 },
       { rubSpent: 1200, vndReceived: 275000 },
+      { rubSpent: 1800, vndReceived: 0 },
     ]);
   });
 });
