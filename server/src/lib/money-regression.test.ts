@@ -7,9 +7,47 @@ import {
   calculateRubPerUsdt,
   calculateTargetVndEquivalent,
   estimateRubFromVnd,
+  mapActualVndExchanges,
+  mapActualVndUsdtExchanges,
+  mapDirectVndExchanges,
 } from './money.js';
 
 describe('money regression boundaries', () => {
+  it('normalizes direct-target currency casing consistently for historical rates', () => {
+    const exchanges = [{
+      mode: 'RUB_TARGET',
+      rubSpent: 1_000,
+      usdtReceived: null,
+      vndReceived: null,
+      targetCurrency: ' vNd ',
+      targetReceived: 250_000,
+      targetVndEquivalent: null,
+    }];
+
+    assert.deepEqual(mapDirectVndExchanges(exchanges), [
+      { rubSpent: 1_000, vndReceived: 250_000 },
+    ]);
+    assert.deepEqual(mapActualVndExchanges(exchanges), []);
+    assert.deepEqual(mapActualVndUsdtExchanges(exchanges), []);
+  });
+
+  it('does not double-count direct VND target exchanges in indirect actual observations', () => {
+    const exchanges = [
+      { mode: 'RUB_TARGET', rubSpent: 1_000, usdtReceived: null, vndReceived: 250_000, targetCurrency: 'VND', targetReceived: 250_000, targetVndEquivalent: 250_000 },
+      { mode: 'RUB_USDT_VND', rubSpent: 2_000, usdtReceived: 20, vndReceived: 500_000, targetCurrency: 'VND', targetReceived: null, targetVndEquivalent: null },
+    ];
+
+    assert.deepEqual(mapDirectVndExchanges(exchanges), [
+      { rubSpent: 1_000, vndReceived: 250_000 },
+    ]);
+    assert.deepEqual(mapActualVndExchanges(exchanges), [
+      { rubSpent: 2_000, vndReceived: 500_000 },
+    ]);
+    assert.deepEqual(mapActualVndUsdtExchanges(exchanges), [
+      { usdtReceived: 20, vndReceived: 500_000 },
+    ]);
+  });
+
   it('weights multiple RUB-to-USDT top-ups by their actual amounts, not by averaging rates', () => {
     const exchanges = [
       { rubSpent: 8_300, usdtReceived: 93.7853 },
