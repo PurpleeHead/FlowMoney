@@ -149,12 +149,16 @@ describe('actual VND/USDT exchange observations', () => {
 });
 
 describe('indirect VND exchange observations', () => {
-  it('excludes legacy direct VND target records to avoid counting them twice', () => {
+  it('accepts only documented indirect outcomes, excluding direct-target and unknown-mode stale VND fields', () => {
     assert.deepEqual(mapActualVndExchanges([
       { mode: 'RUB_USDT_VND', rubSpent: 8300, vndReceived: 2_300_000 },
       { mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250_000 },
       { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, vndReceived: 500_000 },
+      // Direct RUB→USDT rows can contain stale legacy VND fields too.
+      { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 1200, vndReceived: 777_777 },
       { mode: 'RUB_TARGET', targetCurrency: 'USD', rubSpent: 1500, vndReceived: null },
+      // Unknown legacy modes are not authoritative actual exchange outcomes.
+      { mode: 'LEGACY_UNKNOWN', targetCurrency: 'VND', rubSpent: 3000, vndReceived: 999_999 },
     ]), [
       { rubSpent: 8300, vndReceived: 2_300_000 },
     ]);
