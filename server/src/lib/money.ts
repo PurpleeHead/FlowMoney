@@ -121,7 +121,8 @@ export function estimateRubFromVnd(
   if (!Number.isFinite(amountVnd) || amountVnd <= 0 ||
       !Number.isFinite(vndPerUsdt) || !vndPerUsdt || vndPerUsdt <= 0 ||
       !Number.isFinite(rubPerUsdt) || !rubPerUsdt || rubPerUsdt <= 0) return null;
-  return amountVnd / vndPerUsdt * rubPerUsdt;
+  const rub = amountVnd / vndPerUsdt * rubPerUsdt;
+  return Number.isFinite(rub) && rub > 0 ? rub : null;
 }
 
 /** Calculate and persist the RUB cost once, using actual debit when available, otherwise the unified estimate. */
@@ -133,8 +134,9 @@ export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number |
 
   if (currency === 'RUB') return input.amount;
   if (currency === 'USDT') {
-    return rubPerUsdt != null && Number.isFinite(rubPerUsdt) && rubPerUsdt > 0 &&
-      Number.isFinite(input.amount) && input.amount > 0 ? input.amount * rubPerUsdt : null;
+    if (rubPerUsdt == null || !Number.isFinite(rubPerUsdt) || rubPerUsdt <= 0) return null;
+    const rub = input.amount * rubPerUsdt;
+    return Number.isFinite(rub) && rub > 0 ? rub : null;
   }
 
   // A recorded card debit is authoritative: never replace its unknown RUB cost with a VND/RUB forecast.
@@ -143,7 +145,8 @@ export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number |
         rubPerUsdt == null || !Number.isFinite(rubPerUsdt) || rubPerUsdt <= 0) {
       return null;
     }
-    return input.usdtCharged * rubPerUsdt;
+    const rub = input.usdtCharged * rubPerUsdt;
+    return Number.isFinite(rub) && rub > 0 ? rub : null;
   }
 
   // This helper only has conversion inputs for VND. Do not silently interpret GEL,
@@ -153,14 +156,15 @@ export function calculateExpenseRub(input: ExpenseRubInput, rubPerUsdt: number |
     // target-currency → VND rate. Never reinterpret an unknown currency as VND.
     if (input.targetToVndRate == null || !Number.isFinite(input.targetToVndRate) || input.targetToVndRate <= 0 ||
         input.amountVnd == null || !Number.isFinite(input.amountVnd) || input.amountVnd <= 0) return null;
-    return vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0
-      ? input.amountVnd / vndPerRub
-      : null;
+    if (vndPerRub == null || !Number.isFinite(vndPerRub) || vndPerRub <= 0) return null;
+    const rub = input.amountVnd / vndPerRub;
+    return Number.isFinite(rub) && rub > 0 ? rub : null;
   }
 
   if (input.amountVnd == null || !Number.isFinite(input.amountVnd) || input.amountVnd <= 0) return null;
   if (vndPerRub != null && Number.isFinite(vndPerRub) && vndPerRub > 0) {
-    return input.amountVnd / vndPerRub;
+    const rub = input.amountVnd / vndPerRub;
+    return Number.isFinite(rub) && rub > 0 ? rub : null;
   }
   return estimateRubFromVnd(input.amountVnd, vndPerUsdt, rubPerUsdt);
 }
