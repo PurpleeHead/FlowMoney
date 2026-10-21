@@ -42,7 +42,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       // explicitly so corrupted legacy values cannot poison totals or weighted rates.
       prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true}}),
       prisma.expense.aggregate({where:{userId:req.user!.id,date:{gte:start},amountVnd:{not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true}}),
-      prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{gt:0,not:new Prisma.Decimal('NaN')},usdtCharged:{gt:0,not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true,usdtCharged:true}}),
+      prisma.expense.aggregate({where:{userId:req.user!.id,currency:{mode:'insensitive',equals:'VND'},amountVnd:{gt:0,not:new Prisma.Decimal('NaN')},usdtCharged:{gt:0,not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true,usdtCharged:true}}),
       getDashboardExchangeAggregates(req.user!.id),
     ]);
 
