@@ -165,7 +165,7 @@ describe('direct RUB to VND exchange fees', () => {
     const tx = {
       exchange: {
         updateMany: async (args: any) => { updateArgs = args; return { count: 1 }; },
-        findFirst: async () => current,
+        findFirst: async () => ({ ...current, ...(updateArgs?.data ?? {}) }),
       },
       walletMovement: {
         deleteMany: async (args: any) => { deleted.push(args); return { count: 1 }; },
@@ -235,7 +235,7 @@ describe('direct RUB to VND exchange fees', () => {
     const tx = {
       exchange: {
         updateMany: async (args: any) => { updateArgs = args; return { count: 1 }; },
-        findFirst: async () => current,
+        findFirst: async () => ({ ...current, ...(updateArgs?.data ?? {}) }),
       },
       walletMovement: {
         deleteMany: async () => ({ count: 3 }),
