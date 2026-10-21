@@ -221,6 +221,53 @@ describe('direct RUB to VND exchange fees', () => {
   });
 
 
+  it('recalculates the indirect exchange VND ledger credit when editing its fee', async () => {
+    let updateArgs: any;
+    const created: any[] = [];
+    const current = {
+      id: 'indirect-fee-edit', userId: 'user-42', mode: 'RUB_USDT_VND',
+      rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 2495000, vndFee: 5000,
+      vndPerUsdt: 26600, planningVndPerUsdt: null, effectiveVndPerRub: 300.6024,
+      effectiveRubPerUsdt: 88.4988, targetCurrency: 'VND', targetReceived: null,
+      targetToVndRate: null, targetVndEquivalent: null,
+      createdAt: new Date('2026-10-20T10:00:00.000Z'),
+    };
+    const tx = {
+      exchange: {
+        updateMany: async (args: any) => { updateArgs = args; return { count: 1 }; },
+        findFirst: async () => current,
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 3 }),
+        createMany: async (args: any) => { created.push(...args.data); return { count: args.data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/indirect-fee-edit`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853,
+          vndReceived: 2500000, vndFee: 10000,
+        }),
+      });
+      assert.equal(response.status, 200);
+    });
+
+    assert.deepEqual(updateArgs.where, { id: 'indirect-fee-edit', userId: 'user-42' });
+    assert.equal(updateArgs.data.vndReceived, 2490000);
+    assert.equal(updateArgs.data.vndFee, 10000);
+    assert.equal(updateArgs.data.effectiveVndPerRub, 2490000 / 8300);
+    assert.deepEqual(created.map(x => [x.currency, Number(x.amountDelta), x.sourceKey]), [
+      ['RUB', -8300, 'exchange:indirect-fee-edit:RUB'],
+      ['USDT', 93.7853, 'exchange:indirect-fee-edit:USDT'],
+      ['VND', 2490000, 'exchange:indirect-fee-edit:VND'],
+    ]);
+  });
+
+
 describe('direct RUB to USDT top-up without VND rate', () => {
   it('rejects a VND fee in direct-target mode instead of silently ignoring it', async () => {
     let createCalls = 0;
