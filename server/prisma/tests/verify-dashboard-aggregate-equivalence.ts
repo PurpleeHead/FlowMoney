@@ -118,6 +118,70 @@ try {
   assert.equal(Number(indirectActualSql.totalVnd), 2_300_000, 'PostgreSQL confirmed indirect VND total must exclude planning-only rows');
   assert.equal(Number(indirectActualSql.totalUsdt), 93.7853, 'PostgreSQL confirmed indirect USDT denominator must exclude planning-only rows');
 
+  // Budget and planning aggregates must preserve the route's bucket semantics too.
+  const [budgetSql] = await prisma.$queryRaw<Array<{
+    confirmedVnd: unknown;
+    estimatedTargetVnd: unknown;
+    plannedUsdt: unknown;
+    plannedWeightedVnd: unknown;
+    estimatedUsdt: unknown;
+    unpricedUsdtCount: unknown;
+  }>>`
+    SELECT
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+          THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
+        ELSE "vndReceived"
+      END), 0) AS "confirmedVnd",
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) <> 'VND'
+          THEN "targetVndEquivalent"
+        ELSE 0
+      END), 0) AS "estimatedTargetVnd",
+      COALESCE(SUM(CASE
+        WHEN "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND "vndReceived" IS NULL
+          AND "usdtReceived" IS NOT NULL
+          AND "planningVndPerUsdt" IS NOT NULL
+          THEN "usdtReceived" ELSE 0
+      END), 0) AS "plannedUsdt",
+      COALESCE(SUM(CASE
+        WHEN "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND "vndReceived" IS NULL
+          AND "usdtReceived" IS NOT NULL
+          AND "planningVndPerUsdt" IS NOT NULL
+          THEN "usdtReceived" * "planningVndPerUsdt" ELSE 0
+      END), 0) AS "plannedWeightedVnd",
+      COALESCE(SUM(CASE
+        WHEN "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND "vndReceived" IS NULL
+          AND (
+            ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
+              AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+            OR "usdtReceived" IS NOT NULL
+          )
+          THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
+            THEN "targetReceived" ELSE "usdtReceived" END
+        ELSE 0
+      END), 0) AS "estimatedUsdt",
+      COUNT(*) FILTER (WHERE
+        ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
+        OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
+          AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+      ) AS "unpricedUsdtCount"
+    FROM "Exchange"
+    WHERE "userId" = ${mainUserId}
+  `;
+  assert.equal(Number(budgetSql.confirmedVnd), 3_135_000, 'confirmed budget VND combines direct and actual indirect outcomes without double-counting legacy fields');
+  assert.equal(Number(budgetSql.estimatedTargetVnd), 920_000, 'non-VND target equivalents remain a separate estimate bucket');
+  assert.equal(Number(budgetSql.plannedUsdt), 10, 'planning rate denominator only includes eligible USDT rows with no actual VND outcome');
+  assert.equal(Number(budgetSql.plannedWeightedVnd), 250_000, 'planning weighted numerator excludes actual and direct-target outcomes');
+  assert.equal(Number(budgetSql.estimatedUsdt), 66, 'unconverted estimate denominator preserves direct USDT target fallback and indirect USDT-only top-ups');
+  assert.equal(Number(budgetSql.unpricedUsdtCount), 2, 'unknown VND valuation is tracked separately for both unpriced top-up modes');
+
   // Compare PostgreSQL aggregates against the existing helper formulas over the same eligible records.
   const helperRubUsdt = calculateRubPerUsdt(mapRubUsdtExchanges(exchangeRows.map(x => ({
     mode: x.mode,
