@@ -196,6 +196,124 @@ async function raceExchangePatchPatch(user: { id: string }) {
   });
 }
 
+
+async function raceExpenseCurrencyTransition(user: { id: string }, iteration: number) {
+  const expense = await prisma.expense.create({
+    data: {
+      userId: user.id, title: `Concurrent currency expense ${iteration}`, category: 'Concurrency test',
+      amount: 100, currency: 'RUB', amountRub: 100, date: new Date(),
+    },
+  });
+  await prisma.$transaction(tx => syncExpenseLedger(tx, expense));
+
+  const patchCard = prisma.$transaction(async tx => {
+    const result = await tx.expense.updateMany({
+      where: { id: expense.id, userId: user.id },
+      data: { amount: 50_000, currency: 'VND', amountVnd: 50_000, amountRub: null, usdtCharged: 2.1 },
+    });
+    if (!result.count) return;
+    const current = await tx.expense.findFirst({ where: { id: expense.id, userId: user.id } });
+    if (current) await syncExpenseLedger(tx, current);
+  });
+  const patchCash = prisma.$transaction(async tx => {
+    const result = await tx.expense.updateMany({
+      where: { id: expense.id, userId: user.id },
+      data: { amount: 175, currency: 'RUB', amountVnd: null, amountRub: 175, usdtCharged: null },
+    });
+    if (!result.count) return;
+    const current = await tx.expense.findFirst({ where: { id: expense.id, userId: user.id } });
+    if (current) await syncExpenseLedger(tx, current);
+  });
+  await Promise.all([patchCard, patchCash]);
+
+  const [saved, rows] = await Promise.all([
+    prisma.expense.findFirst({ where: { id: expense.id, userId: user.id } }),
+    prisma.walletMovement.findMany({
+      where: { userId: user.id, sourceKey: { startsWith: `expense:${expense.id}:` } },
+      orderBy: { sourceKey: 'asc' },
+    }),
+  ]);
+  assert.ok(saved, 'Concurrent expense currency transitions must leave the source record present');
+  const expected = saved.currency.trim().toUpperCase() === 'VND' && saved.usdtCharged != null
+    ? [['USDT', -Number(saved.usdtCharged), `expense:${expense.id}:USDT`]]
+    : [['RUB', -Number(saved.amount), `expense:${expense.id}:RUB`]];
+  assert.deepEqual(
+    rows.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
+    expected,
+    'Concurrent cash/card currency transitions must leave only the final expense debit',
+  );
+  await prisma.$transaction(async tx => {
+    await tx.expense.deleteMany({ where: { id: expense.id, userId: user.id } });
+    await removeExpenseLedger(tx, user.id, expense.id);
+  });
+}
+
+async function raceExchangeModeTransition(user: { id: string }, iteration: number) {
+  const exchange = await prisma.exchange.create({
+    data: {
+      userId: user.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
+      rubSpent: 1000, usdtReceived: 10, vndReceived: 250_000,
+      effectiveRubPerUsdt: 100, effectiveVndPerRub: 250,
+    },
+  });
+  await prisma.$transaction(tx => syncExchangeLedger(tx, exchange));
+
+  const patchDirectTarget = prisma.$transaction(async tx => {
+    const result = await tx.exchange.updateMany({
+      where: { id: exchange.id, userId: user.id },
+      data: {
+        mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 1100,
+        usdtReceived: null, vndReceived: null, vndFee: 0,
+        targetReceived: 11.5, targetToVndRate: null, targetVndEquivalent: null,
+      },
+    });
+    if (!result.count) return;
+    const current = await tx.exchange.findFirst({ where: { id: exchange.id, userId: user.id } });
+    if (current) await syncExchangeLedger(tx, current);
+  });
+  const patchIndirect = prisma.$transaction(async tx => {
+    const result = await tx.exchange.updateMany({
+      where: { id: exchange.id, userId: user.id },
+      data: {
+        mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1200,
+        usdtReceived: 12, vndReceived: 300_000, vndFee: 0,
+      },
+    });
+    if (!result.count) return;
+    const current = await tx.exchange.findFirst({ where: { id: exchange.id, userId: user.id } });
+    if (current) await syncExchangeLedger(tx, current);
+  });
+  await Promise.all([patchDirectTarget, patchIndirect]);
+
+  const [saved, rows] = await Promise.all([
+    prisma.exchange.findFirst({ where: { id: exchange.id, userId: user.id } }),
+    prisma.walletMovement.findMany({
+      where: { userId: user.id, sourceKey: { startsWith: `exchange:${exchange.id}:` } },
+      orderBy: { sourceKey: 'asc' },
+    }),
+  ]);
+  assert.ok(saved, 'Concurrent exchange mode transitions must leave the source record present');
+  const expected = saved.mode === 'RUB_TARGET' && saved.targetCurrency.trim().toUpperCase() === 'USDT'
+    ? [
+        ['RUB', -Number(saved.rubSpent), `exchange:${exchange.id}:RUB`],
+        ['USDT', Number(saved.targetReceived), `exchange:${exchange.id}:USDT`],
+      ]
+    : [
+        ['RUB', -Number(saved.rubSpent), `exchange:${exchange.id}:RUB`],
+        ['USDT', Number(saved.usdtReceived), `exchange:${exchange.id}:USDT`],
+        ['VND', Number(saved.vndReceived), `exchange:${exchange.id}:VND`],
+      ];
+  assert.deepEqual(
+    rows.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
+    expected,
+    'Concurrent exchange mode transitions must remove stale legs and match the final source mode',
+  );
+  await prisma.$transaction(async tx => {
+    await tx.exchange.deleteMany({ where: { id: exchange.id, userId: user.id } });
+    await removeExchangeLedger(tx, user.id, exchange.id);
+  });
+}
+
 try {
   const user = await prisma.user.create({
     data: { email: `${suffix}@example.invalid`, passwordHash: 'test-only' },
@@ -208,9 +326,11 @@ try {
     await raceExchange(user, iteration);
     await raceExpensePatchPatch(user, iteration);
     await raceExchangePatchPatch(user);
+    await raceExpenseCurrencyTransition(user, iteration);
+    await raceExchangeModeTransition(user, iteration);
   }
 
-  console.log('Concurrent PostgreSQL mutations verified: PATCH/DELETE leaves no orphaned movements; concurrent PATCH/PATCH keeps expense and exchange ledger rows consistent with the final committed source records.');
+  console.log('Concurrent PostgreSQL mutations verified: PATCH/DELETE leaves no orphaned movements; concurrent PATCH/PATCH keeps expense and exchange ledger rows consistent with final source records, including currency and exchange-mode transitions.');
 } finally {
   if (userId) await prisma.user.deleteMany({ where: { id: userId } });
   await prisma.$disconnect();
