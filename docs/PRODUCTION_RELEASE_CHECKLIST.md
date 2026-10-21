@@ -136,3 +136,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 - [x] Extended the canonical direct-VND regression assertion to verify the observed VND/RUB rate remains `250` (1,000,000 VND / 4,000 RUB) even when stale legacy `vndReceived` is 9,999,999.
 - [x] Follow-up TypeScript annotation fix is included in `16f499dcc826721f883b455940ed7cec3e01b9ee`; both CI and Security are green on that commit. The intermediate commit `905a25fa244c6a204932e9fd1083dd799f190468` failed build because the test response type omitted `effectiveVndPerRub`; the annotation is now corrected.
+
+## Latest verification — 2026-10-21 (dashboard aggregate scaling)
+
+- [x] CI run [#1271](https://github.com/PurpleeHead/FlowMoney/actions/runs/39531725700) passed on `e8c5345304307441e5b9b7b7b458ea6fbd4e7116`: standard verification, production build, dependency audits, disposable-PostgreSQL migration verification, aggregate-equivalence checks, rollback checks, and 1k/10k/50k-row-per-user aggregate benchmarks all succeeded.
+- [x] The aggregate benchmark compares the exact parameterized dashboard SQL query with a full-history Node reference and checks equivalent totals before timing. It uses five synthetic users in disposable CI PostgreSQL; it does not access production data.
+- [x] Recorded median aggregate timings: 1k rows for target user, 3.26 ms SQL vs 8.36 ms full-history Node (2.6×); 10k, 12.74 ms vs 95.60 ms (7.5×); 50k, 35.57 ms vs 547.65 ms (15.4×). At 50k target-user rows, the query plan used `Exchange_userId_createdAt_idx`. These are synthetic query timings, not production HTTP latency.
+- [ ] Production release remains blocked by target database identity, encrypted backup and a successful isolated restore drill, legacy wallet reconciliation against a production snapshot, live Render configuration reconciliation, and target-environment smoke tests. CI success does not waive these gates.
+- [ ] The benchmark addresses dashboard all-history aggregate work only; date-specific historical cost-basis calculations and exchange-derived rates/budget calculations still require review before claiming the entire dashboard has bounded database work.
+- PR #83 remains Draft/unmerged. No production deployment, Render setting change, or production database operation was performed as part of this verification.
