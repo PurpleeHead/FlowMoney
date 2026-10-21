@@ -177,6 +177,25 @@ try {
     'excluding an edited expense removes its USDT debit from historical card aggregates',
   );
 
+  for (const field of [
+    'rubUsdtRub', 'rubUsdtUsdt', 'actualVnd', 'actualUsdt',
+    'directRub', 'directVnd', 'actualRubForVnd', 'actualVndForRub',
+  ] as const) {
+    near(
+      Number(aggregateWithoutFirstCard[field]),
+      Number(aggregate[field]),
+      `excluding an expense must not alter exchange aggregate ${field}`,
+    );
+  }
+
+  const aggregateWithoutMissingCard = await getDateAwareValuationAggregate(
+    userId,
+    valuationDate,
+    'expense-does-not-exist',
+  );
+  near(aggregateWithoutMissingCard.cardVnd, Number(aggregate.cardVnd), 'excluding a missing expense leaves card VND unchanged');
+  near(aggregateWithoutMissingCard.cardUsdt, Number(aggregate.cardUsdt), 'excluding a missing expense leaves card USDT unchanged');
+
   const observedRate = calculateObservedVndPerUsdt(actualRows.map(x => ({
     amountVnd: x.vndReceived,
     usdtCharged: x.usdtReceived,
