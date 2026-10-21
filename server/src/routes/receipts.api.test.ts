@@ -311,3 +311,49 @@ describe('receipt historical valuation cutoffs', () => {
     assert.equal(savedExpense.amountRub, null, 'a planning-only rate must not become a historical factual valuation');
   });
 });
+
+
+describe('receipt legacy direct VND exchange rates', () => {
+  it('uses normalized target currency and legacy target amount when valuing a receipt', async () => {
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_TARGET',
+      rubSpent: 500,
+      usdtReceived: null,
+      vndReceived: null,
+      planningVndPerUsdt: null,
+      targetCurrency: ' vnd ',
+      targetReceived: 125000,
+      targetVndEquivalent: null,
+    }];
+    expenseModel.findMany = async () => [];
+    let savedExpense: any;
+    const tx = {
+      receipt: { create: async () => ({ id: 'receipt-legacy-direct-vnd' }) },
+      expense: {
+        create: async (args: any) => {
+          savedExpense = args.data;
+          return { id: 'expense-legacy-direct-vnd', ...args.data, usdtCharged: null };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-1'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rawText: 'Legacy direct VND exchange',
+          items: [{ name: 'Coffee', price: 50000, currency: 'VND', amountVnd: 50000 }],
+        }),
+      });
+      assert.equal(response.status, 201);
+    });
+
+    assert.equal(savedExpense.amountRub, 200, '50,000 VND at 250 VND/RUB must persist as 200 RUB');
+  });
+});
