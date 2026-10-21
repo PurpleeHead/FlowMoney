@@ -1,4 +1,4 @@
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import jwt from 'jsonwebtoken';
@@ -34,7 +34,7 @@ const previousSecret = process.env.JWT_SECRET;
  * returning the same aggregate shape as the SQL helper. Real SQL semantics,
  * date boundaries, and tenant isolation are covered by the PostgreSQL test.
  */
-client.$queryRaw = async (query: any) => {
+const mockQueryRaw = async (query: any) => {
   const values: unknown[] = Array.isArray(query?.values) ? query.values : [];
   const userId = String(values[0] ?? 'user-1');
   const valuationDate = values[1] instanceof Date ? values[1] : new Date(String(values[1] ?? Date.now()));
@@ -86,6 +86,9 @@ client.$queryRaw = async (query: any) => {
   }];
 };
 
+beforeEach(() => {
+  client.$queryRaw = mockQueryRaw;
+});
 
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
