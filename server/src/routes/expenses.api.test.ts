@@ -563,6 +563,51 @@ describe('expense API ledger synchronization', () => {
   });
 
 
+  it('returns an error when wallet ledger synchronization fails during expense update', async () => {
+    const existing = {
+      id: 'expense-rollback', userId: 'user-42', title: 'Old lunch', category: 'Food',
+      amount: 100, currency: 'RUB', amountVnd: null, amountRub: 100,
+      usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    let transactionCallbackCompleted = false;
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    const tx = {
+      expense: {
+        updateMany: async (args: any) => {
+          assert.deepEqual(args.where, { id: 'expense-rollback', userId: 'user-42' });
+          return { count: 1 };
+        },
+        findFirst: async () => ({ ...existing, title: 'Updated lunch' }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 1 }),
+        createMany: async () => { throw new Error('simulated ledger write failure'); },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+      try {
+        return await callback(tx);
+      } finally {
+        transactionCallbackCompleted = true;
+      }
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-rollback`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Updated lunch', category: 'Food', amount: 100, currency: 'RUB',
+        }),
+      });
+
+      assert.equal(response.status, 500);
+      assert.equal(transactionCallbackCompleted, true);
+    });
+  });
+
   it('rejects attaching another user receipt to an expense', async () => {
     const existing = {
       id: 'expense-owned', userId: 'user-42', title: 'Groceries', category: 'Food',
