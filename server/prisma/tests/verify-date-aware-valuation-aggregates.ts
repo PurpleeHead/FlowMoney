@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { prisma } from '../../src/services/prisma.js';
 import { getDateAwareValuationAggregate } from '../../src/lib/date-aware-valuation-aggregates.js';
+import { calculateDateAwareValuationRates } from '../../src/lib/date-aware-valuation-rates.js';
 import {
+  calculateObservedVndPerRub,
   calculateObservedVndPerUsdt,
+  calculateRubPerUsdt,
   mapActualVndExchanges,
   mapActualVndUsdtExchanges,
   mapDirectVndExchanges,
@@ -168,7 +171,31 @@ try {
   })));
   near(observedRate, 2_300_000 / 93.7853, 'date-scoped aggregate source rows preserve observed VND/USDT calculation');
 
-  console.log('Date-aware valuation aggregate passed against disposable PostgreSQL: cutoff inclusion, future-row exclusion, user isolation, weighted RUB/USDT, actual-only indirect outcomes, direct VND fallback, and card totals.');
+  const legacyRubPerUsdt = calculateRubPerUsdt(rubUsdtRows);
+  const legacyCardRate = calculateObservedVndPerUsdt(cardRows.map(x => ({
+    amountVnd: Number(x.amountVnd),
+    usdtCharged: Number(x.usdtCharged),
+  })));
+  const legacyExchangeRate = calculateObservedVndPerUsdt(actualRows.map(x => ({
+    amountVnd: x.vndReceived,
+    usdtCharged: x.usdtReceived,
+  })));
+  const legacyVndPerUsdt = legacyCardRate ?? legacyExchangeRate;
+  const legacyVndPerRub = calculateObservedVndPerRub({
+    directExchanges: directRows,
+    actualVndExchanges: actualVndRubRows,
+    cardPurchases: cardRows.map(x => ({
+      amountVnd: Number(x.amountVnd),
+      usdtCharged: Number(x.usdtCharged),
+    })),
+    rubPerUsdt: legacyRubPerUsdt,
+  });
+  const aggregateRates = calculateDateAwareValuationRates(aggregate);
+  near(aggregateRates.rubPerUsdt, legacyRubPerUsdt!, 'aggregate-derived RUB/USDT rate matches established mapper');
+  near(aggregateRates.vndPerUsdt, legacyVndPerUsdt!, 'aggregate-derived VND/USDT rate matches established mapper');
+  near(aggregateRates.vndPerRub, legacyVndPerRub!, 'aggregate-derived VND/RUB rate matches established mapper');
+
+  console.log('Date-aware valuation aggregate passed against disposable PostgreSQL: cutoff inclusion, future-row exclusion, user isolation, weighted RUB/USDT, actual-only indirect outcomes, direct VND fallback, card totals, and all three historical rates.');
 } finally {
   if (userId) await prisma.user.deleteMany({ where: { id: userId } });
   if (otherUserId) await prisma.user.deleteMany({ where: { id: otherUserId } });
