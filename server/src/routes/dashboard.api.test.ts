@@ -156,6 +156,17 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
       dashboardRawQueries.push(query);
       await Promise.resolve();
       const sql = String(query?.sql ?? '');
+      if (sql.includes('AS "totalVnd"') && sql.includes('AS "monthVnd"')) {
+        const rows = await expenseModel.findMany({});
+        const cutoff = new Date(String(query?.values?.[0] ?? new Date(0)));
+        const finiteAmounts = rows.filter((row: any) =>
+          row.amountVnd != null && Number.isFinite(Number(row.amountVnd)));
+        const monthAmounts = finiteAmounts.filter((row: any) => new Date(row.date) >= cutoff);
+        return [{
+          totalVnd: finiteAmounts.reduce((sum: number, row: any) => sum + Number(row.amountVnd), 0),
+          monthVnd: monthAmounts.reduce((sum: number, row: any) => sum + Number(row.amountVnd), 0),
+        }];
+      }
       if (sql.includes('FROM "Expense"')) {
         // Mirror the dashboard purchase aggregate's trim/uppercase and finite-value predicates.
         const rows = await expenseModel.findMany({});
@@ -959,6 +970,16 @@ describe('dashboard rejects non-finite legacy expense amounts', () => {
       {
         id: 'nan-usdt', title: 'Broken card debit', category: 'Other', amount: 50000,
         currency: 'VND', amountVnd: 50000, amountRub: null, usdtCharged: Number.NaN,
+        date: now, receiptId: null,
+      },
+      {
+        id: 'infinite-vnd', title: 'Infinite VND', category: 'Other', amount: 50000,
+        currency: 'VND', amountVnd: Number.POSITIVE_INFINITY, amountRub: null, usdtCharged: 2,
+        date: now, receiptId: null,
+      },
+      {
+        id: 'negative-infinite-vnd', title: 'Negative infinite VND', category: 'Other', amount: 50000,
+        currency: 'VND', amountVnd: Number.NEGATIVE_INFINITY, amountRub: null, usdtCharged: 2,
         date: now, receiptId: null,
       },
     ];
