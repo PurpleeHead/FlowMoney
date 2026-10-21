@@ -91,7 +91,7 @@ describe('fetchAllCursorPages failure boundaries', () => {
 });
 
 describe('toSafeCsvCell control-character prefixes', () => {
-  it.each(['\\t=1+1', '\\r@SUM(A1:A2)', '\\n+cmd'])(
+  it.each(['\t=1+1', '\r@SUM(A1:A2)', '\n+cmd'])(
     'neutralizes formula-like content after leading control whitespace',
     value => {
       expect(toSafeCsvCell(value).startsWith('"\\'')).toBe(true);
