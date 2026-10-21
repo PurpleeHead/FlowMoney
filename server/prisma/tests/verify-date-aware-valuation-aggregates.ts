@@ -39,8 +39,10 @@ try {
         createdAt: new Date('2026-10-10T12:00:00.000Z'),
       },
       {
+        // A direct RUB→USDT top-up must not use stale VND fields as a VND/RUB observation.
         userId, mode: 'RUB_TARGET', targetCurrency: ' usdt ', rubSpent: 5000,
-        targetReceived: 56, createdAt: new Date('2026-10-12T12:00:00.000Z'),
+        targetReceived: 56, vndReceived: 777_777,
+        createdAt: new Date('2026-10-12T12:00:00.000Z'),
       },
       {
         userId, mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000,
