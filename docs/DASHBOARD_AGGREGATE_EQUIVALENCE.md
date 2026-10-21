@@ -102,6 +102,7 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - The disposable PostgreSQL equivalence fixture now creates malformed numeric values with raw SQL and asserts that every numeric aggregate remains finite, actual outcomes exclude invalid amounts, and valid planning estimates remain separate.
 - Dashboard route regression tests now also distinguish finite legacy fallbacks used for balance totals from strict canonical precedence used for historical rates, and verify that a malformed actual VND amount can use a valid planning rate without being mislabeled as an observed outcome.
 - The route-test aggregate mock uses finite-safe conversions for balance, planned estimates, unpriced/unknown flags, and target-estimate detection so malformed fixtures cannot make the mock disagree with PostgreSQL semantics.
+- The date-aware valuation rate unit tests now inject non-finite SQL aggregate outputs and verify that malformed card/direct observations are ignored without suppressing valid exchange evidence or returning non-finite rates.
 - [ ] CI must pass on the updated work branch before this audit is considered verified. Production database and release operations remain untouched.
 
 - The Dashboard API also excludes PostgreSQL numeric `NaN` from all-time/month expense totals and from weighted card-purchase aggregates. Regression coverage verifies that malformed VND or USDT on one row cannot make the returned financial totals/rates `NaN`.
