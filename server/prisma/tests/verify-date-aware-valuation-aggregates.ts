@@ -52,6 +52,12 @@ try {
         vndReceived: 1_000, createdAt: new Date('2026-10-15T00:00:00.000Z'),
       },
       {
+        // An explicit zero in the canonical field must not fall through to stale legacy amounts.
+        userId, mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 50,
+        targetVndEquivalent: 0, targetReceived: 123_000, vndReceived: 456_000,
+        createdAt: new Date('2026-10-15T00:00:00.000Z'),
+      },
+      {
         userId, mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 700,
         usdtReceived: 7, vndReceived: 175_000,
         createdAt: new Date('2026-10-16T12:00:00.000Z'),
@@ -132,18 +138,18 @@ try {
   near(aggregate.rubUsdtUsdt, rubUsdtRows.reduce((sum, x) => sum + x.usdtReceived, 0), 'cutoff RUB/USDT denominator');
   near(aggregate.actualVnd, actualRows.reduce((sum, x) => sum + x.vndReceived, 0), 'cutoff actual indirect VND');
   near(aggregate.actualUsdt, actualRows.reduce((sum, x) => sum + x.usdtReceived, 0), 'cutoff actual indirect USDT');
-  near(aggregate.directRub, directRows.reduce((sum, x) => sum + x.rubSpent, 0), 'cutoff direct exchange RUB');
-  near(aggregate.directVnd, directRows.reduce((sum, x) => sum + x.vndReceived, 0), 'cutoff direct exchange VND with canonical fallback');
+  near(aggregate.directRub, directRows.filter(x => x.rubSpent > 0 && x.vndReceived > 0).reduce((sum, x) => sum + x.rubSpent, 0), 'cutoff direct exchange RUB');
+  near(aggregate.directVnd, directRows.filter(x => x.rubSpent > 0 && x.vndReceived > 0).reduce((sum, x) => sum + x.vndReceived, 0), 'cutoff direct exchange VND with canonical fallback');
   near(aggregate.cardVnd, cardRows.reduce((sum, x) => sum + Number(x.amountVnd), 0), 'cutoff card VND');
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
-  assert.equal(exchanges.length, 5, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
+  assert.equal(exchanges.length, 6, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
   assert.equal(expenses.length, 3, 'the cutoff instant is inclusive; later expenses and other users must be excluded');
   near(aggregate.rubUsdtRub, 13_300, 'fixture RUB/USDT numerator');
   near(aggregate.rubUsdtUsdt, 149.7853, 'fixture RUB/USDT denominator');
   near(aggregate.actualVnd, 2_300_000, 'fixture actual indirect VND excludes later exchange');
-  near(aggregate.directRub, 3_010, 'fixture direct RUB includes the exchange exactly at the cutoff');
-  near(aggregate.directVnd, 711_000, 'fixture direct VND includes cutoff exchange and excludes stale legacy amount');
+  near(aggregate.directRub, 3_010, 'fixture direct RUB includes valid cutoff exchange and excludes explicit-zero outcome');
+  near(aggregate.directVnd, 711_000, 'fixture direct VND includes valid cutoff exchange and excludes stale legacy amount and explicit-zero outcome');
   near(aggregate.cardVnd, 96_536, 'fixture card VND includes expense exactly at cutoff and excludes later expense');
   near(aggregate.cardUsdt, 3.86, 'fixture card USDT includes expense exactly at cutoff and excludes later expense');
 
