@@ -150,7 +150,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
       dashboardExchangeRows = rows;
       return rows;
     });
-    if (args.take === 100) dashboardExchangeRowsPromise = pending;
+    dashboardExchangeRowsPromise = pending;
     return pending;
   };
   dashboardRawQueries = [];
@@ -406,8 +406,10 @@ describe('dashboard query shape', () => {
     const totalAggregateQuery = dashboardRawQueries.find(query =>
       String(query?.sql ?? '').includes('AS "totalVnd"') && String(query?.sql ?? '').includes('AS "monthVnd"'));
     assert.ok(totalAggregateQuery, 'all-time and month totals must share one SQL aggregate');
-    assert.match(String(totalAggregateQuery.sql), /"userId"\s*=\s*\$\d+/,
+    assert.match(String(totalAggregateQuery.sql), /"userId"\s*=\s*\?/,
       'all-time and month totals must be scoped to the authenticated user');
+    assert.ok(totalAggregateQuery.values.includes('dashboard-user'),
+      'the authenticated user ID must be parameterized into the aggregate query');
     const purchaseAggregateQuery = dashboardRawQueries.find(query =>
       String(query?.sql ?? '').includes('upper(trim("currency"))'));
     assert.ok(purchaseAggregateQuery, 'weighted purchase rate must use a dedicated SQL aggregate');
