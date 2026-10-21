@@ -797,9 +797,9 @@ describe('dashboard normalizes legacy direct VND target currency', () => {
       mode: 'RUB_TARGET',
       targetCurrency: ' vnd ',
       targetReceived: 125_000,
-      targetToVndRate: null,
-      targetVndEquivalent: null,
-      // Stale legacy data must not override the supported targetReceived fallback.
+      targetToVndRate: 1,
+      targetVndEquivalent: 125_000,
+      // Stale legacy data must not override the canonical VND equivalent.
       vndReceived: 777_777,
       usdtReceived: null,
       rubSpent: 500,
