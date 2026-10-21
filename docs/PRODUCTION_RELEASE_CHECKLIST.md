@@ -164,3 +164,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [ ] Historical expense/receipt route calculations still fetch date-bounded exchange and card-purchase rows into Node.js. They must be moved to date-aware PostgreSQL aggregates only after equivalent eligibility, date cutoffs, and weighted totals are covered by tests.
 
 - [ ] Added a receipt API assertion that historical exchange and card-purchase queries remain scoped to the authenticated user and bounded by the receipt valuation time. Commit `848ab2e`; awaiting CI.
+
+## Historical valuation follow-up — 2026-10-21 (latest CI reconciliation)
+
+- [x] CI run [#1281](https://github.com/PurpleeHead/FlowMoney/actions/runs/39532974731) passed for receipt valuation query assertions: historical Exchange and card-purchase reads are scoped to the user and bounded by the receipt valuation timestamp.
+- [x] Corrected expense test syntax in commit `2568de4`; CI [#1285](https://github.com/PurpleeHead/FlowMoney/actions/runs/39533375920) passed. The intermediate commit `960d6a0` failed parsing and is superseded by the passing correction.
+- [x] Added direct RUB→USDT target normalization coverage, including trimmed/case-insensitive currency and exclusion of stale USDT fields on direct-VND legacy rows, in commit `e089aaf`; CI [#1286](https://github.com/PurpleeHead/FlowMoney/actions/runs/39533392231) passed.
+- [x] CI #1286 confirms repository verification and disposable-PostgreSQL migration checks for the direct-USDT normalization regression. It does not verify production data or deployment readiness.
+- [ ] Date-aware PostgreSQL aggregates for expense/receipt valuation remain unimplemented. Preserve per-operation date cutoffs, weighted numerator/denominator totals, and direct-target legacy precedence before replacing application-side history scans.
+- [ ] Production database identity, encrypted backup and isolated restore, legacy wallet reconciliation, approved Render configuration reconciliation, and target-environment smoke tests remain release blockers. PR #83 remains Draft/unmerged; no production database access, deployment, or live configuration changes were performed.
