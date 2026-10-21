@@ -10,6 +10,7 @@ import {
   mapActualVndExchanges,
   mapActualVndUsdtExchanges,
   mapDirectVndExchanges,
+  mapRubUsdtExchanges,
 } from './money.js';
 
 describe('money regression boundaries', () => {
@@ -46,6 +47,20 @@ describe('money regression boundaries', () => {
     assert.deepEqual(mapActualVndUsdtExchanges(exchanges), [
       { usdtReceived: 20, vndReceived: 500_000 },
     ]);
+  });
+
+  it('normalizes direct USDT target currency and excludes unrelated legacy target rows from RUB/USDT basis', () => {
+    const exchanges = [
+      { mode: 'RUB_TARGET', rubSpent: 1_000, usdtReceived: null, targetCurrency: ' usdt ', targetReceived: 11 },
+      { mode: 'RUB_TARGET', rubSpent: 2_000, usdtReceived: 99, targetCurrency: ' VND ', targetReceived: 500_000 },
+      { mode: 'RUB_USDT_VND', rubSpent: 3_000, usdtReceived: 30, targetCurrency: 'VND', targetReceived: null },
+    ];
+
+    assert.deepEqual(mapRubUsdtExchanges(exchanges), [
+      { rubSpent: 1_000, usdtReceived: 11 },
+      { rubSpent: 3_000, usdtReceived: 30 },
+    ]);
+    assert.equal(calculateRubPerUsdt(mapRubUsdtExchanges(exchanges)), 4_000 / 41);
   });
 
   it('weights multiple RUB-to-USDT top-ups by their actual amounts, not by averaging rates', () => {
