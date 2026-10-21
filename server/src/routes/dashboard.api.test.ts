@@ -1081,3 +1081,59 @@ describe('dashboard query ownership boundaries', () => {
     );
   });
 });
+
+
+describe('dashboard summary rates and bounded exchange history', () => {
+  it('calculates summary rates from all exchanges even when the response history is capped at 100', async () => {
+    const recentExchanges = Array.from({ length: 100 }, (_, index) => ({
+      ...exchangeFixture(),
+      id: `recent-exchange-${index}`,
+      mode: 'RUB_USDT_VND',
+      rubSpent: 100,
+      usdtReceived: 10,
+      targetCurrency: null,
+      targetReceived: null,
+      targetVndEquivalent: null,
+      vndReceived: null,
+      planningVndPerUsdt: null,
+    }));
+    const olderExchange = {
+      ...exchangeFixture(),
+      id: 'older-exchange-outside-response-window',
+      mode: 'RUB_USDT_VND',
+      rubSpent: 10_000,
+      usdtReceived: 10,
+      targetCurrency: null,
+      targetReceived: null,
+      targetVndEquivalent: null,
+      vndReceived: null,
+      planningVndPerUsdt: null,
+    };
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [...recentExchanges, olderExchange];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalExchangeCount: number;
+        effectiveRubPerUsdt: number | null;
+        exchanges: Array<{ id: string }>;
+      };
+
+      assert.equal(body.totalExchangeCount, 101);
+      assert.equal(body.exchanges.length, 100);
+      assert.ok(!body.exchanges.some(exchange => exchange.id === olderExchange.id));
+      assert.ok(body.effectiveRubPerUsdt != null);
+      // The hidden 101st record must still affect the all-history weighted rate:
+      // (100 * 100 RUB + 10,000 RUB) / (100 * 10 USDT + 10 USDT).
+      assert.ok(Math.abs(body.effectiveRubPerUsdt - (20_000 / 1_010)) < 1e-10);
+    });
+  });
+});
