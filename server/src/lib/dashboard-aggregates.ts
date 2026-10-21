@@ -195,3 +195,42 @@ export async function getDashboardExchangeAggregates(userId: string): Promise<Da
     rateExchangeVnd: value(row.rateExchangeVnd),
   };
 }
+
+export type DashboardCardPurchaseAggregates = {
+  amountVnd: number;
+  usdtCharged: number;
+};
+
+/**
+ * Weighted card-purchase evidence for dashboard rates.
+ *
+ * Normalize legacy currency strings in SQL so this follows the same
+ * trim/uppercase semantics as money.ts and date-aware valuation. Stale
+ * conversion fields on non-VND expenses must never become card-rate evidence.
+ */
+export async function getDashboardCardPurchaseAggregates(
+  userId: string,
+): Promise<DashboardCardPurchaseAggregates> {
+  const [row] = await prisma.$queryRaw<Array<{ amountVnd: unknown; usdtCharged: unknown }>>(Prisma.sql`
+    SELECT
+      COALESCE(SUM("amountVnd") FILTER (WHERE
+        "amountVnd" > 0
+        AND "amountVnd"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+        AND "usdtCharged" > 0
+        AND "usdtCharged"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+      ), 0) AS "amountVnd",
+      COALESCE(SUM("usdtCharged") FILTER (WHERE
+        "amountVnd" > 0
+        AND "amountVnd"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+        AND "usdtCharged" > 0
+        AND "usdtCharged"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+      ), 0) AS "usdtCharged"
+    FROM "Expense"
+    WHERE "userId" = ${userId}
+      AND upper(trim("currency")) = 'VND'
+  `);
+  return {
+    amountVnd: Number(row?.amountVnd ?? 0),
+    usdtCharged: Number(row?.usdtCharged ?? 0),
+  };
+}
