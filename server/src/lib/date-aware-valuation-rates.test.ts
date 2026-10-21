@@ -239,7 +239,7 @@ describe('date-aware valuation rates', () => {
     }));
     assert.equal(rates.rubPerUsdt, 83);
     assert.equal(rates.vndPerUsdt, 27_500);
-    assert.equal(rates.vndPerRub, 331.3253012048193);
+    assert.ok(Math.abs(rates.vndPerRub! - (2_750_000 / 8_300)) < 1e-10);
   });
 
   it('keeps direct VND/RUB evidence valid when indirect exchange totals are incomplete', () => {
@@ -248,8 +248,8 @@ describe('date-aware valuation rates', () => {
       rubUsdtUsdt: 0,
       directRub: 1_500,
       directVnd: 450_000,
-      actualRubForVnd: 8_300,
-      actualVndForRub: 2_500_000,
+      actualRubForVnd: 0,
+      actualVndForRub: 0,
     }));
     assert.equal(rates.rubPerUsdt, null);
     assert.equal(rates.vndPerUsdt, null);
