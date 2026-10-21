@@ -97,6 +97,18 @@ try {
         date: new Date('2026-10-16T08:00:00.000Z'),
       },
       {
+        // Legacy/inconsistent rows must not become a rate observation without a positive debit.
+        userId, title: 'Card without debit', category: 'Food', amount: 80_000,
+        currency: 'VND', amountVnd: 80_000, usdtCharged: 0,
+        date: new Date('2026-10-12T08:00:00.000Z'),
+      },
+      {
+        // A debit without a stored VND basis is not enough to infer a conversion rate.
+        userId, title: 'Card without VND basis', category: 'Food', amount: 80_000,
+        currency: 'VND', amountVnd: null, usdtCharged: 3,
+        date: new Date('2026-10-12T09:00:00.000Z'),
+      },
+      {
         userId: otherUserId, title: 'Other user card', category: 'Food', amount: 999_999,
         currency: 'VND', amountVnd: 999_999, usdtCharged: 99,
         date: new Date('2026-10-10T08:00:00.000Z'),
@@ -156,14 +168,14 @@ try {
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
   assert.equal(exchanges.length, 6, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
-  assert.equal(expenses.length, 3, 'the cutoff instant is inclusive; later expenses and other users must be excluded');
+  assert.equal(expenses.length, 5, 'the cutoff instant is inclusive; later expenses and other users must be excluded while malformed same-user rows remain in the legacy comparison set');
   near(aggregate.rubUsdtRub, 13_300, 'fixture RUB/USDT numerator');
   near(aggregate.rubUsdtUsdt, 149.7853, 'fixture RUB/USDT denominator');
   near(aggregate.actualVnd, 2_300_000, 'fixture actual indirect VND excludes later exchange');
   near(aggregate.directRub, 3_010, 'fixture direct RUB includes valid cutoff exchange and excludes explicit-zero outcome');
   near(aggregate.directVnd, 711_000, 'fixture direct VND includes valid cutoff exchange and excludes stale legacy amount and explicit-zero outcome');
-  near(aggregate.cardVnd, 96_536, 'fixture card VND includes expense exactly at cutoff and excludes later expense');
-  near(aggregate.cardUsdt, 3.86, 'fixture card USDT includes expense exactly at cutoff and excludes later expense');
+  near(aggregate.cardVnd, 96_536, 'fixture card VND includes expense exactly at cutoff, excludes later expense, and ignores malformed historical card rows');
+  near(aggregate.cardUsdt, 3.86, 'fixture card USDT includes expense exactly at cutoff, excludes later expense, and ignores malformed historical card rows');
 
   const aggregateWithoutFirstCard = await getDateAwareValuationAggregate(userId, valuationDate, expenses[0].id);
   near(
