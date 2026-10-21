@@ -116,13 +116,13 @@ try {
   near(postgresAggregates.actualUsdt, 93.7853, 'aggregate actual indirect USDT');
   near(postgresAggregates.plannedWeightedVnd, 250_000, 'aggregate planning-rate weighted numerator');
   near(postgresAggregates.plannedUsdt, 10, 'aggregate planning-rate denominator');
-  near(postgresAggregates.confirmedVnd, 3_010_210, 'aggregate confirmed VND budget includes normalized legacy direct-target currency');
+  near(postgresAggregates.confirmedVnd, 3_010_210, 'aggregate confirmed VND includes canonical direct-target values and excludes stale non-VND/unknown-mode fields');
   near(postgresAggregates.estimatedTargetVnd, 920_000, 'aggregate non-VND target estimate');
   near(postgresAggregates.estimatedUsdt, 68, 'aggregate USDT requiring VND estimate includes normalized legacy target currencies');
   assert.equal(postgresAggregates.hasUnpricedUsdtTopUp, true, 'aggregate detects top-ups without actual VND outcome');
   assert.equal(postgresAggregates.hasEstimatedTarget, true, 'aggregate detects non-VND target estimates');
-  near(postgresAggregates.rateExchangeRub, 11_400, 'rate aggregate RUB basis includes normalized legacy direct-target currency');
-  near(postgresAggregates.rateExchangeVnd, 3_010_210, 'rate aggregate VND basis includes normalized legacy direct-target currency');
+  near(postgresAggregates.rateExchangeRub, 11_400, 'weighted VND/RUB rate includes valid direct-target observations only');
+  near(postgresAggregates.rateExchangeVnd, 3_010_210, 'weighted VND/RUB numerator excludes stale non-VND/unknown-mode values');
 
   assert.equal(exchangeRows.length, rows.length, 'all exchange reads must be user-scoped');
   assert.equal(expenseRows.length, 3, 'all expense reads must be user-scoped');
