@@ -218,4 +218,107 @@ describe('date-aware valuation rates', () => {
     assert.equal(rates.vndPerUsdt, null);
     assert.equal(rates.vndPerRub, null);
   });
+  it('derives VND/RUB from direct exchanges even when RUB/USDT is unknown', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      directRub: 2_000,
+      directVnd: 500_000,
+    }));
+    assert.equal(rates.rubPerUsdt, null);
+    assert.equal(rates.vndPerUsdt, null);
+    assert.equal(rates.vndPerRub, 250);
+  });
+
+  it('uses actual exchange outcomes for VND/USDT when there are no card purchases', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      actualVnd: 2_750_000,
+      actualUsdt: 100,
+      actualRubForVnd: 8_300,
+      actualVndForRub: 2_750_000,
+    }));
+    assert.equal(rates.rubPerUsdt, 83);
+    assert.equal(rates.vndPerUsdt, 27_500);
+    assert.equal(rates.vndPerRub, 331.3253012048193);
+  });
+
+  it('keeps direct VND/RUB evidence valid when indirect exchange totals are incomplete', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 0,
+      directRub: 1_500,
+      directVnd: 450_000,
+      actualRubForVnd: 8_300,
+      actualVndForRub: 2_500_000,
+    }));
+    assert.equal(rates.rubPerUsdt, null);
+    assert.equal(rates.vndPerUsdt, null);
+    assert.equal(rates.vndPerRub, 300);
+  });
+
+  it('does not allow incomplete direct exchange totals to suppress valid indirect evidence', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      directRub: 1_000,
+      directVnd: 0,
+      actualRubForVnd: 8_300,
+      actualVndForRub: 2_500_000,
+    }));
+    assert.equal(rates.rubPerUsdt, 83);
+    assert.equal(rates.vndPerUsdt, null);
+    assert.equal(rates.vndPerRub, 301.2048192771084);
+  });
+
+  it('preserves all valid historical rates when the aggregate includes negative malformed values', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: -8_300,
+      rubUsdtUsdt: 100,
+      actualVnd: -2_500_000,
+      actualUsdt: 100,
+      directRub: -1_000,
+      directVnd: 300_000,
+      actualRubForVnd: 8_300,
+      actualVndForRub: 2_500_000,
+      cardVnd: -500_000,
+      cardUsdt: 20,
+    }));
+    assert.equal(rates.rubPerUsdt, null);
+    assert.equal(rates.vndPerUsdt, null);
+    assert.equal(rates.vndPerRub, 301.2048192771084);
+  });
+
+  it('is invariant to scaling every valid aggregate numerator and denominator by the same factor', () => {
+    const values = {
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      actualVnd: 2_500_000,
+      actualUsdt: 100,
+      directRub: 1_000,
+      directVnd: 300_000,
+      actualRubForVnd: 166,
+      actualVndForRub: 50_000,
+      cardVnd: 500_000,
+      cardUsdt: 20,
+    };
+    const baseline = calculateDateAwareValuationRates(aggregate(values));
+    const scaled = calculateDateAwareValuationRates(aggregate(
+      Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value * 10])) as Partial<DateAwareValuationAggregate>,
+    ));
+    assert.deepEqual(scaled, baseline);
+  });
+
+  it('uses weighted totals rather than averaging individual observed rates arithmetically', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      cardVnd: 1_000_000,
+      cardUsdt: 30,
+      actualVnd: 1_000_000,
+      actualUsdt: 100,
+    }));
+    assert.equal(rates.vndPerUsdt, 1_000_000 / 30);
+    assert.notEqual(rates.vndPerUsdt, (1_000_000 / 30 + 1_000_000 / 100) / 2);
+  });
+
 });
