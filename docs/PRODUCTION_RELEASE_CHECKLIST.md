@@ -231,7 +231,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 ## Dashboard aggregate regression CI reconciliation — 2026-10-21
 
-- [x] CI run [#1310](https://github.com/PurpleeHead/FlowMoney/actions/runs/39594824374) passed on code commit `19c62ba8f33edf225df764048b8711b0a2941cc0`: all 262 server tests passed, TypeScript production build passed, and disposable-PostgreSQL migration/equivalence, transaction rollback, wallet reconciliation, and 1k/10k/50k dashboard aggregate benchmark steps passed.
+- [x] CI run [#1523](https://github.com/PurpleeHead/FlowMoney/actions/runs/39594824374) passed on code commit `19c62ba8f33edf225df764048b8711b0a2941cc0`: all 262 server tests passed, TypeScript production build passed, and disposable-PostgreSQL migration/equivalence, transaction rollback, wallet reconciliation, and 1k/10k/50k dashboard aggregate benchmark steps passed.
 - [x] Corrected dashboard API test expectations to match the SQL-aggregate architecture instead of the retired pair of Prisma aggregate calls; parameterized SQL assertions now check Prisma's actual placeholder format and authenticated user value.
 - [x] Made the dashboard exchange aggregate test double wait on the same bounded recent-activity fixture, avoiding a race between parallel `Promise.all` calls. Corrected the weighted-rate fixture to explicitly model indirect `RUB_USDT_VND` records instead of inheriting the direct-target mode from a generic fixture.
 - [x] These were test-harness corrections; no production code changes were needed after the aggregate result-alignment fix. The prior red runs are superseded by the passing run above.
@@ -240,7 +240,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 ## Historical valuation benchmark and CI reconciliation — 2026-10-21
 
-- [x] CI run [#1312](https://github.com/PurpleeHead/FlowMoney/actions/runs/39595652881) passed on `4c325f6943dd2c586bae2b3808803857604691df`: server test/build job and disposable-PostgreSQL verification/benchmark job both succeeded.
+- [x] CI run [#1531](https://github.com/PurpleeHead/FlowMoney/actions/runs/39595652881) passed on `4c325f6943dd2c586bae2b3808803857604691df`: server test/build job and disposable-PostgreSQL verification/benchmark job both succeeded.
 - [x] Corrected the historical aggregate query-template syntax after the first benchmark-enabled run exposed a parse error. Re-ran CI; SQL equivalence, date cutoff, user isolation, and migration/transaction checks pass.
 - [x] Added guarded, disposable-database-only date-aware aggregate benchmarks at 1k, 10k, and 50k exchange/expense rows per user, including `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and SQL-vs-TypeScript equivalence assertions.
 - [x] Recorded benchmark results in `docs/DASHBOARD_AGGREGATE_EQUIVALENCE.md`: at 50k rows/table, SQL aggregate median 121.33 ms vs fetch-and-aggregate in TypeScript 652.59 ms in CI's disposable PostgreSQL environment. This is directional microbenchmark evidence, not a production latency guarantee.
