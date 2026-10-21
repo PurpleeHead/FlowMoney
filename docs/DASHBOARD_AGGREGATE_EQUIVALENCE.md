@@ -98,7 +98,7 @@ Do not claim a performance improvement without recorded before/after evidence. A
 ## Non-finite numeric hardening — 2026-10-21
 
 - The dashboard exchange aggregate now derives finite-safe numeric values in a user-scoped CTE before calculating sums, weighted rates, and estimates. PostgreSQL `numeric` supports `NaN`, which compares greater than ordinary numbers; relying on `> 0` alone can therefore poison sums and rates.
-- Non-finite values are treated as unavailable for that numeric field, not as evidence of an actual receipt. Other valid fields on the same exchange can still contribute when the legacy TypeScript logic permits it; for example, a finite direct VND target amount can be used when its canonical equivalent is malformed.
+- Non-finite values are treated as unavailable for that numeric field, not as evidence of an actual receipt. Balance totals may use a finite legacy target amount when the canonical equivalent is malformed, but historical rate observations preserve the `money.ts` nullish-precedence rule: a present-but-invalid canonical VND value invalidates that observation rather than falling back and changing the historical rate.
 - The disposable PostgreSQL equivalence fixture now creates malformed numeric values with raw SQL and asserts that every numeric aggregate remains finite, actual outcomes exclude invalid amounts, and valid planning estimates remain separate.
 - [ ] CI must pass on the updated work branch before this audit is considered verified. Production database and release operations remain untouched.
 
