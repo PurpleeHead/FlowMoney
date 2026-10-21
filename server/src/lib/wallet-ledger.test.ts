@@ -13,6 +13,20 @@ describe('wallet ledger mapping', () => {
     assert.equal(drafts[0].amountDelta, -2.19);
   });
 
+  it('ignores stale card-debit fields on non-VND expenses', () => {
+    const rub = expenseLedgerDrafts({
+      id: 'e-stale-card-rub', userId: 'u1', amount: 2500, currency: 'RUB',
+      usdtCharged: 4.5, date: new Date('2026-10-16T08:00:00.000Z'),
+    });
+    const usdt = expenseLedgerDrafts({
+      id: 'e-stale-card-usdt', userId: 'u1', amount: 7.25, currency: 'USDT',
+      usdtCharged: 4.5, date: new Date('2026-10-16T08:00:00.000Z'),
+    });
+
+    assert.deepEqual(rub.map(x => [x.currency, x.amountDelta]), [['RUB', -2500]]);
+    assert.deepEqual(usdt.map(x => [x.currency, x.amountDelta]), [['USDT', -7.25]]);
+  });
+
   it('records a cash VND expense in VND when there is no card debit', () => {
     const drafts = expenseLedgerDrafts({
       id: 'e2', userId: 'u1', amount: 40000, currency: 'vnd',
