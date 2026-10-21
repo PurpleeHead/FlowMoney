@@ -244,14 +244,16 @@ try {
       const directVnd = x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived;
       return sum + (directVnd == null ? 0 : Number(directVnd));
     }
-    return sum + (x.vndReceived == null ? 0 : Number(x.vndReceived));
+    if (x.mode === 'RUB_VND' || x.mode === 'RUB_USDT_VND') {
+      return sum + (x.vndReceived == null ? 0 : Number(x.vndReceived));
+    }
+    return sum;
   }, 0);
   const helperEstimatedTargetVnd = exchangeRows.reduce((sum, x) =>
-    sum + (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() !== 'VND' && x.targetVndEquivalent != null
+    sum + (x.mode === 'RUB_TARGET' && !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null
       ? Number(x.targetVndEquivalent) : 0), 0);
   const eligiblePlanned = exchangeRows.filter(x =>
-    x.mode !== 'RUB_VND' &&
-    !(x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') &&
+    x.mode === 'RUB_USDT_VND' &&
     x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null
   );
   const helperPlannedRate = eligiblePlanned.length
@@ -265,11 +267,13 @@ try {
   const effectiveRateForBudget = helperCardRateForBudget(expenseRows);
   const helperEstimatedUnconvertedVnd = helperEstimatedTargetVnd +
     exchangeRows.reduce((sum, x) => {
-      if (x.mode === 'RUB_VND' || (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') || x.vndReceived != null) return sum;
-      if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null) {
+      if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'USDT' &&
+          x.targetReceived != null && x.targetVndEquivalent == null) {
         return sum + Number(x.targetReceived) * (effectiveRateForBudget ?? helperPlannedRate ?? 0);
       }
-      if (x.usdtReceived != null) return sum + Number(x.usdtReceived) * (effectiveRateForBudget ?? helperPlannedRate ?? 0);
+      if (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) {
+        return sum + Number(x.usdtReceived) * (effectiveRateForBudget ?? helperPlannedRate ?? 0);
+      }
       return sum;
     }, 0);
   const helperBalance = helperConfirmedVnd + helperEstimatedUnconvertedVnd - Number(allExpenseAggregate._sum.amountVnd ?? 0);
@@ -316,7 +320,7 @@ try {
           : Number(x.vndReceived ?? 0),
       })),
     actualVndExchanges: exchangeRows
-      .filter(x => x.mode !== 'RUB_VND' && !(x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') && x.vndReceived != null)
+      .filter(x => x.mode === 'RUB_USDT_VND' && x.vndReceived != null)
       .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
     cardPurchases: expenseRows
       .filter(x => x.amountVnd != null && Number(x.amountVnd) > 0 && x.usdtCharged != null && Number(x.usdtCharged) > 0)
