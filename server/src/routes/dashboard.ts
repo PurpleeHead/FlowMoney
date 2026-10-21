@@ -14,8 +14,12 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     // The chart only displays the last 12 calendar months; financial totals/rates below
     // are computed from unbounded database aggregates so history size cannot change them.
     const chartStart=new Date(now.getFullYear(),now.getMonth()-11,1);
+    const normalizedTargetCurrency = (x: { targetCurrency: string | null }) =>
+      x.targetCurrency?.trim().toUpperCase() ?? null;
     const isDirectVndTarget = (x: { mode: string; targetCurrency: string | null }) =>
-      x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND';
+      x.mode === 'RUB_TARGET' && normalizedTargetCurrency(x) === 'VND';
+    const isDirectUsdtTarget = (x: { mode: string; targetCurrency: string | null }) =>
+      x.mode === 'RUB_TARGET' && normalizedTargetCurrency(x) === 'USDT';
     // Return only fields consumed by dashboard calculations and the client. This keeps
     // internal ownership/audit metadata out of the response and avoids fetching unused columns.
     const [expenses,exchanges,totalExpenseAggregate,monthExpenseAggregate,purchaseAggregate,totalExpenseCount]=await Promise.all([
@@ -111,17 +115,17 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     }, 0);
     const isUnpricedUsdtTopUp = (x: typeof exchanges[number]) =>
       (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
-      (x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null);
+      (isDirectUsdtTarget(x) && x.targetReceived != null && x.targetVndEquivalent == null);
     const unpricedUsdtTopUps = exchanges.some(isUnpricedUsdtTopUp);
     const estimatedTargetCurrencyVnd = exchanges.reduce((sum, x) =>
       sum + (x.mode === 'RUB_TARGET' && !isDirectVndTarget(x) && x.targetVndEquivalent != null
         ? Number(x.targetVndEquivalent) : 0), 0);
     const estimatedUnconvertedVnd = estimatedTargetCurrencyVnd + (balanceRateVndPerUsdt == null ? 0 : exchanges
       .filter(x => x.mode !== 'RUB_VND' && !isDirectVndTarget(x) && x.vndReceived == null &&
-        ((x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null) ||
+        ((isDirectUsdtTarget(x) && x.targetReceived != null && x.targetVndEquivalent == null) ||
          x.usdtReceived != null))
       .reduce((sum, x) => {
-        const usdt = x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT'
+        const usdt = isDirectUsdtTarget(x)
           ? Number(x.targetReceived)
           : Number(x.usdtReceived);
         return sum + usdt * balanceRateVndPerUsdt;
