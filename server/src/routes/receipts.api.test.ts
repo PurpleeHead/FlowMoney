@@ -121,6 +121,50 @@ describe('receipt API ownership', () => {
       assert.equal(queryCalled, false);
     });
   });
+  it('uses legacy direct VND target fields even when the currency casing is inconsistent', async () => {
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_TARGET',
+      rubSpent: 1000,
+      usdtReceived: null,
+      vndReceived: null,
+      planningVndPerUsdt: null,
+      targetCurrency: ' vNd ',
+      targetReceived: 250000,
+      targetVndEquivalent: null,
+    }];
+    expenseModel.findMany = async () => [];
+    let savedExpense: any;
+    const tx = {
+      receipt: { create: async () => ({ id: 'receipt-legacy-direct-vnd' }) },
+      expense: {
+        create: async (args: any) => {
+          savedExpense = args.data;
+          return { id: 'expense-legacy-direct-vnd', ...args.data, usdtCharged: null };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-1'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rawText: 'Vietnamese receipt',
+          items: [{ name: 'Coffee', price: 250000, currency: 'VND', amountVnd: 250000 }],
+        }),
+      });
+
+      assert.equal(response.status, 201);
+      assert.equal(savedExpense.amountVnd, 250000);
+      assert.equal(savedExpense.amountRub, 1000, 'legacy targetReceived VND amount should value the receipt at the observed direct exchange rate');
+    });
+  });
+
   it('does not value receipt expenses using a planning-only VND/USDT rate', async () => {
     exchangeModel.findMany = async () => [{
       mode: 'RUB_USDT_VND',
