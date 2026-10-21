@@ -282,3 +282,40 @@ describe('exchange rate consistency', () => {
     }), true);
   });
 });
+
+
+describe('legacy direct VND target precedence', () => {
+  it('normalizes padded target currency and uses the first non-null stored VND field', () => {
+    assert.deepEqual(mapDirectVndExchanges([
+      {
+        mode: 'RUB_TARGET', rubSpent: 100, targetCurrency: ' vNd ',
+        targetVndEquivalent: 25_000, targetReceived: 26_000, vndReceived: 27_000,
+      },
+      {
+        mode: 'RUB_TARGET', rubSpent: 100, targetCurrency: 'VND',
+        targetVndEquivalent: null, targetReceived: 26_000, vndReceived: 27_000,
+      },
+      {
+        mode: 'RUB_TARGET', rubSpent: 100, targetCurrency: 'VND',
+        targetVndEquivalent: null, targetReceived: null, vndReceived: 27_000,
+      },
+      {
+        mode: 'RUB_TARGET', rubSpent: 100, targetCurrency: ' USDT ',
+        targetVndEquivalent: 25_000, targetReceived: 10, vndReceived: 27_000,
+      },
+    ]), [
+      { rubSpent: 100, vndReceived: 25_000 },
+      { rubSpent: 100, vndReceived: 26_000 },
+      { rubSpent: 100, vndReceived: 27_000 },
+    ]);
+  });
+
+  it('does not silently fall through when the highest-priority explicit equivalent is zero', () => {
+    const observations = mapDirectVndExchanges([{
+      mode: 'RUB_TARGET', rubSpent: 100, targetCurrency: 'VND',
+      targetVndEquivalent: 0, targetReceived: 26_000, vndReceived: 27_000,
+    }]);
+    assert.deepEqual(observations, [{ rubSpent: 100, vndReceived: 0 }]);
+    assert.equal(calculateObservedVndPerRub({ directExchanges: observations, rubPerUsdt: null }), null);
+  });
+});
