@@ -13,6 +13,7 @@ export type DashboardExchangeAggregates = {
   estimatedTargetVnd: number;
   estimatedUsdt: number;
   hasUnpricedUsdtTopUp: boolean;
+  hasUnknownTopUpAmount: boolean;
   hasEstimatedTarget: boolean;
   rateExchangeRub: number;
   rateExchangeVnd: number;
@@ -36,6 +37,7 @@ type DashboardExchangeAggregateRow = {
   estimatedTargetVnd: unknown;
   estimatedUsdt: unknown;
   hasUnpricedUsdtTopUp: boolean;
+  hasUnknownTopUpAmount: boolean;
   hasEstimatedTarget: boolean;
   rateExchangeRub: unknown;
   rateExchangeVnd: unknown;
@@ -117,6 +119,12 @@ function dashboardExchangeAggregateQuery(userId: string) {
           AND "safeRubSpent" > 0 AND "safeTargetReceived" > 0 AND "safeTargetVndEquivalent" IS NULL)
       ), false) AS "hasUnpricedUsdtTopUp",
       COALESCE(BOOL_OR(
+        ("mode" = 'RUB_USDT_VND' AND "safeRubSpent" > 0
+          AND "safeVndReceived" IS NULL AND "safeUsdtReceived" IS NULL)
+        OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
+          AND "safeRubSpent" > 0 AND "safeTargetVndEquivalent" IS NULL AND "safeTargetReceived" IS NULL)
+      ), false) AS "hasUnknownTopUpAmount",
+      COALESCE(BOOL_OR(
         "mode" = 'RUB_TARGET'
           AND upper(trim("targetCurrency")) NOT IN ('VND', 'RUB')
           AND "safeTargetVndEquivalent" IS NOT NULL
@@ -169,6 +177,7 @@ export async function getDashboardExchangeAggregates(userId: string): Promise<Da
     estimatedTargetVnd: value(row.estimatedTargetVnd),
     estimatedUsdt: value(row.estimatedUsdt),
     hasUnpricedUsdtTopUp: row.hasUnpricedUsdtTopUp,
+    hasUnknownTopUpAmount: row.hasUnknownTopUpAmount,
     hasEstimatedTarget: row.hasEstimatedTarget,
     rateExchangeRub: value(row.rateExchangeRub),
     rateExchangeVnd: value(row.rateExchangeVnd),
