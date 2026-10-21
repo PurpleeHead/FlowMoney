@@ -714,3 +714,74 @@ describe('expense cursor pagination', () => {
     assert.deepEqual(queryArgs.orderBy, [{ date: 'desc' }, { id: 'asc' }]);
   });
 });
+
+
+describe('expense cursor pagination boundaries', () => {
+  it('applies a timestamp-and-ID continuation filter for tied expense dates', async () => {
+    let queryArgs: any;
+    expenseModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [{ id: 'expense-z', date: new Date('2026-10-18T08:00:00.000Z') }];
+    };
+    const cursor = Buffer.from(JSON.stringify({
+      timestamp: '2026-10-18T08:00:00.000Z',
+      id: 'expense-m',
+    }), 'utf8').toString('base64url');
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses?limit=10&cursor=${encodeURIComponent(cursor)}`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['expense-z']);
+      assert.equal(body.hasMore, false);
+      assert.equal(body.nextCursor, null);
+    });
+
+    assert.deepEqual(queryArgs.where, {
+      userId: 'user-42',
+      OR: [
+        { date: { lt: new Date('2026-10-18T08:00:00.000Z') } },
+        { date: new Date('2026-10-18T08:00:00.000Z'), id: { gt: 'expense-m' } },
+      ],
+    });
+    assert.equal(queryArgs.take, 11);
+  });
+
+  it('rejects invalid pagination before querying the database', async () => {
+    let queryCalled = false;
+    expenseModel.findMany = async () => {
+      queryCalled = true;
+      throw new Error('Database must not be queried for invalid pagination.');
+    };
+
+    await withApi(async baseUrl => {
+      for (const query of ['limit=0', 'limit=501', 'limit=1.5', 'cursor=not-a-cursor']) {
+        const response = await fetch(`${baseUrl}/api/expenses?${query}`, {
+          headers: { authorization: bearer('user-42') },
+        });
+        assert.equal(response.status, 400, query);
+        assert.deepEqual(await response.json(), { message: 'Invalid pagination parameters.' });
+      }
+    });
+    assert.equal(queryCalled, false);
+  });
+
+  it('does not advertise another page when result count equals the requested limit', async () => {
+    expenseModel.findMany = async () => [
+      { id: 'expense-only', date: new Date('2026-10-18T08:00:00.000Z') },
+    ];
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses?limit=1`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['expense-only']);
+      assert.equal(body.hasMore, false);
+      assert.equal(body.nextCursor, null);
+    });
+  });
+});
