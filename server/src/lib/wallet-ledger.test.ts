@@ -129,14 +129,16 @@ describe('wallet ledger mapping', () => {
   });
 
   it('does not fall back to gross target VND when a legacy net amount is invalid', () => {
-    const drafts = exchangeLedgerDrafts({
-      id: 'x-invalid-net', userId: 'u1', mode: 'RUB_VND', rubSpent: 1000,
-      usdtReceived: null, vndReceived: -1, targetCurrency: 'VND',
-      targetReceived: 250000, createdAt: new Date('2026-10-16T07:00:00.000Z'),
-    });
-    assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [
-      ['RUB', -1000],
-    ]);
+    for (const vndReceived of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const drafts = exchangeLedgerDrafts({
+        id: `x-invalid-net-${String(vndReceived)}`, userId: 'u1', mode: 'RUB_VND', rubSpent: 1000,
+        usdtReceived: null, vndReceived, targetCurrency: 'VND',
+        targetReceived: 250000, createdAt: new Date('2026-10-16T07:00:00.000Z'),
+      });
+      assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [
+        ['RUB', -1000],
+      ]);
+    }
   });
 
   it('credits actual USDT received in a direct RUB to USDT exchange', () => {
