@@ -123,6 +123,24 @@ describe('money regression boundaries', () => {
     }), null);
   });
 
+  it('ignores invalid direct VND/RUB observations and rejects overflow from card-based RUB totals', () => {
+    assert.equal(calculateObservedVndPerRub({
+      directExchanges: [
+        { rubSpent: 1_000, vndReceived: 250_000 },
+        { rubSpent: 0, vndReceived: 500_000 },
+        { rubSpent: 500, vndReceived: Number.POSITIVE_INFINITY },
+        { rubSpent: Number.NaN, vndReceived: 200_000 },
+      ],
+      rubPerUsdt: null,
+    }), 250);
+
+    assert.equal(calculateObservedVndPerRub({
+      directExchanges: [{ rubSpent: 1_000, vndReceived: 250_000 }],
+      cardPurchases: [{ amountVnd: Number.MAX_VALUE, usdtCharged: 2 }],
+      rubPerUsdt: Number.MAX_VALUE,
+    }), null);
+  });
+
   it('does not create a RUB estimate from zero, negative, or non-finite rates', () => {
     for (const rate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       assert.equal(estimateRubFromVnd(100_000, rate, 88.5), null);
