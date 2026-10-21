@@ -89,7 +89,10 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const estimatedTargetCurrencyVnd = exchangeAggregates.estimatedTargetVnd;
     const estimatedUnconvertedVnd = estimatedTargetCurrencyVnd +
       (balanceRateVndPerUsdt == null ? 0 : exchangeAggregates.estimatedUsdt * balanceRateVndPerUsdt);
+    // A known USDT amount may be estimated with an effective/planning rate.
+    // If the acquired amount itself is malformed/unknown, no rate can recover the balance.
     const balanceVnd = exchangeAggregates.exchangeCount === 0 ||
+      exchangeAggregates.hasUnknownTopUpAmount ||
       (unpricedUsdtTopUps && balanceRateVndPerUsdt == null)
       ? null
       : confirmedExchangeVnd + estimatedUnconvertedVnd - totalVnd;
