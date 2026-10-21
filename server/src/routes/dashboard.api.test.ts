@@ -1034,3 +1034,44 @@ describe('dashboard finite balance fallback versus historical rate precedence', 
     });
   });
 });
+
+describe('dashboard finite-safe planning fallback', () => {
+  it('uses a planning rate when the legacy actual VND field is non-finite but USDT amount is known', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'nan-actual-vnd-with-known-usdt-and-planning-rate',
+      mode: 'RUB_USDT_VND',
+      targetCurrency: 'VND',
+      rubSpent: 1000,
+      usdtReceived: 3,
+      vndReceived: Number.NaN,
+      planningVndPerUsdt: 25000,
+      targetReceived: null,
+      targetVndEquivalent: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        planningVndPerUsdt: number | null;
+        effectiveVndPerUsdt: number | null;
+        balanceVnd: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 0);
+      assert.equal(body.estimatedUnconvertedVnd, 75000);
+      assert.equal(body.planningVndPerUsdt, 25000);
+      assert.equal(body.effectiveVndPerUsdt, null);
+      assert.equal(body.balanceVnd, 75000);
+    });
+  });
+});
