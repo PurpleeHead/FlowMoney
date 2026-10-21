@@ -169,8 +169,8 @@ jobs:
             card_delta numeric;
           BEGIN
             SELECT count(*) INTO movement_count FROM "WalletMovement" WHERE "userId" = 'backfill-test-user';
-            IF movement_count <> 11 THEN
-              RAISE EXCEPTION 'Expected 11 unique movements after two backfills, got %', movement_count;
+            IF movement_count <> 14 THEN
+              RAISE EXCEPTION 'Expected 14 unique movements after two backfills, got %', movement_count;
             END IF;
             SELECT count(*), min("amountDelta") INTO card_count, card_delta
               FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-card-expense:USDT';
@@ -179,6 +179,15 @@ jobs:
             END IF;
             SELECT count(*) INTO rub_count FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-rub-expense:RUB' AND "amountDelta" = -100;
             IF rub_count <> 1 THEN RAISE EXCEPTION 'RUB expense debit missing or duplicated'; END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-stale-card-rub:RUB' AND "currency" = 'RUB' AND "amountDelta" = -200) <> 1 THEN
+              RAISE EXCEPTION 'Stale USDT card field must not change a RUB expense movement';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-stale-card-rub:USDT') <> 0 THEN
+              RAISE EXCEPTION 'Stale USDT card field created an incorrect USDT debit for a RUB expense';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" LIKE 'expense:backfill-invalid-card-vnd:%') <> 0 THEN
+              RAISE EXCEPTION 'Invalid non-null VND card debit must not silently fall back to cash VND';
+            END IF;
             SELECT count(*) INTO exchange_usdt_count FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-exchange:USDT' AND "amountDelta" = 93.7853;
             IF exchange_usdt_count <> 1 THEN RAISE EXCEPTION 'USDT exchange credit missing or duplicated'; END IF;
             SELECT count(*) INTO exchange_vnd_count FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-exchange:VND' AND "amountDelta" = 250000;
@@ -210,7 +219,19 @@ jobs:
             IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-invalid-rub-target:RUB' AND "amountDelta" > 0) <> 0 THEN
               RAISE EXCEPTION 'Invalid historical RUB target must not credit RUB';
             END IF;
-            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -10400 THEN
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-unknown-mode:RUB' AND "amountDelta" = -300) <> 1 THEN
+              RAISE EXCEPTION 'Unknown exchange mode must preserve its valid RUB outflow';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" IN ('exchange:backfill-unknown-mode:USDT', 'exchange:backfill-unknown-mode:VND')) <> 0 THEN
+              RAISE EXCEPTION 'Unknown exchange mode must not create stale USDT/VND credits';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-fee-net-unknown:RUB' AND "amountDelta" = -400) <> 1 THEN
+              RAISE EXCEPTION 'Fee-bearing direct exchange with unknown net must preserve RUB outflow';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-fee-net-unknown:VND') <> 0 THEN
+              RAISE EXCEPTION 'Fee-bearing direct exchange must not credit gross VND when net VND is unknown';
+            END IF;
+            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -11300 THEN
               RAISE EXCEPTION 'RUB movement total does not reconcile';
             END IF;
             IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'USDT') <> 96.5953 THEN
