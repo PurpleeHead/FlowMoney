@@ -23,6 +23,7 @@ const originalQueryRaw = rawModel.$queryRaw;
 const previousSecret = process.env.JWT_SECRET;
 let dashboardAggregateArgs: any[] = [];
 let dashboardExchangeRows: any[] = [];
+let dashboardRawQueries: any[] = [];
 
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
@@ -147,14 +148,27 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
     dashboardExchangeRows = rows;
     return rows;
   });
+  dashboardRawQueries = [];
   Object.defineProperty(prisma, '$queryRaw', {
     configurable: true,
     writable: true,
-    value: async () => {
-      // The aggregate query runs concurrently with the recent-activity query.
-      // Yield once so the configured fixture rows are captured without issuing
-      // a second findMany call that would distort query-shape assertions.
+    value: async (query: any) => {
+      dashboardRawQueries.push(query);
       await Promise.resolve();
+      const sql = String(query?.sql ?? '');
+      if (sql.includes('FROM "Expense"')) {
+        // Mirror the dashboard purchase aggregate's trim/uppercase and finite-value predicates.
+        const rows = await expenseModel.findMany({});
+        const valid = rows.filter((row: any) =>
+          String(row.currency ?? '').trim().toUpperCase() === 'VND' &&
+          Number.isFinite(Number(row.amountVnd)) && Number(row.amountVnd) > 0 &&
+          Number.isFinite(Number(row.usdtCharged)) && Number(row.usdtCharged) > 0);
+        return [{
+          amountVnd: valid.reduce((sum: number, row: any) => sum + Number(row.amountVnd), 0),
+          usdtCharged: valid.reduce((sum: number, row: any) => sum + Number(row.usdtCharged), 0),
+        }];
+      }
+      // The exchange aggregate runs concurrently with the recent-activity query.
       return mockDashboardExchangeAggregates(dashboardExchangeRows);
     },
   });
@@ -366,23 +380,21 @@ describe('dashboard query shape', () => {
     assert.deepEqual(exchangeArgs.where, { userId: 'dashboard-user' });
     assert.deepEqual(exchangeArgs.orderBy, [{ createdAt: 'desc' }, { id: 'desc' }]);
     assert.equal(exchangeArgs.take, 100, 'dashboard activity query must be bounded independently from all-history aggregates');
-    assert.equal(dashboardAggregateArgs.length, 3);
+    assert.equal(dashboardAggregateArgs.length, 2);
     assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
     const allTimeAggregate = dashboardAggregateArgs.find(args => args._sum.amountVnd && !args.where.date);
     const monthAggregate = dashboardAggregateArgs.find(args => args.where.date?.gte);
-    const purchaseAggregate = dashboardAggregateArgs.find(args => args._sum.usdtCharged);
     assert.ok(allTimeAggregate, 'all-time expense aggregate must not have a date limit');
     assert.ok(monthAggregate, 'month aggregate must have a date boundary');
-    assert.ok(purchaseAggregate, 'weighted card aggregate must sum VND and USDT');
     assert.ok(monthAggregate.where.date.gte instanceof Date);
-    assert.equal(purchaseAggregate.where.userId, 'dashboard-user');
-    assert.deepEqual(purchaseAggregate.where.currency, { mode: 'insensitive', equals: 'VND' },
-      'weighted purchase rate must ignore stale VND-equivalent fields on non-VND expenses');
-    assert.equal(purchaseAggregate.where.amountVnd.gt, 0);
-    assert.equal(purchaseAggregate.where.usdtCharged.gt, 0);
-    assert.ok(Number.isNaN(Number(purchaseAggregate.where.amountVnd.not)), 'purchase aggregate excludes PostgreSQL numeric NaN');
-    assert.ok(Number.isNaN(Number(purchaseAggregate.where.usdtCharged.not)), 'purchase aggregate excludes PostgreSQL numeric NaN');
-    assert.deepEqual(Object.keys(purchaseAggregate._sum).sort(), ['amountVnd', 'usdtCharged']);
+    const purchaseAggregateQuery = dashboardRawQueries.find(query => String(query?.sql ?? '').includes('FROM "Expense"'));
+    assert.ok(purchaseAggregateQuery, 'weighted purchase rate must use a dedicated SQL aggregate');
+    assert.match(String(purchaseAggregateQuery.sql), /upper\(trim\("currency"\)\)\s*=\s*'VND'/,
+      'weighted purchase rate must normalize legacy currency strings in SQL');
+    assert.match(String(purchaseAggregateQuery.sql), /"amountVnd"::text NOT IN/,
+      'weighted purchase rate must reject PostgreSQL non-finite VND values');
+    assert.match(String(purchaseAggregateQuery.sql), /"usdtCharged"::text NOT IN/,
+      'weighted purchase rate must reject PostgreSQL non-finite USDT values');
     assert.deepEqual(Object.keys(exchangeArgs.select).sort(), [
       'createdAt', 'effectiveRubPerUsdt', 'effectiveVndPerRub', 'id', 'mode',
       'planningVndPerUsdt', 'rubSpent', 'targetCurrency', 'targetReceived',
