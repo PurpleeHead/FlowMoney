@@ -108,8 +108,9 @@ try {
         acc.actualVnd += vnd;
         acc.actualUsdt += usdt;
       }
-      if (row.mode === 'RUB_USDT_VND' &&
-          vnd == null && usdt != null && row.planningVndPerUsdt != null) {
+      if (row.mode === 'RUB_USDT_VND' && rub > 0 &&
+          vnd == null && usdt != null && usdt > 0 &&
+          row.planningVndPerUsdt != null && Number(row.planningVndPerUsdt) > 0) {
         acc.plannedWeightedVnd += usdt * Number(row.planningVndPerUsdt);
         acc.plannedUsdt += usdt;
       }
