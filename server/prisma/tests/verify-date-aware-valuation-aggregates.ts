@@ -262,7 +262,9 @@ try {
   near(aggregateWithoutMissingCard.cardVnd, Number(aggregate.cardVnd), 'excluding a missing expense leaves card VND unchanged');
   near(aggregateWithoutMissingCard.cardUsdt, Number(aggregate.cardUsdt), 'excluding a missing expense leaves card USDT unchanged');
 
-  const aggregateWithoutFutureCard = await getDateAwareValuationAggregate(userId, valuationDate, expenses.find(x => x.title === 'Card after cutoff')!.id);
+  const futureCardExpense = await prisma.expense.findFirst({ where: { userId, title: 'Card after cutoff' } });
+  assert.ok(futureCardExpense, 'fixture includes a card expense after the historical cutoff');
+  const aggregateWithoutFutureCard = await getDateAwareValuationAggregate(userId, valuationDate, futureCardExpense.id);
   near(aggregateWithoutFutureCard.cardVnd, Number(aggregate.cardVnd), 'excluding a future card expense cannot alter a historical VND aggregate');
   near(aggregateWithoutFutureCard.cardUsdt, Number(aggregate.cardUsdt), 'excluding a future card expense cannot alter a historical USDT aggregate');
 
