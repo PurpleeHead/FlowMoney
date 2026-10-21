@@ -104,7 +104,7 @@ try {
         acc.rubUsdtUsdt += targetReceived;
       }
 
-      if (row.mode === 'RUB_USDT_VND' && usdt != null && usdt > 0 && vnd != null && vnd > 0) {
+      if (row.mode === 'RUB_USDT_VND' && rub > 0 && usdt != null && usdt > 0 && vnd != null && vnd > 0) {
         acc.actualVnd += vnd;
         acc.actualUsdt += usdt;
       }
@@ -123,8 +123,8 @@ try {
       if (row.mode === 'RUB_TARGET' && target !== 'VND' && target !== 'RUB' && targetVnd != null) {
         acc.estimatedTargetVnd += targetVnd;
       }
-      if ((row.mode === 'RUB_TARGET' && target === 'USDT' && targetReceived != null && targetVnd == null) ||
-          (row.mode === 'RUB_USDT_VND' && vnd == null && usdt != null)) {
+      if ((row.mode === 'RUB_TARGET' && target === 'USDT' && rub > 0 && targetReceived != null && targetReceived > 0 && targetVnd == null) ||
+          (row.mode === 'RUB_USDT_VND' && rub > 0 && vnd == null && usdt != null && usdt > 0)) {
         acc.estimatedUsdt += row.mode === 'RUB_TARGET' && target === 'USDT' ? targetReceived ?? 0 : usdt ?? 0;
       }
       return acc;
