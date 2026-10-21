@@ -61,3 +61,37 @@ INSERT INTO "Exchange" (
 ) VALUES (
   'backfill-invalid-rub-target', 'backfill-test-user', 'RUB_TARGET', 'RUB', 100, 200, CURRENT_TIMESTAMP
 );
+-- A stale USDT card-debit field on a RUB expense must not change its currency.
+INSERT INTO "Expense" (
+  "id", "userId", "title", "category", "amount", "currency",
+  "amountVnd", "amountRub", "usdtCharged", "date", "createdAt", "updatedAt"
+) VALUES (
+  'backfill-stale-card-rub', 'backfill-test-user', 'Legacy RUB expense with stale card field',
+  'test', 200, 'RUB', NULL, 200, 3.5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+);
+
+-- A present but invalid card debit on a VND expense is malformed, not a cash fallback.
+INSERT INTO "Expense" (
+  "id", "userId", "title", "category", "amount", "currency",
+  "amountVnd", "usdtCharged", "date", "createdAt", "updatedAt"
+) VALUES (
+  'backfill-invalid-card-vnd', 'backfill-test-user', 'Legacy VND expense with invalid card debit',
+  'test', 1000, 'VND', 1000, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+);
+
+-- Unknown exchange modes preserve only the known RUB outflow; stale USDT/VND fields are not credits.
+INSERT INTO "Exchange" (
+  "id", "userId", "mode", "targetCurrency", "rubSpent", "usdtReceived", "vndReceived", "createdAt"
+) VALUES (
+  'backfill-unknown-mode', 'backfill-test-user', 'LEGACY_UNKNOWN', 'VND',
+  300, 9, 40000, CURRENT_TIMESTAMP
+);
+
+-- If net VND is unknown and a fee is present, the gross legacy amount is not a wallet credit.
+INSERT INTO "Exchange" (
+  "id", "userId", "mode", "targetCurrency", "targetReceived", "rubSpent",
+  "vndFee", "vndReceived", "createdAt"
+) VALUES (
+  'backfill-fee-net-unknown', 'backfill-test-user', 'RUB_VND', 'VND',
+  50000, 400, 1000, NULL, CURRENT_TIMESTAMP
+);
