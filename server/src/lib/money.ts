@@ -17,7 +17,9 @@ export function calculateRubPerUsdt(exchanges: ExchangeObservation[]): number | 
   );
   const rub = valid.reduce((sum, x) => sum + x.rubSpent, 0);
   const usdt = valid.reduce((sum, x) => sum + x.usdtReceived, 0);
-  return usdt > 0 ? rub / usdt : null;
+  if (!Number.isFinite(rub) || !Number.isFinite(usdt) || usdt <= 0) return null;
+  const rate = rub / usdt;
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
 }
 
 /** Effective VND/USDT from card purchases, weighted by USDT actually charged. */
@@ -28,7 +30,9 @@ export function calculateObservedVndPerUsdt(purchases: PurchaseObservation[]): n
   );
   const vnd = valid.reduce((sum, x) => sum + x.amountVnd, 0);
   const usdt = valid.reduce((sum, x) => sum + x.usdtCharged, 0);
-  return usdt > 0 ? vnd / usdt : null;
+  if (!Number.isFinite(vnd) || !Number.isFinite(usdt) || usdt <= 0) return null;
+  const rate = vnd / usdt;
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
 }
 
 /** Weighted VND/RUB rate across direct RUB→VND exchanges, actual VND outcomes, and card purchases. */
@@ -54,7 +58,9 @@ export function calculateObservedVndPerRub(input: {
       }
     }
   }
-  return rubTotal > 0 && vndTotal > 0 ? vndTotal / rubTotal : null;
+  if (!Number.isFinite(rubTotal) || !Number.isFinite(vndTotal) || rubTotal <= 0 || vndTotal <= 0) return null;
+  const rate = vndTotal / rubTotal;
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
 }
 
 
