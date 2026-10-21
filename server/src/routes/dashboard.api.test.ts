@@ -877,6 +877,56 @@ describe('dashboard normalizes legacy direct USDT target currency', () => {
 });
 
 
+describe('dashboard estimates legacy direct USDT targets', () => {
+  it('uses the observed VND/USDT rate for a padded lowercase USDT target', async () => {
+    expenseModel.findMany = async () => [{
+      id: 'rate-observation',
+      title: 'Card purchase',
+      category: 'Food',
+      amount: 100000,
+      currency: 'VND',
+      amountVnd: 100000,
+      amountRub: 400,
+      usdtCharged: 4,
+      date: new Date('2026-10-10T08:00:00.000Z'),
+    }];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'legacy-usdt-target-with-observed-rate',
+      mode: 'RUB_TARGET',
+      targetCurrency: ' usdt ',
+      targetReceived: 50,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+      usdtReceived: null,
+      vndReceived: null,
+      planningVndPerUsdt: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        effectiveVndPerUsdt: number | null;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.effectiveVndPerUsdt, 25000);
+      assert.equal(body.estimatedUnconvertedVnd, 1250000, 'the normalized USDT target should be valued using the observed rate');
+      assert.equal(body.balanceVnd, 1150000);
+      assert.equal(body.balanceIsEstimated, true);
+    });
+  });
+});
+
+
 describe('dashboard all-time expense count', () => {
   it('keeps the all-time count separate from the bounded recent expense list', async () => {
     const rows = [
