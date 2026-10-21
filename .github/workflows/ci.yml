@@ -147,6 +147,8 @@ jobs:
         run: npx tsx server/prisma/tests/verify-delete-transaction-rollback.ts
       - name: Verify concurrent expense and exchange PATCH/DELETE
         run: npx tsx server/prisma/tests/verify-concurrent-mutations.ts
+      - name: Verify repeated ledger sync and currency transitions
+        run: npx tsx server/prisma/tests/verify-ledger-sync-idempotence.ts
       - name: Seed legacy records and an existing ledger row
         run: psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f server/prisma/tests/wallet-movement-backfill-fixture.sql
       - name: Run read-only legacy wallet preflight against PostgreSQL fixture
