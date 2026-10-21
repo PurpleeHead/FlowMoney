@@ -220,3 +220,10 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Kept coverage for `NaN`, `Infinity`, and `-Infinity` using an unconstrained PostgreSQL `numeric` expression, and retained persisted `NaN` cases for actual schema aggregate equivalence.
 - [ ] CI for fixture correction commit `e85a6faa10e1b870f2c9b5f061973a3a263ba46e` and the follow-up documentation commits is not yet confirmed; no green result is inferred from empty status endpoints.
 - [ ] PR #83 remains Draft and unmerged. Production database identity, encrypted backup and isolated restore, wallet reconciliation, approved Render configuration, and production smoke tests remain blockers.
+
+## Dashboard aggregate result alignment — 2026-10-21
+
+- [x] Fixed a result-order mismatch in `server/src/routes/dashboard.ts`: all-time and current-month expense totals are returned by one raw SQL query, so the `Promise.all` destructuring now expects one expense-total result followed by card-purchase and exchange aggregates. The previous six-variable destructuring could leave `exchangeAggregates` undefined and misassign subsequent results.
+- [x] Existing Dashboard API tests cover all-time/month totals, weighted card rates, balance values, and non-finite expense inputs; they should fail if the route cannot resolve the aggregate outputs.
+- [ ] CI verification for the fix commit `43bc4a4c8253f33266a766cf63ceb730010f974d` and the latest fixture/docs commits is not yet confirmed through the available status endpoint.
+- [ ] No production deployment or database operation was performed. PR #83 remains Draft/unmerged and production operational gates remain open.
