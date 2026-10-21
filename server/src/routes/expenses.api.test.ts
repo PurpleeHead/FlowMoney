@@ -472,6 +472,87 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+  it('uses the submitted historical date when creating an expense', async () => {
+    const effectiveDate = new Date('2026-09-12T10:30:00.000Z');
+    let createData: any;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    const tx = {
+      expense: {
+        create: async ({ data }: any) => {
+          createData = data;
+          return { id: 'expense-historical-create', ...data };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async ({ data }: any) => ({ count: data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Historical lunch', category: 'Food', amount: 100, currency: 'RUB',
+          date: effectiveDate.toISOString(),
+        }),
+      });
+      assert.equal(response.status, 201);
+    });
+
+    assert.equal(createData.date.getTime(), effectiveDate.getTime(), 'stored expense date must preserve the submitted effective date');
+    assert.equal(aggregateQueries.length, 1, 'creation should use one historical aggregate query');
+    assert.ok(aggregateQueries[0].values.some((value: unknown) => value instanceof Date && value.getTime() === effectiveDate.getTime()),
+      'historical valuation must be cut off at the submitted expense date, not the current time');
+  });
+
+  it('uses the replacement date when PATCH moves an expense into another historical period', async () => {
+    const existingDate = new Date('2026-10-18T08:00:00.000Z');
+    const replacementDate = new Date('2026-09-01T12:00:00.000Z');
+    const existing = {
+      id: 'expense-move-date', userId: 'user-42', title: 'Old expense', category: 'Food',
+      amount: 100, currency: 'RUB', amountVnd: null, amountRub: 100,
+      usdtCharged: null, date: existingDate, receiptId: null,
+    };
+    let updateData: any;
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    const tx = {
+      expense: {
+        updateMany: async ({ data }: any) => { updateData = data; return { count: 1 }; },
+        findFirst: async () => ({ ...existing, ...updateData }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async ({ data }: any) => ({ count: data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-move-date`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Moved expense', category: 'Food', amount: 100, currency: 'RUB',
+          date: replacementDate.toISOString(),
+        }),
+      });
+      assert.equal(response.status, 200);
+    });
+
+    assert.equal(updateData.date.getTime(), replacementDate.getTime(), 'PATCH must store the replacement effective date');
+    assert.equal(aggregateQueries.length, 1, 'date edit should recalculate against one historical aggregate');
+    assert.ok(aggregateQueries[0].values.some((value: unknown) => value instanceof Date && value.getTime() === replacementDate.getTime()),
+      'PATCH valuation cutoff must follow the replacement date');
+    assert.ok(!aggregateQueries[0].values.some((value: unknown) => value instanceof Date && value.getTime() === existingDate.getTime()),
+      'PATCH must not retain the previous date as its valuation cutoff');
+  });
+
   it('deletes an expense and its ledger rows in one owner-scoped transaction', async () => {
     let expenseDeleteArgs: any;
     const movementDeleteArgs: any[] = [];
