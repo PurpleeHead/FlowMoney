@@ -120,6 +120,8 @@ jobs:
         run: npx prisma migrate deploy --schema=server/prisma/schema.prisma
       - name: Verify dashboard aggregate equivalence against disposable PostgreSQL
         run: npx tsx server/prisma/tests/verify-dashboard-aggregate-equivalence.ts
+      - name: Verify date-aware valuation aggregates against disposable PostgreSQL
+        run: npx tsx server/prisma/tests/verify-date-aware-valuation-aggregates.ts
       - name: Benchmark dashboard aggregates (1k rows/user)
         env:
           FLOWMONEY_BENCHMARK_DATABASE: disposable
