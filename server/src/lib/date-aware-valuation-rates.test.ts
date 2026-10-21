@@ -59,6 +59,32 @@ describe('date-aware valuation rates', () => {
     assert.equal(rates.vndPerUsdt, 25_000);
   });
 
+  it('does not treat a positive card VND total without a positive USDT denominator as a rate', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      actualVnd: 2_500_000,
+      actualUsdt: 100,
+      cardVnd: 500_000,
+      cardUsdt: 0,
+    }));
+    assert.equal(rates.rubPerUsdt, 83);
+    assert.equal(rates.vndPerUsdt, 25_000);
+  });
+
+  it('does not treat a positive card USDT total without a positive VND numerator as a rate', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      actualVnd: 2_500_000,
+      actualUsdt: 100,
+      cardVnd: 0,
+      cardUsdt: 20,
+    }));
+    assert.equal(rates.rubPerUsdt, 83);
+    assert.equal(rates.vndPerUsdt, 25_000);
+  });
+
   it('falls back to actual exchange evidence when card totals are non-positive', () => {
     const rates = calculateDateAwareValuationRates(aggregate({
       rubUsdtRub: 8_300,
