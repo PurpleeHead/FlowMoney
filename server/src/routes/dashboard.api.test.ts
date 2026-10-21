@@ -7,11 +7,12 @@ import { prisma } from '../services/prisma.js';
 import dashboardRoutes from './dashboard.js';
 
 const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
-const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any>; aggregate: (...args: any[]) => Promise<any> };
+const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any>; aggregate: (...args: any[]) => Promise<any>; count: (...args: any[]) => Promise<number> };
 const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
 const originalUserFindFirst = userModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
 const originalExpenseAggregate = expenseModel.aggregate;
+const originalExpenseCount = expenseModel.count;
 const originalExchangeFindMany = exchangeModel.findMany;
 const previousSecret = process.env.JWT_SECRET;
 let dashboardAggregateArgs: any[] = [];
@@ -20,6 +21,7 @@ afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
   expenseModel.findMany = originalExpenseFindMany;
   expenseModel.aggregate = originalExpenseAggregate;
+  expenseModel.count = originalExpenseCount;
   exchangeModel.findMany = originalExchangeFindMany;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
@@ -29,6 +31,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
   // as PostgreSQL. This keeps route tests independent of a live database.
   dashboardAggregateArgs = [];
+  expenseModel.count = async () => (await expenseModel.findMany({})).length;
   expenseModel.aggregate = async (args: any) => {
     dashboardAggregateArgs.push(args);
     const rows = await expenseModel.findMany({});
@@ -826,6 +829,62 @@ describe('dashboard normalizes legacy direct VND target currency', () => {
       assert.equal(body.balanceVnd, 125_000);
       assert.equal(body.balanceIsEstimated, false);
       assert.equal(body.effectiveVndPerRub, 250);
+    });
+  });
+});
+
+
+describe('dashboard all-time expense count', () => {
+  it('keeps the all-time count separate from the bounded recent expense list', async () => {
+    const rows = [
+      {
+        id: 'older-expense',
+        title: 'Older expense',
+        category: 'Other',
+        amount: 100,
+        currency: 'VND',
+        amountVnd: 100,
+        amountRub: null,
+        usdtCharged: null,
+        date: new Date('2025-10-01T08:00:00.000Z'),
+      },
+      {
+        id: 'recent-expense',
+        title: 'Recent expense',
+        category: 'Food',
+        amount: 200,
+        currency: 'VND',
+        amountVnd: 200,
+        amountRub: null,
+        usdtCharged: null,
+        date: new Date('2026-10-01T08:00:00.000Z'),
+      },
+    ];
+    expenseModel.findMany = async (args: any = {}) => rows.filter(row =>
+      !args.where?.date?.gte || row.date >= args.where.date.gte
+    );
+    expenseModel.count = async () => rows.length;
+    exchangeModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalExpenseCount: number;
+        totalVnd: number;
+        monthVnd: number;
+        expenses: Array<{ id: string }>;
+      };
+      assert.equal(body.totalExpenseCount, 2, 'count must include older expenses outside the dashboard activity window');
+      assert.deepEqual(body.expenses.map(x => x.id), ['recent-expense'], 'recent activity remains bounded to the chart window');
+      assert.equal(body.totalVnd, 300, 'all-time financial totals must still include older expenses');
+      assert.equal(body.monthVnd, 200, 'month total remains date-scoped');
     });
   });
 });
