@@ -837,6 +837,46 @@ describe('dashboard normalizes legacy direct VND target currency', () => {
 });
 
 
+describe('dashboard normalizes legacy direct USDT target currency', () => {
+  it('recognizes padded lowercase USDT for unpriced-balance detection and estimates', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'legacy-padded-lowercase-usdt-target',
+      mode: 'RUB_TARGET',
+      targetCurrency: ' usdt ',
+      targetReceived: 50,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+      usdtReceived: null,
+      vndReceived: null,
+      planningVndPerUsdt: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.confirmedExchangeVnd, 0);
+      assert.equal(body.estimatedUnconvertedVnd, 0, 'without an observed/planning VND rate, the estimate remains unknown');
+      assert.equal(body.balanceVnd, null, 'an unpriced USDT target must not look like a zero balance');
+      assert.equal(body.balanceIsEstimated, false);
+    });
+  });
+});
+
+
 describe('dashboard all-time expense count', () => {
   it('keeps the all-time count separate from the bounded recent expense list', async () => {
     const rows = [
