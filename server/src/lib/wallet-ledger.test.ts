@@ -126,7 +126,7 @@ describe('wallet ledger mapping', () => {
       ['RUB', -200],
     ]);
   });
-}
+});
 
 describe('wallet ledger identity and malformed inputs', () => {
   it('keeps an expense source key stable when its amount changes', () => {
