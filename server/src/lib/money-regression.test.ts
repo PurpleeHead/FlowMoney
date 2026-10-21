@@ -103,6 +103,26 @@ describe('money regression boundaries', () => {
     ]), 25_000);
   });
 
+  it('returns null instead of an infinite weighted rate when finite rows overflow their aggregate', () => {
+    assert.equal(calculateRubPerUsdt([
+      { rubSpent: Number.MAX_VALUE, usdtReceived: 1 },
+      { rubSpent: Number.MAX_VALUE, usdtReceived: 1 },
+    ]), null);
+
+    assert.equal(calculateObservedVndPerUsdt([
+      { amountVnd: Number.MAX_VALUE, usdtCharged: 1 },
+      { amountVnd: Number.MAX_VALUE, usdtCharged: 1 },
+    ]), null);
+
+    assert.equal(calculateObservedVndPerRub({
+      directExchanges: [
+        { rubSpent: Number.MAX_VALUE, vndReceived: Number.MAX_VALUE },
+        { rubSpent: Number.MAX_VALUE, vndReceived: Number.MAX_VALUE },
+      ],
+      rubPerUsdt: null,
+    }), null);
+  });
+
   it('does not create a RUB estimate from zero, negative, or non-finite rates', () => {
     for (const rate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       assert.equal(estimateRubFromVnd(100_000, rate, 88.5), null);
