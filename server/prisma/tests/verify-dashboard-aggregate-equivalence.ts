@@ -86,7 +86,7 @@ try {
   });
   // PostgreSQL numeric accepts NaN/Infinity even though the application helpers
   // intentionally reject non-finite JavaScript numbers. Exercise the real DB path.
-  const [badIndirect, badDirectUsdt, badDirectVnd, zeroRubActual, negativeRubPlanned, zeroUsdtActual] = await Promise.all([
+  const [badIndirect, badDirectUsdt, badDirectVnd, zeroRubActual, negativeRubPlanned, zeroUsdtActual, badPlanningRate] = await Promise.all([
     prisma.exchange.create({ data: {
       userId: nonFiniteUser.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
       rubSpent: 100, usdtReceived: 3, vndReceived: 1, planningVndPerUsdt: 25_000,
@@ -111,6 +111,10 @@ try {
       userId: nonFiniteUser.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
       rubSpent: 50, usdtReceived: 0, vndReceived: 300_000,
     } }),
+    prisma.exchange.create({ data: {
+      userId: nonFiniteUser.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
+      rubSpent: 100, usdtReceived: 2, vndReceived: null, planningVndPerUsdt: 25_000,
+    } }),
   ]);
   await prisma.$executeRaw`
     UPDATE "Exchange" SET "vndReceived" = 'NaN'::numeric WHERE "id" = ${badIndirect.id}
@@ -123,16 +127,20 @@ try {
     UPDATE "Exchange" SET "targetVndEquivalent" = 'NaN'::numeric, "vndReceived" = 'NaN'::numeric
     WHERE "id" = ${badDirectVnd.id}
   `;
+  await prisma.$executeRaw`
+    UPDATE "Exchange" SET "planningVndPerUsdt" = 'NaN'::numeric
+    WHERE "id" = ${badPlanningRate.id}
+  `;
   const nonFiniteAggregate = await getDashboardExchangeAggregates(nonFiniteUser.id);
-  assert.equal(nonFiniteAggregate.exchangeCount, 6);
-  near(nonFiniteAggregate.rubUsdtRub, 100, 'non-finite direct USDT receipt cannot contaminate RUB/USDT numerator');
-  near(nonFiniteAggregate.rubUsdtUsdt, 3, 'non-finite direct USDT receipt is excluded from RUB/USDT denominator');
+  assert.equal(nonFiniteAggregate.exchangeCount, 7);
+  near(nonFiniteAggregate.rubUsdtRub, 200, 'non-finite direct USDT receipt is excluded while valid known USDT amounts remain in RUB/USDT numerator');
+  near(nonFiniteAggregate.rubUsdtUsdt, 5, 'non-finite direct USDT receipt is excluded while valid known USDT amounts remain in denominator');
   near(nonFiniteAggregate.actualVnd, 0, 'NaN indirect VND is not an actual outcome');
   near(nonFiniteAggregate.actualUsdt, 0, 'invalid actual VND prevents the indirect USDT observation');
   near(nonFiniteAggregate.plannedWeightedVnd, 75_000, 'invalid actual VND falls back to the valid planning estimate');
   near(nonFiniteAggregate.plannedUsdt, 3, 'planning denominator excludes invalid actual values');
   near(nonFiniteAggregate.confirmedVnd, 900_000, 'finite received VND is retained for balance even when the RUB/USDT cost basis is invalid');
-  near(nonFiniteAggregate.estimatedUsdt, 3, 'invalid actual VND remains an unpriced indirect USDT top-up');
+  near(nonFiniteAggregate.estimatedUsdt, 5, 'invalid actual VND and malformed planning rate remain unpriced without inventing a VND estimate');
   near(nonFiniteAggregate.rateExchangeRub, 50, 'non-finite canonical direct VND is not replaced by a legacy target amount in the weighted rate');
   near(nonFiniteAggregate.rateExchangeVnd, 300_000, 'a valid indirect VND outcome remains VND/RUB evidence even when the legacy USDT field is zero');
   assert.equal(nonFiniteAggregate.hasUnpricedUsdtTopUp, true);
