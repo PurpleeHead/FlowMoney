@@ -141,6 +141,8 @@ jobs:
         run: npx tsx server/prisma/tests/verify-transaction-rollback.ts
       - name: Verify receipt and expense rollback when ledger write fails
         run: npx tsx server/prisma/tests/verify-receipt-transaction-rollback.ts
+      - name: Verify expense PATCH rollback when ledger synchronization fails
+        run: npx tsx server/prisma/tests/verify-expense-patch-transaction-rollback.ts
       - name: Verify exchange transaction rollback when ledger sync fails
         run: npx tsx server/prisma/tests/verify-exchange-transaction-rollback.ts
       - name: Verify expense and exchange delete rollback
