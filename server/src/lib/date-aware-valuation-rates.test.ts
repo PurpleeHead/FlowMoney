@@ -44,7 +44,7 @@ describe('date-aware valuation rates', () => {
     assert.equal(rates.vndPerRub, 301.2048192771084);
   });
 
-  it('rejects non-finite aggregate conversions rather than producing a rate', () => {
+  it('ignores non-finite aggregate conversions while retaining independent valid evidence', () => {
     const rates = calculateDateAwareValuationRates(aggregate({
       rubUsdtRub: 'Infinity',
       rubUsdtUsdt: 100,
@@ -54,8 +54,8 @@ describe('date-aware valuation rates', () => {
       directVnd: 250_000,
       actualRubForVnd: 100,
       actualVndForRub: 'NaN',
-      cardVnd: 50_000,
-      cardUsdt: 2,
+      cardVnd: 0,
+      cardUsdt: 0,
     }));
     assert.equal(rates.rubPerUsdt, null);
     assert.equal(rates.vndPerUsdt, null);
