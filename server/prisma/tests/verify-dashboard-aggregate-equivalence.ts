@@ -135,6 +135,7 @@ try {
   near(nonFiniteAggregate.rateExchangeRub, 300, 'only finite actual VND observations with a positive RUB basis contribute to rate RUB');
   near(nonFiniteAggregate.rateExchangeVnd, 500_000, 'non-finite VND fields and rows without a positive USDT basis cannot poison weighted-rate numerator');
   assert.equal(nonFiniteAggregate.hasUnpricedUsdtTopUp, true);
+  assert.equal(nonFiniteAggregate.hasUnknownTopUpAmount, true, 'a malformed direct USDT amount must be distinguishable from a known amount awaiting VND valuation');
   for (const [key, value] of Object.entries(nonFiniteAggregate)) {
     if (typeof value === 'number') assert.ok(Number.isFinite(value), `${key} must be finite`);
   }
