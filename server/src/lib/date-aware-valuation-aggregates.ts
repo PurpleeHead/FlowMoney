@@ -21,12 +21,12 @@ export type DateAwareValuationAggregate = {
   cardUsdt: unknown;
 };
 
-export async function getDateAwareValuationAggregate(
+function buildDateAwareValuationAggregateQuery(
   userId: string,
   valuationDate: Date,
   excludeExpenseId?: string,
-): Promise<DateAwareValuationAggregate> {
-  const [row] = await prisma.$queryRaw<DateAwareValuationAggregate[]>(Prisma.sql`
+) {
+  return Prisma.sql`
     WITH exchange_totals AS (
       SELECT
         COALESCE(SUM("rubSpent") FILTER (WHERE
@@ -117,8 +117,29 @@ export async function getDateAwareValuationAggregate(
     SELECT exchange_totals.*, card_totals.*
     FROM exchange_totals CROSS JOIN card_totals
   `);
+}
+
+export async function getDateAwareValuationAggregate(
+  userId: string,
+  valuationDate: Date,
+  excludeExpenseId?: string,
+): Promise<DateAwareValuationAggregate> {
+  const [row] = await prisma.$queryRaw<DateAwareValuationAggregate[]>(
+    buildDateAwareValuationAggregateQuery(userId, valuationDate, excludeExpenseId),
+  );
   if (!row) {
     throw new Error('Date-aware valuation aggregate returned no row.');
   }
   return row;
+}
+
+export async function explainDateAwareValuationAggregate(
+  userId: string,
+  valuationDate: Date,
+  excludeExpenseId?: string,
+): Promise<unknown> {
+  const [row] = await prisma.$queryRaw<Array<{ 'QUERY PLAN': unknown }>>(
+    Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${buildDateAwareValuationAggregateQuery(userId, valuationDate, excludeExpenseId)}`,
+  );
+  return row?.['QUERY PLAN'] ?? null;
 }
