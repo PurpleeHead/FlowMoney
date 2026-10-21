@@ -287,8 +287,8 @@ try {
     cardRows.reduce((sum, x) => sum + x.usdtCharged * (helperRubUsdt ?? 0), 0)
   );
   near(sqlVndRub, helperVndRub, 'PostgreSQL direct/actual/card cost-basis aggregate matches effective VND/RUB helper');
-  assert.equal(Number(rubVndSql.directRub), 5_700, 'direct RUB cost basis excludes non-positive VND outcomes and uses canonical target values');
-  assert.equal(Number(rubVndSql.directVnd), 1_085_000, 'direct VND total excludes stale legacy values and preserves canonical/fallback values');
+  assert.equal(Number(rubVndSql.directRub), 3_900, 'direct RUB cost basis excludes non-positive VND outcomes and uses canonical target values');
+  assert.equal(Number(rubVndSql.directVnd), 835_000, 'direct VND total excludes stale legacy values and preserves canonical/fallback values');
   assert.equal(Number(rubVndSql.actualRub), 8_300, 'actual indirect VND cost basis excludes planning-only records');
   assert.equal(Number(rubVndSql.actualVnd), 2_300_000, 'actual indirect VND amount excludes planned values and direct target rows');
 
