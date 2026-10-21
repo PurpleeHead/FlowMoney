@@ -126,7 +126,7 @@ function dashboardExchangeAggregateQuery(userId: string) {
           ("mode" = 'RUB_VND' AND "safeVndReceived" > 0)
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
             AND COALESCE("safeTargetVndEquivalent", "safeTargetReceived", "safeVndReceived") > 0)
-          OR ("mode" = 'RUB_USDT_VND' AND "safeVndReceived" > 0)
+          OR ("mode" = 'RUB_USDT_VND' AND "safeUsdtReceived" > 0 AND "safeVndReceived" > 0)
         )
       ), 0) AS "rateExchangeRub",
       COALESCE(SUM(CASE
@@ -138,7 +138,7 @@ function dashboardExchangeAggregateQuery(userId: string) {
           ("mode" = 'RUB_VND' AND "safeVndReceived" > 0)
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
             AND COALESCE("safeTargetVndEquivalent", "safeTargetReceived", "safeVndReceived") > 0)
-          OR ("mode" = 'RUB_USDT_VND' AND "safeVndReceived" > 0)
+          OR ("mode" = 'RUB_USDT_VND' AND "safeUsdtReceived" > 0 AND "safeVndReceived" > 0)
         )
       ), 0) AS "rateExchangeVnd"
     FROM "scopedExchange"
