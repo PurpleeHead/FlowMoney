@@ -40,9 +40,11 @@ function amount(value: AmountLike): number | null {
 }
 
 export function expenseLedgerDrafts(expense: ExpenseLedgerSource): LedgerMovementDraft[] {
-  const cardDebit = amount(expense.usdtCharged);
   const sourceAmount = amount(expense.amount);
   const currency = expense.currency.trim().toUpperCase();
+  // A USDT card debit is valid only for VND-denominated expenses. Ignore
+  // stale/malformed usdtCharged values on RUB or USDT expenses.
+  const cardDebit = currency === 'VND' ? amount(expense.usdtCharged) : null;
   const debitCurrency = cardDebit != null ? 'USDT' : currency;
   const debitAmount = cardDebit ?? sourceAmount;
 
