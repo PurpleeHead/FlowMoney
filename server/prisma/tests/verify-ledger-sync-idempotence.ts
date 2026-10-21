@@ -59,6 +59,13 @@ function verifyMalformedLegacyLedgerDrafts() {
     [['RUB', -500]],
     'Foreign target currencies must not create unsupported wallet currency legs',
   );
+  assert.deepEqual(
+    exchangeLedgerDrafts({
+      ...exchangeBase, mode: 'RUB_TARGET', targetCurrency: 'RUB', targetReceived: 100, vndFee: 0,
+    }).map(row => [row.currency, row.amountDelta]),
+    [['RUB', -500]],
+    'A legacy RUB target must never create a false RUB credit against its RUB outflow',
+  );
 }
 
 verifyMalformedLegacyLedgerDrafts();
