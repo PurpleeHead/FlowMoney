@@ -1006,6 +1006,10 @@ describe('dashboard rejects non-finite legacy expense amounts', () => {
       assert.equal(body.observedVnd, 100000, 'weighted rate excludes rows with a non-finite VND or USDT side');
       assert.equal(body.observedUsdt, 4);
       assert.equal(body.observedVndPerUsdt, 25000);
+      const totalsQuery = dashboardRawQueries.find(query => String(query?.sql ?? '').includes('AS "totalVnd"'));
+      assert.ok(totalsQuery, 'dashboard totals use a dedicated finite-safe PostgreSQL aggregate');
+      assert.match(String(totalsQuery.sql), /'NaN', 'Infinity', '-Infinity'/,
+        'all PostgreSQL non-finite numeric representations must be excluded before SUM');
     });
   });
 });
