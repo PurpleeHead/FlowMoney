@@ -120,3 +120,19 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - A dedicated PostgreSQL integration fixture also verifies trimming/case normalization (`' vNd '`), excludes stale RUB conversion fields, and rejects rows with non-finite VND or USDT amounts from the weighted card aggregate.
 - Weighted exchange observations now require a finite positive RUB cost basis and positive USDT/VND amounts, matching `mapActualVndUsdtExchanges` and the existing `money.ts` validity rules. Planning estimates require a positive RUB basis, USDT amount, and planning rate; an invalid cost-basis row cannot make the VND balance unknown or distort the effective rate.
 - The aggregate separately reports an unknown acquired amount versus a known USDT amount awaiting VND valuation. A malformed/missing USDT receipt cannot silently produce a zero VND balance; the Dashboard now returns an unknown balance when the quantity itself cannot be established.
+
+
+## Historical valuation query benchmark — 2026-10-21
+
+CI run [#1312](https://github.com/PurpleeHead/FlowMoney/actions/runs/39595652881) passed on `4c325f6943dd2c586bae2b3808803857604691df`. The new benchmark runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` on the exact date-aware aggregate query, verifies SQL results against the existing TypeScript mapping path, and measures five warmed rounds after two warm-up rounds on disposable PostgreSQL.
+
+| Rows per table for the measured user | PostgreSQL aggregate median / p95 | Fetch + TypeScript aggregation median / p95 | PostgreSQL execution time from EXPLAIN |
+| ---: | ---: | ---: | ---: |
+| 1,000 | 4.78 ms / 6.49 ms | 14.40 ms / 16.46 ms | 3.72 ms |
+| 10,000 | 38.98 ms / 45.47 ms | 128.42 ms / 133.02 ms | 36.09 ms |
+| 50,000 | 121.33 ms / 129.92 ms | 652.59 ms / 704.77 ms | 118.42 ms |
+
+- [x] Historical aggregate query plan and timing evidence recorded for 1k/10k/50k fixtures.
+- [x] SQL output matches the established TypeScript reference calculations within the fixture's decimal tolerance at each size.
+- [ ] End-to-end dashboard response payload and latency comparison remains outstanding; these microbenchmarks do not prove production latency or hosting-tier performance.
+- [ ] Repeat with representative production-like data distribution and target PostgreSQL configuration before making a production capacity claim.
