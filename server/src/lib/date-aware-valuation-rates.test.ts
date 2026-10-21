@@ -147,6 +147,40 @@ describe('date-aware valuation rates', () => {
     assert.equal(rates.vndPerRub, 300);
   });
 
+  it('does not return non-finite rates when finite SQL totals overflow during conversion', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: Number.MAX_VALUE,
+      rubUsdtUsdt: Number.MIN_VALUE,
+      actualVnd: Number.MAX_VALUE,
+      actualUsdt: Number.MIN_VALUE,
+      directRub: Number.MAX_VALUE,
+      directVnd: Number.MIN_VALUE,
+      actualRubForVnd: Number.MAX_VALUE,
+      actualVndForRub: Number.MIN_VALUE,
+      cardVnd: Number.MAX_VALUE,
+      cardUsdt: Number.MIN_VALUE,
+    }));
+    for (const rate of Object.values(rates)) {
+      assert.ok(rate === null || Number.isFinite(rate), 'derived rates must be finite or null');
+    }
+  });
+
+  it('does not allow invalid card evidence to contaminate VND/RUB when exchange evidence is valid', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      actualVnd: 2_500_000,
+      actualUsdt: 100,
+      directRub: 1_000,
+      directVnd: 300_000,
+      cardVnd: 'Infinity',
+      cardUsdt: 'Infinity',
+    }));
+    assert.equal(rates.rubPerUsdt, 83);
+    assert.equal(rates.vndPerUsdt, 25_000);
+    assert.equal(rates.vndPerRub, 300);
+  });
+
   it('rejects non-finite aggregate conversions when no other valid evidence exists', () => {
     const rates = calculateDateAwareValuationRates(aggregate({
       rubUsdtRub: 'Infinity',
