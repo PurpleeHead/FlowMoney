@@ -201,7 +201,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Replaced Prisma aggregate filters that excluded only PostgreSQL numeric NaN with a single user-scoped SQL aggregate for all-time and current-month VND totals. The SQL excludes NaN, Infinity, and -Infinity before summing.
 - [x] Expanded mocked dashboard API regression coverage with positive and negative infinity. The persistent financial columns are precision-constrained numeric types, so PostgreSQL cannot store Infinity in those columns; PostgreSQL fixtures use NaN, while SQL predicates retain defensive Infinity exclusions.
 - [ ] CI was not confirmed for the dashboard hardening code commit `637b81777569a8b4a0f83044d34c85c084674164` at the time of this entry. A later date-aware fixture extension is recorded below; do not infer a passing run from an empty status endpoint.
-- [ ] Date-aware aggregate helpers and PostgreSQL fixtures exist, but expense create/edit and receipt-save route callers still need to adopt the helper; route-level equivalence remains open.
+- [x] Expense create/edit and receipt-save routes already call the date-aware helper, with API coverage for effective-date cutoffs, user scoping, and PATCH self-exclusion. [ ] Full route-level end-to-end equivalence against disposable PostgreSQL remains open.
 - [ ] Production database identity, encrypted backup plus isolated restore, legacy wallet reconciliation, owner-approved Render configuration, and target-environment smoke tests remain release blockers. No production database operation, deployment, merge, or live Render configuration change was performed.
 
 
