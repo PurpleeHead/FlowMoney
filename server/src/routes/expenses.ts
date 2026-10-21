@@ -4,7 +4,9 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapActualVndExchanges, mapActualVndUsdtExchanges, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
+import { calculateExpenseRub } from '../lib/money.js';
+import { getDateAwareValuationAggregate } from '../lib/date-aware-valuation-aggregates.js';
+import { calculateDateAwareValuationRates } from '../lib/date-aware-valuation-rates.js';
 import { syncExpenseLedger, removeExpenseLedger } from '../lib/wallet-ledger.js';
 import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
@@ -62,71 +64,12 @@ router.post('/', async (req: AuthedRequest, res, next) => {
       }
     }
 
-    // Use only exchange and purchase data available on the expense date.
-    // The resulting RUB amount is saved once and never recalculated on dashboard reads.
+    // Aggregate only evidence available on the expense date in PostgreSQL.
+    // The shared rate calculator preserves the legacy validity and weighting rules.
     const expenseDate = input.date ? new Date(input.date) : new Date();
-    const [exchanges, previousPurchases] = await Promise.all([
-      prisma.exchange.findMany({
-        where: { userId, createdAt: { lte: expenseDate } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetCurrency: true, targetReceived: true, targetVndEquivalent: true },
-      }),
-      prisma.expense.findMany({
-        where: {
-          userId,
-          date: { lte: expenseDate },
-          usdtCharged: { not: null },
-        },
-        select: { amountVnd: true, usdtCharged: true },
-      }),
-    ]);
-
-    const historicalRubPerUsdt = calculateRubPerUsdt(
-      mapRubUsdtExchanges(exchanges.map(x => ({
-        mode: x.mode,
-        rubSpent: Number(x.rubSpent),
-        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
-        targetCurrency: x.targetCurrency,
-        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
-      })))
-    );
-
-    // Prefer actual card purchases. If none exist yet, use only exchanges with an actual recorded VND outcome.
-    const observedVndPerUsdt = calculateObservedVndPerUsdt(
-      previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
-    );
-    const vndExchanges = mapActualVndUsdtExchanges(exchanges.map(x => ({
-      mode: x.mode,
-      usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
-      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
-    })));
-    const exchangeVnd = vndExchanges.reduce((sum, x) => sum + x.vndReceived, 0);
-    const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + x.usdtReceived, 0);
-    // Only actual card purchases or completed exchanges establish a historical VND/USDT rate.
-    // A planning rate must never be persisted as an expense's factual VND valuation.
-    const historicalVndPerUsdt = observedVndPerUsdt ??
-      (exchangeUsdt > 0 ? exchangeVnd / exchangeUsdt : null);
-
-    const historicalVndPerRub = calculateObservedVndPerRub({
-      directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
-        mode: x.mode,
-        rubSpent: Number(x.rubSpent),
-        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
-        targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
-        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
-        targetCurrency: x.targetCurrency,
-      }))),
-      actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
-        mode: x.mode,
-        rubSpent: Number(x.rubSpent),
-        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
-        targetCurrency: x.targetCurrency,
-      }))),
-      cardPurchases: previousPurchases.map(x => ({
-        amountVnd: Number(x.amountVnd),
-        usdtCharged: Number(x.usdtCharged),
-      })),
-      rubPerUsdt: historicalRubPerUsdt,
-    });
+    const aggregate = await getDateAwareValuationAggregate(userId, expenseDate);
+    const { rubPerUsdt: historicalRubPerUsdt, vndPerUsdt: historicalVndPerUsdt, vndPerRub: historicalVndPerRub } =
+      calculateDateAwareValuationRates(aggregate);
 
     // Keep the source amount even when no trustworthy VND conversion is available.
     const normalizedCurrency = input.currency.trim().toUpperCase();
@@ -234,56 +177,10 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
     }
 
     const expenseDate = input.date ? new Date(input.date) : existing.date;
-    const [exchanges, otherPurchases] = await Promise.all([
-      prisma.exchange.findMany({
-        where: { userId, createdAt: { lte: expenseDate } },
-        select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetCurrency: true, targetReceived: true, targetVndEquivalent: true },
-      }),
-      prisma.expense.findMany({
-        where: { userId, id: { not: id }, date: { lte: expenseDate }, usdtCharged: { not: null } },
-        select: { amountVnd: true, usdtCharged: true },
-      }),
-    ]);
-    const rubPerUsdt = calculateRubPerUsdt(
-      mapRubUsdtExchanges(exchanges.map(x => ({
-        mode: x.mode,
-        rubSpent: Number(x.rubSpent),
-        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
-        targetCurrency: x.targetCurrency,
-        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
-      })))
-    );
-    const observedVndPerUsdt = calculateObservedVndPerUsdt(
-      otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
-    );
-    const actualExchanges = mapActualVndUsdtExchanges(exchanges.map(x => ({
-      mode: x.mode,
-      usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
-      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
-    })));
-    const actualVnd = actualExchanges.reduce((sum, x) => sum + x.vndReceived, 0);
-    const actualUsdt = actualExchanges.reduce((sum, x) => sum + x.usdtReceived, 0);
-    // Keep estimates out of the historical expense valuation. Planning rates are used
-    // by the planning UI, but an unknown actual VND outcome remains unknown here.
-    const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : null);
-    const vndPerRub = calculateObservedVndPerRub({
-      directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
-        mode: x.mode,
-        rubSpent: Number(x.rubSpent),
-        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
-        targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
-        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
-        targetCurrency: x.targetCurrency,
-      }))),
-      actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
-        mode: x.mode,
-        rubSpent: Number(x.rubSpent),
-        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
-        targetCurrency: x.targetCurrency,
-      }))),
-      cardPurchases: otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) })),
-      rubPerUsdt,
-    });
+    // Exclude the current row so edits do not feed their previous valuation
+    // back into the historical rate used to calculate replacement values.
+    const aggregate = await getDateAwareValuationAggregate(userId, expenseDate, id);
+    const { rubPerUsdt, vndPerUsdt, vndPerRub } = calculateDateAwareValuationRates(aggregate);
     const normalizedCurrency = input.currency.trim().toUpperCase();
     const effectiveUsdtCharged = input.usdtCharged === undefined && normalizedCurrency === 'VND'
       ? (existing.usdtCharged == null ? null : Number(existing.usdtCharged))
