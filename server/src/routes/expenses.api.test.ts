@@ -352,6 +352,40 @@ describe('expense API ledger synchronization', () => {
     assert.equal(transactionCalls, 0, 'unrepresentable calculated values must be rejected before opening a write transaction');
   });
 
+  it('rejects an unrepresentable PATCH valuation before replacing ledger movements', async () => {
+    const existing = {
+      id: 'expense-overflow-edit', userId: 'user-42', title: 'Old expense', category: 'Other',
+      amount: 100, currency: 'RUB', amountVnd: null, amountRub: 100,
+      usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_USDT_VND', rubSpent: 83, usdtReceived: 1, vndReceived: 20000,
+      planningVndPerUsdt: 20000, targetCurrency: 'VND', targetReceived: 20000, targetVndEquivalent: 20000,
+    }];
+    let transactionCalls = 0;
+    const originalTx = client.$transaction;
+    client.$transaction = async (...args: any[]) => {
+      transactionCalls += 1;
+      return originalTx(...args);
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-overflow-edit`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Overflow edit', category: 'Other', amount: 999999999999.99, currency: 'USDT',
+        }),
+      });
+      assert.equal(response.status, 400);
+    });
+
+    assert.equal(aggregateQueries.length, 1, 'PATCH must calculate using one historical aggregate');
+    assert.equal(transactionCalls, 0, 'invalid derived values must not replace expense data or wallet movements');
+  });
+
   it('keeps the actual USDT debit when the VND amount is edited', async () => {
     const existing = {
       id: 'expense-edit-vnd-amount', userId: 'user-42', title: 'Old groceries', category: 'Food',
