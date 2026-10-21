@@ -203,7 +203,7 @@ export function calculateTargetVndEquivalent(targetCurrency: string, targetRecei
   if (!Number.isFinite(targetReceived) || targetReceived <= 0) {
     throw new Error('Target currency received amount must be positive.');
   }
-  const rate = targetCurrency.toUpperCase() === 'VND' ? 1 : targetToVndRate;
+  const rate = targetCurrency.trim().toUpperCase() === 'VND' ? 1 : targetToVndRate;
   if (rate == null || !Number.isFinite(rate) || rate <= 0) {
     throw new Error('A positive VND-per-target-currency rate is required.');
   }
