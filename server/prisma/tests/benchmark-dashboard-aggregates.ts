@@ -72,6 +72,54 @@ try {
     }
   }
 
+  const exchangeActivitySelect = {
+    id: true, mode: true, targetCurrency: true, targetReceived: true, targetToVndRate: true,
+    targetVndEquivalent: true, rubSpent: true, usdtReceived: true, vndPerUsdt: true,
+    planningVndPerUsdt: true, vndReceived: true, effectiveVndPerRub: true,
+    effectiveRubPerUsdt: true, createdAt: true,
+  } as const;
+  const fullActivityPayload = async () => prisma.exchange.findMany({
+    where: { userId: benchmarkUserId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: exchangeActivitySelect,
+  });
+  const boundedActivityPayload = async () => prisma.exchange.findMany({
+    where: { userId: benchmarkUserId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: 100,
+    select: exchangeActivitySelect,
+  });
+  const toDashboardExchangePayload = (rows: Array<Record<string, unknown>>) => rows.map(row => {
+    const numberOrNull = (value: unknown) => value == null ? null : Number(value);
+    return {
+      ...row,
+      rubSpent: Number(row.rubSpent),
+      usdtReceived: numberOrNull(row.usdtReceived),
+      vndPerUsdt: numberOrNull(row.vndPerUsdt),
+      planningVndPerUsdt: numberOrNull(row.planningVndPerUsdt),
+      vndReceived: numberOrNull(row.vndReceived),
+      targetReceived: numberOrNull(row.targetReceived),
+      targetToVndRate: numberOrNull(row.targetToVndRate),
+      targetVndEquivalent: numberOrNull(row.targetVndEquivalent),
+      effectiveVndPerRub: numberOrNull(row.effectiveVndPerRub),
+      effectiveRubPerUsdt: numberOrNull(row.effectiveRubPerUsdt),
+    };
+  });
+  const explainBoundedActivity = async () => {
+    const [row] = await prisma.$queryRaw<Array<{ 'QUERY PLAN': unknown }>>(Prisma.sql`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+      SELECT "id", "mode", "targetCurrency", "targetReceived", "targetToVndRate",
+        "targetVndEquivalent", "rubSpent", "usdtReceived", "vndPerUsdt",
+        "planningVndPerUsdt", "vndReceived", "effectiveVndPerRub",
+        "effectiveRubPerUsdt", "createdAt"
+      FROM "Exchange"
+      WHERE "userId" = ${benchmarkUserId}
+      ORDER BY "createdAt" DESC, "id" DESC
+      LIMIT 100
+    `);
+    return row?.['QUERY PLAN'] ?? null;
+  };
+
   const fullHistory = async () => {
     const rows = await prisma.exchange.findMany({
       where: { userId: benchmarkUserId },
@@ -134,7 +182,27 @@ try {
   // Refresh planner statistics after bulk fixture insertion; this runs only on the guarded disposable database.
   await prisma.$executeRaw`ANALYZE "Exchange"`;
   const queryPlan = await explainDashboardExchangeAggregates(benchmarkUserId);
+  const boundedActivityQueryPlan = await explainBoundedActivity();
   const sqlResult = await getDashboardExchangeAggregates(benchmarkUserId);
+  const [fullActivityRows, boundedActivityRows] = await Promise.all([
+    fullActivityPayload(), boundedActivityPayload(),
+  ]);
+  const fullActivityBytes = Buffer.byteLength(JSON.stringify(toDashboardExchangePayload(fullActivityRows)));
+  const boundedActivityBytes = Buffer.byteLength(JSON.stringify(toDashboardExchangePayload(boundedActivityRows)));
+  assert.equal(boundedActivityRows.length, Math.min(sampleSize, 100),
+    'bounded activity must return at most 100 newest rows');
+  assert.ok(boundedActivityBytes <= fullActivityBytes,
+    'bounded exchange payload must not exceed the full-history exchange payload');
+  const boundedActivitySamples: number[] = [];
+  const fullActivitySamples: number[] = [];
+  for (let i = 0; i < rounds + 2; i++) {
+    const bounded = await measure(boundedActivityPayload);
+    const full = await measure(fullActivityPayload);
+    if (i >= 2) {
+      boundedActivitySamples.push(bounded.ms);
+      fullActivitySamples.push(full.ms);
+    }
+  }
   const jsResult = await fullHistory();
   assert.equal(sqlResult.exchangeCount, jsResult.count, 'SQL and Node benchmark must read the same number of rows');
   for (const key of ['rubUsdtRub', 'rubUsdtUsdt', 'actualVnd', 'actualUsdt', 'confirmedVnd', 'estimatedTargetVnd', 'estimatedUsdt', 'plannedWeightedVnd', 'plannedUsdt'] as const) {
@@ -161,6 +229,19 @@ try {
     measuredRounds: rounds,
     queryPlan,
     queryPlanNote: 'EXPLAIN ANALYZE BUFFERS covers the exact multi-bucket dashboard aggregate SQL statement.',
+    boundedActivityQueryPlan,
+    boundedActivityQueryPlanNote: 'EXPLAIN ANALYZE BUFFERS covers the exact latest-100 activity query used by GET /api/dashboard.',
+    exchangeActivityPayloadBytes: {
+      boundedLatest100: boundedActivityBytes,
+      fullHistoryBaseline: fullActivityBytes,
+      reductionPercent: fullActivityBytes > 0
+        ? Number(((1 - boundedActivityBytes / fullActivityBytes) * 100).toFixed(2))
+        : 0,
+    },
+    activityQueryTimingsMs: {
+      boundedLatest100: { median: Number(percentile(boundedActivitySamples, 0.5).toFixed(2)), p95: Number(percentile(boundedActivitySamples, 0.95).toFixed(2)) },
+      fullHistoryBaseline: { median: Number(percentile(fullActivitySamples, 0.5).toFixed(2)), p95: Number(percentile(fullActivitySamples, 0.95).toFixed(2)) },
+    },
     timingsMs: {
       postgresAggregate: { median: Number(percentile(sqlSamples, 0.5).toFixed(2)), p95: Number(percentile(sqlSamples, 0.95).toFixed(2)), samples: sqlSamples.map(x => Number(x.toFixed(2))) },
       fetchAndAggregateInNode: { median: Number(percentile(nodeSamples, 0.5).toFixed(2)), p95: Number(percentile(nodeSamples, 0.95).toFixed(2)), samples: nodeSamples.map(x => Number(x.toFixed(2))) },
