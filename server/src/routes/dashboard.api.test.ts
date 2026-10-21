@@ -35,7 +35,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   dashboardAggregateArgs = [];
   exchangeModel.count = async (args: any) => {
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time exchange count must be scoped to the authenticated user');
-    return (await exchangeModel.findMany({})).length;
+    return (await exchangeModel.findMany({ where: { userId: 'dashboard-user' } })).length;
   };
   expenseModel.count = async (args: any) => {
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time expense count must be scoped to the authenticated user');
@@ -221,7 +221,7 @@ describe('dashboard query shape', () => {
     let expenseArgs: any;
     let exchangeArgs: any;
     expenseModel.findMany = async (args: any) => { if (args.select) expenseArgs = args; return []; };
-    exchangeModel.findMany = async (args: any) => { exchangeArgs = args; return []; };
+    exchangeModel.findMany = async (args: any) => { if (args.select) exchangeArgs = args; return []; };
 
     await withApi(async baseUrl => {
       const token = jwt.sign(
