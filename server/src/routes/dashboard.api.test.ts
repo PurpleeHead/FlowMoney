@@ -55,9 +55,11 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
     vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
   })));
-  const planned = rows.filter(x => x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 &&
-    x.vndReceived == null && x.usdtReceived != null && Number(x.usdtReceived) > 0 &&
-    x.planningVndPerUsdt != null && Number(x.planningVndPerUsdt) > 0);
+  const planned = rows.filter(x => x.mode === 'RUB_USDT_VND' &&
+    finiteOrNull(x.rubSpent) != null && finiteOrNull(x.rubSpent)! > 0 &&
+    finiteOrNull(x.vndReceived) == null &&
+    finiteOrNull(x.usdtReceived) != null && finiteOrNull(x.usdtReceived)! > 0 &&
+    finiteOrNull(x.planningVndPerUsdt) != null && finiteOrNull(x.planningVndPerUsdt)! > 0);
   const confirmedVnd = rows.reduce((sum, x) => {
     if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') {
       // Balance totals may use a finite legacy fallback; historical rates do not.
@@ -77,14 +79,17 @@ function mockDashboardExchangeAggregates(rows: any[]) {
       equivalent != null ? equivalent : 0);
   }, 0);
   const estimatedUsdt = rows.reduce((sum, x) => {
-    if (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
+    const rubSpent = finiteOrNull(x.rubSpent);
+    const targetReceived = finiteOrNull(x.targetReceived);
+    const usdtReceived = finiteOrNull(x.usdtReceived);
+    if (x.mode === 'RUB_TARGET' && rubSpent != null && rubSpent > 0 &&
         x.targetCurrency.trim().toUpperCase() === 'USDT' &&
-        x.targetReceived != null && Number(x.targetReceived) > 0 && x.targetVndEquivalent == null) {
-      return sum + Number(x.targetReceived);
+        targetReceived != null && targetReceived > 0 && finiteOrNull(x.targetVndEquivalent) == null) {
+      return sum + targetReceived;
     }
-    if (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 &&
-        x.vndReceived == null && x.usdtReceived != null && Number(x.usdtReceived) > 0) {
-      return sum + Number(x.usdtReceived);
+    if (x.mode === 'RUB_USDT_VND' && rubSpent != null && rubSpent > 0 &&
+        finiteOrNull(x.vndReceived) == null && usdtReceived != null && usdtReceived > 0) {
+      return sum + usdtReceived;
     }
     return sum;
   }, 0);
