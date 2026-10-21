@@ -85,3 +85,12 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - [ ] Final CI verification for the latest bounded-query commit is still required before treating this stage as complete.
 - [ ] Performance measurements and `EXPLAIN (ANALYZE, BUFFERS)` evidence are not yet recorded. No performance gain is claimed until those measurements are captured.
 - [ ] Production DB, merge, and deployment gates remain unchanged.
+
+## Stale legacy exchange-field audit — 2026-10-21
+
+- Corrected the PostgreSQL summary so `confirmedVnd` only includes canonical direct VND-target records, direct RUB→VND records, and documented RUB→USDT→VND records. A stale `vndReceived` value on a direct USDT/foreign-target row or unknown legacy mode is not a confirmed VND receipt.
+- Restricted VND/RUB rate inputs and planning-rate buckets to the documented exchange modes. A legacy `RUB_TARGET` record with target currency RUB is not treated as a foreign-currency valuation.
+- Kept a direct USDT acquisition in the unconverted-USDT estimate when `targetVndEquivalent` is missing, even if a stale legacy `vndReceived` field is populated.
+- Expanded the PostgreSQL equivalence fixture with stale VND fields on direct USDT and foreign-target rows, unknown-mode rows, an unknown-mode planning-only row, and an invalid legacy RUB target. Updated the Node-side benchmark reference and dashboard API aggregate mock to use the same explicit eligibility rules.
+- [ ] CI must pass on the updated work branch before this audit is considered verified. The benchmark remains a disposable-database microbenchmark, not a production latency guarantee.
+- Production database access, migrations, merge, and deployment remain outside this work.
