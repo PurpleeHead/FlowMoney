@@ -17,7 +17,7 @@ assert.ok(
 );
 
 const suffix = `dashboard-benchmark-${Date.now()}`;
-let userId: string | undefined;
+const userIds: string[] = [];
 const requestedSampleSize = Number(process.env.DASHBOARD_BENCHMARK_ROWS ?? 10000);
 assert.ok(Number.isInteger(requestedSampleSize) && requestedSampleSize >= 1000 && requestedSampleSize <= 50000,
   'DASHBOARD_BENCHMARK_ROWS must be an integer between 1000 and 50000.');
@@ -36,21 +36,28 @@ async function measure<T>(run: () => Promise<T>): Promise<{ value: T; ms: number
 }
 
 try {
-  const user = await prisma.user.create({
-    data: { email: `${suffix}@example.invalid`, passwordHash: 'benchmark-only' },
-  });
-  userId = user.id;
+  // Keep the benchmark user's history at the requested size while adding unrelated
+  // users so PostgreSQL can choose a realistic user-scoped access path.
+  const benchmarkUsers = 5;
+  for (let index = 0; index < benchmarkUsers; index++) {
+    const user = await prisma.user.create({
+      data: { email: `${suffix}-${index}@example.invalid`, passwordHash: 'benchmark-only' },
+    });
+    userIds.push(user.id);
+  }
+  const benchmarkUserId = userIds[0];
 
   const batchSize = 1000;
-  for (let offset = 0; offset < sampleSize; offset += batchSize) {
-    const data = Array.from({ length: Math.min(batchSize, sampleSize - offset) }, (_, index) => {
+  for (let userIndex = 0; userIndex < userIds.length; userIndex++) {
+    for (let offset = 0; offset < sampleSize; offset += batchSize) {
+      const data = Array.from({ length: Math.min(batchSize, sampleSize - offset) }, (_, index) => {
       const n = offset + index;
       const mode = n % 5 === 0 ? 'RUB_VND' : n % 5 === 1 ? 'RUB_TARGET' : 'RUB_USDT_VND';
       const rubSpent = 100 + (n % 5000);
       const usdtReceived = mode === 'RUB_VND' ? null : 1 + (n % 100) / 10;
       const vndReceived = n % 7 === 0 ? null : 10000 + (n % 100000);
       return {
-        userId: user!.id,
+        userId: userIds[userIndex],
         mode,
         targetCurrency: mode === 'RUB_TARGET' ? (n % 2 ? 'VND' : 'USDT') : 'VND',
         rubSpent,
@@ -60,13 +67,14 @@ try {
         vndReceived: mode === 'RUB_TARGET' && n % 2 ? null : vndReceived,
         planningVndPerUsdt: vndReceived == null && usdtReceived != null ? 25000 : null,
       };
-    });
-    await prisma.exchange.createMany({ data });
+      });
+      await prisma.exchange.createMany({ data });
+    }
   }
 
   const fullHistory = async () => {
     const rows = await prisma.exchange.findMany({
-      where: { userId: user!.id },
+      where: { userId: benchmarkUserId },
       select: {
         mode: true,
         targetCurrency: true,
@@ -127,8 +135,8 @@ try {
 
   // Refresh planner statistics after bulk fixture insertion; this runs only on the guarded disposable database.
   await prisma.$executeRaw`ANALYZE "Exchange"`;
-  const queryPlan = await explainDashboardExchangeAggregates(user.id);
-  const sqlResult = await getDashboardExchangeAggregates(user.id);
+  const queryPlan = await explainDashboardExchangeAggregates(benchmarkUserId);
+  const sqlResult = await getDashboardExchangeAggregates(benchmarkUserId);
   const jsResult = await fullHistory();
   assert.equal(sqlResult.exchangeCount, jsResult.count, 'SQL and Node benchmark must read the same number of rows');
   for (const key of ['rubUsdtRub', 'rubUsdtUsdt', 'actualVnd', 'actualUsdt', 'confirmedVnd', 'estimatedTargetVnd', 'estimatedUsdt', 'plannedWeightedVnd', 'plannedUsdt'] as const) {
@@ -138,7 +146,7 @@ try {
   const sqlSamples: number[] = [];
   const nodeSamples: number[] = [];
   for (let i = 0; i < rounds + 2; i++) {
-    const sql = await measure(() => getDashboardExchangeAggregates(user!.id));
+    const sql = await measure(() => getDashboardExchangeAggregates(benchmarkUserId));
     const node = await measure(fullHistory);
     if (i >= 2) {
       sqlSamples.push(sql.ms);
@@ -149,7 +157,9 @@ try {
   const report = {
     benchmark: 'dashboard-exchange-aggregates',
     database: databaseName,
-    fixtureRows: sampleSize,
+    fixtureRows: sampleSize * userIds.length,
+    benchmarkUserRows: sampleSize,
+    fixtureUsers: userIds.length,
     measuredRounds: rounds,
     queryPlan,
     queryPlanNote: 'EXPLAIN ANALYZE BUFFERS covers the exact multi-bucket dashboard aggregate SQL statement.',
@@ -161,7 +171,7 @@ try {
   };
   console.log(JSON.stringify(report, null, 2));
 } finally {
-  if (userId) {
+  for (const userId of userIds) {
     await prisma.user.delete({ where: { id: userId } }).catch((error) => {
       console.error('Benchmark cleanup failed; remove the disposable user manually:', userId, error);
       process.exitCode = 1;
