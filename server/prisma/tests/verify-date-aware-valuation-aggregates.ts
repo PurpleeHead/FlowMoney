@@ -262,6 +262,18 @@ try {
   near(aggregateWithoutMissingCard.cardVnd, Number(aggregate.cardVnd), 'excluding a missing expense leaves card VND unchanged');
   near(aggregateWithoutMissingCard.cardUsdt, Number(aggregate.cardUsdt), 'excluding a missing expense leaves card USDT unchanged');
 
+  const aggregateWithoutFutureCard = await getDateAwareValuationAggregate(userId, valuationDate, expenses.find(x => x.title === 'Card after cutoff')!.id);
+  near(aggregateWithoutFutureCard.cardVnd, Number(aggregate.cardVnd), 'excluding a future card expense cannot alter a historical VND aggregate');
+  near(aggregateWithoutFutureCard.cardUsdt, Number(aggregate.cardUsdt), 'excluding a future card expense cannot alter a historical USDT aggregate');
+
+  const aggregateWithoutNonVndExpense = await getDateAwareValuationAggregate(
+    userId,
+    valuationDate,
+    expenses.find(x => x.title === 'Stale card fields on RUB expense')!.id,
+  );
+  near(aggregateWithoutNonVndExpense.cardVnd, Number(aggregate.cardVnd), 'excluding a non-VND expense cannot change the VND card aggregate');
+  near(aggregateWithoutNonVndExpense.cardUsdt, Number(aggregate.cardUsdt), 'excluding a non-VND expense cannot change the USDT card aggregate');
+
   const observedRate = calculateObservedVndPerUsdt(actualRows.map(x => ({
     amountVnd: x.vndReceived,
     usdtCharged: x.usdtReceived,
