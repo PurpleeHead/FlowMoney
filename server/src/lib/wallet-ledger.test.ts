@@ -104,6 +104,18 @@ describe('wallet ledger mapping', () => {
     assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [['RUB', -1000]]);
   });
 
+  it('preserves the legacy gross-VND fallback when the fee is explicitly zero', () => {
+    const drafts = exchangeLedgerDrafts({
+      id: 'x-zero-fee-legacy', userId: 'u1', mode: 'RUB_VND', rubSpent: 1000,
+      usdtReceived: null, vndReceived: null, vndFee: 0, targetCurrency: 'VND',
+      targetReceived: 250000, createdAt: new Date('2026-10-16T07:00:00.000Z'),
+    });
+    assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [
+      ['RUB', -1000],
+      ['VND', 250000],
+    ]);
+  });
+
   it('does not use gross legacy VND when the stored fee is malformed', () => {
     for (const vndFee of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
       const drafts = exchangeLedgerDrafts({
