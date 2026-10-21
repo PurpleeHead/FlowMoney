@@ -115,7 +115,6 @@ describe('wallet ledger mapping', () => {
       ['RUB', -1000],
     ]);
   });
-});
 
   it('does not create a RUB credit for an invalid legacy RUB_TARGET record', () => {
     const drafts = exchangeLedgerDrafts({
