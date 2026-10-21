@@ -38,16 +38,32 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
           effectiveRubPerUsdt:true,createdAt:true,
         },
       }),
-      // PostgreSQL numeric NaN compares greater than ordinary numbers; exclude it
-      // explicitly so corrupted legacy values cannot poison totals or weighted rates.
-      prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true}}),
-      prisma.expense.aggregate({where:{userId:req.user!.id,date:{gte:start},amountVnd:{not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true}}),
+      // PostgreSQL numeric supports NaN and infinities. Filter their textual
+      // representations before SUM so one corrupt legacy amount cannot poison totals.
+      prisma.$queryRaw<Array<{ totalVnd: unknown; monthVnd: unknown }>>(Prisma.sql`
+        SELECT
+          COALESCE(SUM("amountVnd") FILTER (WHERE
+            "amountVnd" IS NOT NULL
+            AND "amountVnd"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+          ), 0) AS "totalVnd",
+          COALESCE(SUM("amountVnd") FILTER (WHERE
+            "date" >= ${start}
+            AND "amountVnd" IS NOT NULL
+            AND "amountVnd"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+          ), 0) AS "monthVnd"
+        FROM "Expense"
+        WHERE "userId" = ${req.user!.id}
+      `),
       getDashboardCardPurchaseAggregates(req.user!.id),
       getDashboardExchangeAggregates(req.user!.id),
     ]);
 
-    const totalVnd=Number(totalExpenseAggregate._sum.amountVnd ?? 0);
-    const monthVnd=Number(monthExpenseAggregate._sum.amountVnd ?? 0);
+    const finiteTotal = (value: unknown) => {
+      const number = Number(value ?? 0);
+      return Number.isFinite(number) ? number : 0;
+    };
+    const totalVnd=finiteTotal(totalExpenseAggregate?.[0]?.totalVnd);
+    const monthVnd=finiteTotal(totalExpenseAggregate?.[0]?.monthVnd);
     const observedVnd=purchaseAggregate.amountVnd;
     const observedUsdt=purchaseAggregate.usdtCharged;
     // Aggregate sums preserve weighted rates exactly: sum(VND) / sum(USDT), not
