@@ -185,3 +185,18 @@ Workflow [39531588634](https://github.com/PurpleeHead/FlowMoney/actions/runs/395
 All three runs verified the selected aggregate totals against the Node-side reference before timing. PostgreSQL used the existing `Exchange_userId_createdAt_idx` for the user filter at all sizes. At 50,000 rows for the target user, the exact aggregate statement took about 30.4 ms in the captured plan and touched 946 shared buffers, with zero shared reads.
 
 These results show the expected benefit of not transferring every historical exchange row to Node.js as user history grows. They remain CI microbenchmarks on one ephemeral PostgreSQL instance with synthetic, uniformly distributed user histories. They do not establish production response latency, cold-cache behavior, multi-tenant skew, or a service-level p95. The reported “p95” field is the maximum of seven samples and is retained only for trend visibility.
+
+## Date-aware valuation aggregates — implementation contract (2026-10-21)
+
+This is the next optimization boundary after the dashboard all-history aggregate. Expense creation/edit and receipt saving currently fetch eligible historical observations and reduce them in application code. Do not reuse the dashboard's all-time totals for a historical valuation: each operation must see only records available at its own valuation timestamp.
+
+Before switching these paths to PostgreSQL aggregates, retain an equivalence/reference test covering all of the following:
+
+- Exchange observations are restricted to the authenticated user and `createdAt <= valuationDate`; card purchases are restricted to the same user and `date <= valuationDate`.
+- RUB/USDT is a weighted ratio `SUM(rubSpent) / SUM(usdtReceived)`, using only `RUB_USDT_VND` rows and direct `RUB_TARGET` rows whose trimmed, uppercased target currency is `USDT`. A stale `usdtReceived` on a direct-VND target row is ineligible.
+- Observed VND/USDT is `SUM(actual VND) / SUM(actual USDT)`, not an average of row-level rates. Only completed indirect `RUB_USDT_VND` outcomes and card purchases with actual VND plus a positive USDT debit qualify.
+- Direct VND target observations use `targetVndEquivalent ?? targetReceived ?? vndReceived` and are not duplicated into indirect exchange buckets. Currency comparisons must normalize casing and whitespace consistently.
+- Unknown RUB/USDT cost basis stays unknown for a recorded card USDT debit; a direct RUB/VND observation must not be used as a substitute to manufacture a factual RUB cost. Planning rates remain separate from actual observations.
+- For every mixed-mode fixture, compare SQL aggregate outputs with the current helper-based Node reference before timing. Include rows just before, exactly at, and just after the valuation cutoff, plus another user's rows.
+
+Implementation should expose a small typed helper returning only the required weighted numerators/denominators and direct-target fallback fields, with parameterized SQL and no arbitrary history limit. Route tests currently mock Prisma `findMany`; update the mocks or isolate the aggregate helper so route tests still assert user/date scoping. Only after equivalence passes should the route call sites change. Capture query plans and query/payload timings on disposable PostgreSQL; production latency is a separate gate.
