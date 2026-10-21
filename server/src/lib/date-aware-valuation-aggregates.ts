@@ -116,7 +116,7 @@ function buildDateAwareValuationAggregateQuery(
     )
     SELECT exchange_totals.*, card_totals.*
     FROM exchange_totals CROSS JOIN card_totals
-  `);
+  `;
 }
 
 export async function getDateAwareValuationAggregate(
