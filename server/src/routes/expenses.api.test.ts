@@ -4,12 +4,18 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import type { AddressInfo } from 'node:net';
 import { prisma } from '../services/prisma.js';
+import {
+  mapActualVndExchanges,
+  mapActualVndUsdtExchanges,
+  mapDirectVndExchanges,
+  mapRubUsdtExchanges,
+} from '../lib/money.js';
 
 const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
 const originalUserFindFirst = userModel.findFirst;
 import expenseRoutes from './expenses.js';
 
-const client = prisma as unknown as { $transaction: (...args: any[]) => Promise<any> };
+const client = prisma as unknown as { $transaction: (...args: any[]) => Promise<any>; $queryRaw: (...args: any[]) => Promise<any> };
 const expenseModel = prisma.expense as unknown as {
   findFirst: (...args: any[]) => Promise<any>;
   findMany: (...args: any[]) => Promise<any>;
@@ -17,15 +23,74 @@ const expenseModel = prisma.expense as unknown as {
 const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
 const receiptModel = prisma.receipt as unknown as { findFirst: (...args: any[]) => Promise<any> };
 const originalTransaction = client.$transaction;
+const originalQueryRaw = client.$queryRaw;
 const originalExpenseFindFirst = expenseModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
 const originalExchangeFindMany = exchangeModel.findMany;
 const originalReceiptFindFirst = receiptModel.findFirst;
 const previousSecret = process.env.JWT_SECRET;
+/**
+ * Route unit-test adapter: preserve the existing per-test fixture mocks while
+ * returning the same aggregate shape as the SQL helper. Real SQL semantics,
+ * date boundaries, and tenant isolation are covered by the PostgreSQL test.
+ */
+client.$queryRaw = async (query: any) => {
+  const values: unknown[] = Array.isArray(query?.values) ? query.values : [];
+  const userId = String(values[0] ?? 'user-1');
+  const valuationDate = values[1] instanceof Date ? values[1] : new Date(String(values[1] ?? Date.now()));
+  const excludeExpenseId = typeof values[4] === 'string' ? values[4] : undefined;
+  const [exchanges, purchases] = await Promise.all([
+    exchangeModel.findMany({
+      where: { userId, createdAt: { lte: valuationDate } },
+      select: { mode: true, rubSpent: true, usdtReceived: true, vndReceived: true, planningVndPerUsdt: true, targetCurrency: true, targetReceived: true, targetVndEquivalent: true },
+    }),
+    expenseModel.findMany({
+      where: { userId, ...(excludeExpenseId ? { id: { not: excludeExpenseId } } : {}), date: { lte: valuationDate }, usdtCharged: { not: null } },
+      select: { amountVnd: true, usdtCharged: true },
+    }),
+  ]);
+  const rubUsdt = mapRubUsdtExchanges(exchanges.map((x: any) => ({
+    mode: x.mode, rubSpent: Number(x.rubSpent),
+    usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+    targetCurrency: x.targetCurrency,
+    targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+  })));
+  const actual = mapActualVndUsdtExchanges(exchanges.map((x: any) => ({
+    mode: x.mode, usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+    vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+  })));
+  const direct = mapDirectVndExchanges(exchanges.map((x: any) => ({
+    mode: x.mode, rubSpent: Number(x.rubSpent),
+    vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+    targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+    targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+    targetCurrency: x.targetCurrency,
+  })));
+  const indirect = mapActualVndExchanges(exchanges.map((x: any) => ({
+    mode: x.mode, rubSpent: Number(x.rubSpent),
+    vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+    targetCurrency: x.targetCurrency,
+  })));
+  const validCards = purchases.filter((x: any) => Number(x.amountVnd) > 0 && Number(x.usdtCharged) > 0);
+  return [{
+    rubUsdtRub: rubUsdt.reduce((sum: number, x: any) => sum + x.rubSpent, 0),
+    rubUsdtUsdt: rubUsdt.reduce((sum: number, x: any) => sum + x.usdtReceived, 0),
+    actualVnd: actual.reduce((sum: number, x: any) => sum + x.vndReceived, 0),
+    actualUsdt: actual.reduce((sum: number, x: any) => sum + x.usdtReceived, 0),
+    directRub: direct.reduce((sum: number, x: any) => sum + x.rubSpent, 0),
+    directVnd: direct.reduce((sum: number, x: any) => sum + x.vndReceived, 0),
+    actualRubForVnd: indirect.reduce((sum: number, x: any) => sum + x.rubSpent, 0),
+    actualVndForRub: indirect.reduce((sum: number, x: any) => sum + x.vndReceived, 0),
+    cardVnd: validCards.reduce((sum: number, x: any) => sum + Number(x.amountVnd), 0),
+    cardUsdt: validCards.reduce((sum: number, x: any) => sum + Number(x.usdtCharged), 0),
+  }];
+};
+
 
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
   client.$transaction = originalTransaction;
+  client.$queryRaw = originalQueryRaw;
   expenseModel.findFirst = originalExpenseFindFirst;
   expenseModel.findMany = originalExpenseFindMany;
   exchangeModel.findMany = originalExchangeFindMany;
