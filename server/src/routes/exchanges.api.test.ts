@@ -87,6 +87,46 @@ describe('direct RUB to VND exchange fees', () => {
     ]);
   });
 
+  it('subtracts the fee from indirect RUB-USDT-VND results before ledger credit', async () => {
+    let createdData: any;
+    const movements: any[] = [];
+    const tx = {
+      exchange: {
+        create: async ({ data }: any) => {
+          createdData = data;
+          return { id: 'indirect-vnd-fee', ...data, createdAt: new Date('2026-10-20T10:00:00.000Z') };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async ({ data }: any) => { movements.push(...data); return { count: data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853,
+          vndReceived: 2500000, vndFee: 5000,
+        }),
+      });
+      assert.equal(response.status, 201);
+      const body = await response.json() as any;
+      assert.equal(Number(body.vndReceived), 2495000);
+      assert.equal(Number(body.vndFee), 5000);
+    });
+
+    assert.equal(Number(createdData.vndReceived), 2495000);
+    assert.deepEqual(movements.map(x => [x.currency, Number(x.amountDelta)]), [
+      ['RUB', -8300],
+      ['USDT', 93.7853],
+      ['VND', 2495000],
+    ]);
+  });
+
   it('rejects a fee that consumes the entire gross VND amount before writing', async () => {
     let createCalls = 0;
     const tx = {
