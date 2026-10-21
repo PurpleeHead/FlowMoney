@@ -190,12 +190,13 @@ export function resolveExchangeVndOutcome(input: {
   if (vndReceived == null && vndPerUsdt != null) {
     throw new Error('Actual VND received is required when a VND rate is provided.');
   }
-  return {
-    vndReceived,
-    // When actual VND is known, derive the observed rate from the actual net amount.
-    // A user-entered rate is only a consistency guard; it must not override recorded facts.
-    vndPerUsdt: vndReceived == null ? null : vndReceived / input.usdtReceived,
-  };
+  // When actual VND is known, derive the observed rate from the actual net amount.
+  // A user-entered rate is only a consistency guard; it must not override recorded facts.
+  const observedRate = vndReceived == null ? null : vndReceived / input.usdtReceived;
+  if (observedRate != null && (!Number.isFinite(observedRate) || observedRate <= 0)) {
+    throw new Error('Observed VND per USDT rate must be finite and positive.');
+  }
+  return { vndReceived, vndPerUsdt: observedRate };
 }
 
 /** Convert an actual amount in a target currency to the VND base used by the shared budget. */
