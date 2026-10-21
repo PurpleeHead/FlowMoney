@@ -45,6 +45,12 @@ try {
         createdAt: new Date('2026-10-12T12:00:00.000Z'),
       },
       {
+        // Non-VND target operations also must not leak stale VND fields into rate observations.
+        userId, mode: 'RUB_TARGET', targetCurrency: 'EUR', rubSpent: 3000,
+        targetReceived: 30, targetToVndRate: 27_000, targetVndEquivalent: 810_000,
+        vndReceived: 888_888, createdAt: new Date('2026-10-12T13:00:00.000Z'),
+      },
+      {
         userId, mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000,
         vndReceived: 250_000, createdAt: new Date('2026-10-13T12:00:00.000Z'),
       },
@@ -176,7 +182,7 @@ try {
   near(aggregate.cardVnd, cardRows.reduce((sum, x) => sum + Number(x.amountVnd), 0), 'cutoff card VND');
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
-  assert.equal(exchanges.length, 6, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
+  assert.equal(exchanges.length, 7, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
   assert.equal(expenses.length, 6, 'the cutoff instant is inclusive; later expenses and other users are excluded while same-user legacy rows remain in the comparison set');
   near(aggregate.rubUsdtRub, 13_300, 'fixture RUB/USDT numerator');
   near(aggregate.rubUsdtUsdt, 149.7853, 'fixture RUB/USDT denominator');
