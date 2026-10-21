@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../src/services/prisma.js';
 import { getDateAwareValuationAggregate } from '../../src/lib/date-aware-valuation-aggregates.js';
 import { calculateDateAwareValuationRates } from '../../src/lib/date-aware-valuation-rates.js';
@@ -107,6 +108,17 @@ try {
     ],
   });
 
+  const nanValue = await prisma.$queryRaw<Array<{ value: string }>>(Prisma.sql`SELECT ('NaN'::numeric(20, 4))::text AS value`);
+  assert.equal(nanValue[0]?.value, 'NaN', 'PostgreSQL numeric columns can preserve a legacy NaN value for regression coverage');
+
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "Exchange" ("id", "userId", "mode", "targetCurrency", "rubSpent", "usdtReceived", "vndReceived", "createdAt")
+    VALUES
+      (${suffix + '-nan-rub'}, ${userId}, 'RUB_USDT_VND', 'VND', 'NaN'::numeric, 2, 50000, ${new Date('2026-10-14T12:40:00.000Z')}),
+      (${suffix + '-nan-usdt'}, ${userId}, 'RUB_USDT_VND', 'VND', 100, 'NaN'::numeric, 20000, ${new Date('2026-10-14T12:45:00.000Z')}),
+      (${suffix + '-nan-direct-vnd'}, ${userId}, 'RUB_VND', 'VND', 100, NULL, 'NaN'::numeric, ${new Date('2026-10-14T12:50:00.000Z')})
+  `);
+
   await prisma.expense.createMany({
     data: [
       {
@@ -154,6 +166,13 @@ try {
       },
     ],
   });
+
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "Expense" ("id", "userId", "title", "category", "amount", "currency", "amountVnd", "usdtCharged", "date", "createdAt", "updatedAt")
+    VALUES
+      (${suffix + '-nan-card-vnd'}, ${userId}, 'Card with NaN VND', 'Test', 100, 'VND', 'NaN'::numeric, 2, ${new Date('2026-10-14T08:45:00.000Z')}, NOW(), NOW()),
+      (${suffix + '-nan-card-usdt'}, ${userId}, 'Card with NaN USDT', 'Test', 100, 'VND', 10000, 'NaN'::numeric, ${new Date('2026-10-14T08:50:00.000Z')}, NOW(), NOW())
+  `);
 
   const aggregate = await getDateAwareValuationAggregate(userId, valuationDate);
   const [exchanges, expenses] = await Promise.all([
@@ -208,13 +227,13 @@ try {
   near(aggregate.cardVnd, cardRows.reduce((sum, x) => sum + Number(x.amountVnd), 0), 'cutoff card VND');
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
-  assert.equal(exchanges.length, 9, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
+  assert.equal(exchanges.length, 12, 'the cutoff instant is inclusive; later exchanges and other users must be excluded while malformed numeric rows remain available to the legacy-mapper comparison');
   assert.equal(expenses.length, 6, 'the cutoff instant is inclusive; later expenses and other users are excluded while same-user legacy rows remain in the comparison set');
   near(aggregate.rubUsdtRub, 13_300, 'fixture RUB/USDT numerator');
   near(aggregate.rubUsdtUsdt, 149.7853, 'fixture RUB/USDT denominator');
-  near(aggregate.actualVnd, 2_300_000, 'fixture actual indirect VND excludes later exchange');
-  near(aggregate.directRub, 3_010, 'fixture direct RUB includes valid cutoff exchange and excludes explicit-zero outcome');
-  near(aggregate.directVnd, 711_000, 'fixture direct VND includes valid cutoff exchange and excludes stale legacy amount and explicit-zero outcome');
+  near(aggregate.actualVnd, 2_300_000, 'fixture actual indirect VND excludes later exchange and rows with NaN numeric evidence');
+  near(aggregate.directRub, 3_010, 'fixture direct RUB includes valid cutoff exchange and excludes explicit-zero outcome and NaN outcome');
+  near(aggregate.directVnd, 711_000, 'fixture direct VND includes valid cutoff exchange and excludes stale legacy amount, explicit-zero outcome, and NaN outcome');
   near(aggregate.cardVnd, 96_536, 'fixture card VND includes expense exactly at cutoff, excludes later expense, and ignores malformed or non-VND rows');
   near(aggregate.cardUsdt, 3.86, 'fixture card USDT includes expense exactly at cutoff, excludes later expense, and ignores malformed or non-VND rows');
 
