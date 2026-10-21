@@ -162,3 +162,5 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Added a card-expense API regression test ensuring a direct RUB→VND observation cannot be used as a substitute for a missing USDT RUB acquisition cost basis. This protects the rule that a recorded USDT debit with unknown RUB cost must remain unpriced instead of receiving an unrelated confirmed valuation.
 - [ ] The new card-expense regression test requires its own CI run before it can be considered verified.
 - [ ] Historical expense/receipt route calculations still fetch date-bounded exchange and card-purchase rows into Node.js. They must be moved to date-aware PostgreSQL aggregates only after equivalent eligibility, date cutoffs, and weighted totals are covered by tests.
+
+- [ ] Added a receipt API assertion that historical exchange and card-purchase queries remain scoped to the authenticated user and bounded by the receipt valuation time. Commit `848ab2e`; awaiting CI.
