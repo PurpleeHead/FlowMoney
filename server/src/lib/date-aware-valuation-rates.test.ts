@@ -34,6 +34,8 @@ describe('date-aware valuation rates', () => {
       rubUsdtUsdt: 100,
       actualVnd: 2_500_000,
       actualUsdt: 100,
+      actualRubForVnd: 8300,
+      actualVndForRub: 2_500_000,
       cardVnd: 0,
       cardUsdt: 0,
     }));
