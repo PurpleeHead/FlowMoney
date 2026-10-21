@@ -30,17 +30,28 @@ SELECT
   'Expense ' || e."id",
   e."date"
 FROM "Expense" e
-WHERE e."amount" > 0
-  AND e."amount"::text NOT IN ('NaN', 'Infinity', '-Infinity')
-  AND upper(trim(e."currency")) IN ('RUB', 'USDT', 'VND')
-  -- Match runtime ledger rules: a present but invalid card debit on a VND
-  -- expense is malformed evidence, not permission to fall back to cash VND.
-  AND NOT (
+WHERE
+  (
+    -- A valid card debit is the ledger source even if an old row's separate
+    -- VND amount is malformed; runtime sync still records the known USDT debit.
     upper(trim(e."currency")) = 'VND'
     AND e."usdtCharged" IS NOT NULL
-    AND (
-      e."usdtCharged" <= 0
-      OR e."usdtCharged"::text IN ('NaN', 'Infinity', '-Infinity')
+    AND e."usdtCharged" > 0
+    AND e."usdtCharged"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+  )
+  OR (
+    e."amount" > 0
+    AND e."amount"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+    AND upper(trim(e."currency")) IN ('RUB', 'USDT', 'VND')
+    -- A present but invalid card debit on a VND expense is malformed evidence,
+    -- not permission to fall back to a cash VND debit.
+    AND NOT (
+      upper(trim(e."currency")) = 'VND'
+      AND e."usdtCharged" IS NOT NULL
+      AND (
+        e."usdtCharged" <= 0
+        OR e."usdtCharged"::text IN ('NaN', 'Infinity', '-Infinity')
+      )
     )
   )
 
