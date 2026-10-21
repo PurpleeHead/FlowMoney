@@ -119,7 +119,7 @@ try {
     WHERE "id" = ${badDirectUsdt.id}
   `;
   await prisma.$executeRaw`
-    UPDATE "Exchange" SET "targetVndEquivalent" = 'NaN'::numeric, "vndReceived" = 'Infinity'::numeric
+    UPDATE "Exchange" SET "targetVndEquivalent" = 'NaN'::numeric, "vndReceived" = 'NaN'::numeric
     WHERE "id" = ${badDirectVnd.id}
   `;
   const nonFiniteAggregate = await getDashboardExchangeAggregates(nonFiniteUser.id);
