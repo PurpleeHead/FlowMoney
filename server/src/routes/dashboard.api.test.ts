@@ -376,6 +376,8 @@ describe('dashboard query shape', () => {
     assert.ok(purchaseAggregate, 'weighted card aggregate must sum VND and USDT');
     assert.ok(monthAggregate.where.date.gte instanceof Date);
     assert.equal(purchaseAggregate.where.userId, 'dashboard-user');
+    assert.deepEqual(purchaseAggregate.where.currency, { mode: 'insensitive', equals: 'VND' },
+      'weighted purchase rate must ignore stale VND-equivalent fields on non-VND expenses');
     assert.equal(purchaseAggregate.where.amountVnd.gt, 0);
     assert.equal(purchaseAggregate.where.usdtCharged.gt, 0);
     assert.ok(Number.isNaN(Number(purchaseAggregate.where.amountVnd.not)), 'purchase aggregate excludes PostgreSQL numeric NaN');
@@ -403,6 +405,11 @@ describe('dashboard weighted rates preserve actual observations', () => {
         id: 'card-b', title: 'Dinner', category: 'Food', amount: 60000,
         currency: 'VND', amountVnd: 60000, amountRub: 166, usdtCharged: 3,
         date: new Date('2026-10-11T08:00:00.000Z'),
+      },
+      {
+        id: 'stale-rub-conversion', title: 'Legacy RUB expense', category: 'Other', amount: 100,
+        currency: 'RUB', amountVnd: 9_000_000, amountRub: 100, usdtCharged: 1,
+        date: new Date('2026-10-12T08:00:00.000Z'),
       },
     ];
     exchangeModel.findMany = async () => [
