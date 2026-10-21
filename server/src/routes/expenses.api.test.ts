@@ -87,6 +87,45 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+  it('does not return success when wallet ledger synchronization fails during an expense edit', async () => {
+    const existing = {
+      id: 'expense-ledger-edit-failure', userId: 'user-42', title: 'Old lunch',
+      category: 'Food', amount: 100, currency: 'RUB', amountVnd: null,
+      amountRub: 100, usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'),
+      receiptId: null,
+    };
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    let ledgerWriteAttempted = false;
+    const tx = {
+      expense: {
+        updateMany: async () => ({ count: 1 }),
+        findFirst: async () => ({ ...existing, title: 'Updated lunch' }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async () => {
+          ledgerWriteAttempted = true;
+          throw new Error('simulated ledger write failure during update');
+        },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-ledger-edit-failure`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Updated lunch', category: 'Food', amount: 100, currency: 'RUB',
+        }),
+      });
+      assert.equal(response.status, 500);
+      assert.equal(ledgerWriteAttempted, true);
+    });
+  });
+
   it('rejects a VND expense whose source amount conflicts with amountVnd', async () => {
     expenseModel.findMany = async () => { throw new Error('database should not be queried for invalid input'); };
     exchangeModel.findMany = async () => { throw new Error('database should not be queried for invalid input'); };
