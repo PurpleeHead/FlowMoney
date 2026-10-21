@@ -73,6 +73,7 @@ function dashboardExchangeAggregateQuery(userId: string) {
           AND "usdtReceived" IS NOT NULL
           AND "planningVndPerUsdt" IS NOT NULL
       ), 0) AS "plannedUsdt",
+      -- Only documented modes are VND evidence; other modes may retain stale legacy vndReceived.
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
           THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
@@ -84,6 +85,7 @@ function dashboardExchangeAggregateQuery(userId: string) {
           AND upper(trim("targetCurrency")) NOT IN ('VND', 'RUB')
           AND "targetVndEquivalent" IS NOT NULL
       ), 0) AS "estimatedTargetVnd",
+      -- A direct USDT receipt remains unpriced even if vndReceived contains a stale legacy value.
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
           AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL
