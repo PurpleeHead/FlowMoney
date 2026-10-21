@@ -48,28 +48,30 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
     vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
   })));
-  const planned = rows.filter(x => x.mode !== 'RUB_VND' &&
-    !(x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') &&
+  const planned = rows.filter(x => x.mode === 'RUB_USDT_VND' &&
     x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
   const confirmedVnd = rows.reduce((sum, x) => {
-    if (x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') {
+    if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') {
       const value = x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived;
       return sum + (value == null ? 0 : Number(value));
     }
-    return sum + (x.vndReceived == null ? 0 : Number(x.vndReceived));
+    if (x.mode === 'RUB_VND' || x.mode === 'RUB_USDT_VND') {
+      return sum + (x.vndReceived == null ? 0 : Number(x.vndReceived));
+    }
+    return sum;
   }, 0);
   const estimatedTargetVnd = rows.reduce((sum, x) =>
-    sum + (x.mode === 'RUB_TARGET' && x.targetCurrency !== 'VND' && x.targetVndEquivalent != null
+    sum + (x.mode === 'RUB_TARGET' && !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null
       ? Number(x.targetVndEquivalent) : 0), 0);
   const estimatedUsdt = rows.reduce((sum, x) => {
-    const eligible = x.mode !== 'RUB_VND' &&
-      !(x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') &&
-      x.vndReceived == null &&
-      ((x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null) ||
-        x.usdtReceived != null);
-    if (!eligible) return sum;
-    return sum + (x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT'
-      ? Number(x.targetReceived) : Number(x.usdtReceived));
+    if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'USDT' &&
+        x.targetReceived != null && x.targetVndEquivalent == null) {
+      return sum + Number(x.targetReceived);
+    }
+    if (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) {
+      return sum + Number(x.usdtReceived);
+    }
+    return sum;
   }, 0);
   const direct = mapDirectVndExchanges(rows.map(x => ({
     mode: x.mode,
@@ -79,8 +81,7 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
     targetCurrency: x.targetCurrency,
   })));
-  const indirect = rows.filter(x => x.mode !== 'RUB_VND' &&
-    !(x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND') && x.vndReceived != null)
+  const indirect = rows.filter(x => x.mode === 'RUB_USDT_VND' && x.vndReceived != null)
     .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) }));
   const rateRows = [...direct, ...indirect].filter(x =>
     Number.isFinite(x.rubSpent) && x.rubSpent > 0 && Number.isFinite(x.vndReceived) && x.vndReceived > 0);
@@ -98,7 +99,8 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     hasUnpricedUsdtTopUp: rows.some(x =>
       (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
       (x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null)),
-    hasEstimatedTarget: rows.some(x => x.mode === 'RUB_TARGET' && x.targetCurrency !== 'VND' && x.targetVndEquivalent != null),
+    hasEstimatedTarget: rows.some(x => x.mode === 'RUB_TARGET' &&
+      !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null),
     rateExchangeRub: rateRows.reduce((sum, x) => sum + x.rubSpent, 0),
     rateExchangeVnd: rateRows.reduce((sum, x) => sum + x.vndReceived, 0),
   }];
