@@ -111,6 +111,22 @@ try {
   const nanValue = await prisma.$queryRaw<Array<{ value: string }>>(Prisma.sql`SELECT ('NaN'::numeric(20, 4))::text AS value`);
   assert.equal(nanValue[0]?.value, 'NaN', 'PostgreSQL numeric columns can preserve a legacy NaN value for regression coverage');
 
+  // The persisted Decimal(p, s) columns reject Infinity, so exercise the exact
+  // finite-safe predicate against unconstrained PostgreSQL numeric values too.
+  const specialNumericAggregate = await prisma.$queryRaw<Array<{ total: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(value) FILTER (
+      WHERE value::text NOT IN ('NaN', 'Infinity', '-Infinity')
+    ), 0)::text AS total
+    FROM (VALUES
+      ('NaN'::numeric),
+      ('Infinity'::numeric),
+      ('-Infinity'::numeric),
+      (123::numeric)
+    ) AS special_values(value)
+  `);
+  assert.equal(specialNumericAggregate[0]?.total, '123',
+    'the finite-safe PostgreSQL aggregate predicate excludes NaN and both infinity signs');
+
   await prisma.$executeRaw(Prisma.sql`
     INSERT INTO "Exchange" ("id", "userId", "mode", "targetCurrency", "rubSpent", "usdtReceived", "vndReceived", "createdAt", "targetReceived", "targetVndEquivalent")
     VALUES
