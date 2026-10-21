@@ -248,6 +248,8 @@ try {
     };
     dashboardResponseBytes = Buffer.byteLength(responseText);
     dashboardFullHistoryProjectionBytes = Buffer.byteLength(JSON.stringify(projectedFullHistory));
+    assert.ok(dashboardResponseBytes <= dashboardFullHistoryProjectionBytes,
+      'current dashboard HTTP payload must not exceed the otherwise-identical full-history activity projection');
     if (i >= 2) dashboardHttpSamples.push(elapsed);
   }
 
