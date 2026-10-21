@@ -44,10 +44,10 @@ export async function getDateAwareValuationAggregate(
           ELSE 0
         END), 0) AS "rubUsdtUsdt",
         COALESCE(SUM("vndReceived") FILTER (WHERE
-          "mode" = 'RUB_USDT_VND' AND "usdtReceived" > 0 AND "vndReceived" > 0
+          "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 AND "vndReceived" > 0
         ), 0) AS "actualVnd",
         COALESCE(SUM("usdtReceived") FILTER (WHERE
-          "mode" = 'RUB_USDT_VND' AND "usdtReceived" > 0 AND "vndReceived" > 0
+          "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 AND "vndReceived" > 0
         ), 0) AS "actualUsdt",
         COALESCE(SUM("rubSpent") FILTER (WHERE
           "rubSpent" > 0 AND (
