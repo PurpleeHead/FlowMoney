@@ -5,6 +5,7 @@ import {
   calculateObservedVndPerRub,
   calculateObservedVndPerUsdt,
   calculateRubPerUsdt,
+  mapActualVndExchanges,
   mapDirectVndExchanges,
   mapRubUsdtExchanges,
   mapActualVndUsdtExchanges,
