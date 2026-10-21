@@ -108,7 +108,7 @@ try {
         acc.actualVnd += vnd;
         acc.actualUsdt += usdt;
       }
-      if (row.mode !== 'RUB_VND' && !(row.mode === 'RUB_TARGET' && target === 'VND') &&
+      if (row.mode === 'RUB_USDT_VND' &&
           vnd == null && usdt != null && row.planningVndPerUsdt != null) {
         acc.plannedWeightedVnd += usdt * Number(row.planningVndPerUsdt);
         acc.plannedUsdt += usdt;
@@ -116,17 +116,14 @@ try {
 
       if (row.mode === 'RUB_TARGET' && target === 'VND') {
         acc.confirmedVnd += targetVnd ?? targetReceived ?? vnd ?? 0;
-      } else {
+      } else if (row.mode === 'RUB_VND' || row.mode === 'RUB_USDT_VND') {
         acc.confirmedVnd += vnd ?? 0;
       }
-      if (row.mode === 'RUB_TARGET' && target !== 'VND' && targetVnd != null) {
+      if (row.mode === 'RUB_TARGET' && target !== 'VND' && target !== 'RUB' && targetVnd != null) {
         acc.estimatedTargetVnd += targetVnd;
       }
-      if (row.mode !== 'RUB_VND' && !(row.mode === 'RUB_TARGET' && target === 'VND') &&
-          vnd == null && (
-            (row.mode === 'RUB_TARGET' && target === 'USDT' && targetReceived != null && targetVnd == null) ||
-            usdt != null
-          )) {
+      if ((row.mode === 'RUB_TARGET' && target === 'USDT' && targetReceived != null && targetVnd == null) ||
+          (row.mode === 'RUB_USDT_VND' && vnd == null && usdt != null)) {
         acc.estimatedUsdt += row.mode === 'RUB_TARGET' && target === 'USDT' ? targetReceived ?? 0 : usdt ?? 0;
       }
       return acc;
