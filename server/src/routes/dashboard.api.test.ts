@@ -179,8 +179,12 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
           usdtCharged: valid.reduce((sum: number, row: any) => sum + Number(row.usdtCharged), 0),
         }];
       }
-      // The exchange aggregate runs concurrently with the recent-activity query.
-      return mockDashboardExchangeAggregates(dashboardExchangeRows);
+      // The aggregate query runs concurrently with the recent-activity query. Resolve
+      // the fixture independently instead of relying on shared state that may not yet
+      // have been populated by the other Promise.all branch.
+      const userId = (query?.values ?? []).find((value: unknown) => value === 'dashboard-user') ?? 'dashboard-user';
+      const exchangeRows = await exchangeModel.findMany({ where: { userId } });
+      return mockDashboardExchangeAggregates(exchangeRows);
     },
   });
   expenseModel.aggregate = async (args: any) => {
@@ -391,14 +395,15 @@ describe('dashboard query shape', () => {
     assert.deepEqual(exchangeArgs.where, { userId: 'dashboard-user' });
     assert.deepEqual(exchangeArgs.orderBy, [{ createdAt: 'desc' }, { id: 'desc' }]);
     assert.equal(exchangeArgs.take, 100, 'dashboard activity query must be bounded independently from all-history aggregates');
-    assert.equal(dashboardAggregateArgs.length, 2);
-    assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
-    const allTimeAggregate = dashboardAggregateArgs.find(args => args._sum.amountVnd && !args.where.date);
-    const monthAggregate = dashboardAggregateArgs.find(args => args.where.date?.gte);
-    assert.ok(allTimeAggregate, 'all-time expense aggregate must not have a date limit');
-    assert.ok(monthAggregate, 'month aggregate must have a date boundary');
-    assert.ok(monthAggregate.where.date.gte instanceof Date);
-    const purchaseAggregateQuery = dashboardRawQueries.find(query => String(query?.sql ?? '').includes('FROM "Expense"'));
+    assert.equal(dashboardAggregateArgs.length, 0,
+      'dashboard expense totals and rates should be database aggregates, not Prisma full-row aggregates');
+    const totalAggregateQuery = dashboardRawQueries.find(query =>
+      String(query?.sql ?? '').includes('AS "totalVnd"') && String(query?.sql ?? '').includes('AS "monthVnd"'));
+    assert.ok(totalAggregateQuery, 'all-time and month totals must share one SQL aggregate');
+    assert.match(String(totalAggregateQuery.sql), /"userId"\s*=\s*\$\d+/,
+      'all-time and month totals must be scoped to the authenticated user');
+    const purchaseAggregateQuery = dashboardRawQueries.find(query =>
+      String(query?.sql ?? '').includes('upper(trim("currency"))'));
     assert.ok(purchaseAggregateQuery, 'weighted purchase rate must use a dedicated SQL aggregate');
     assert.match(String(purchaseAggregateQuery.sql), /upper\(trim\("currency"\)\)\s*=\s*'VND'/,
       'weighted purchase rate must normalize legacy currency strings in SQL');
