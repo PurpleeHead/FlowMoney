@@ -130,6 +130,29 @@ describe('money regression boundaries', () => {
     }
   });
 
+  it('returns null instead of persisting overflowed expense valuations', () => {
+    assert.equal(estimateRubFromVnd(Number.MAX_VALUE, 1, 2), null);
+
+    assert.equal(calculateExpenseRub({
+      currency: 'USDT',
+      amount: Number.MAX_VALUE,
+      amountVnd: null,
+    }, 2, null), null);
+
+    assert.equal(calculateExpenseRub({
+      currency: 'VND',
+      amount: 100,
+      amountVnd: 100,
+      usdtCharged: Number.MAX_VALUE,
+    }, 2, 25_000), null);
+
+    assert.equal(calculateExpenseRub({
+      currency: 'VND',
+      amount: 100,
+      amountVnd: Number.MAX_VALUE,
+    }, null, null, Number.MIN_VALUE), null);
+  });
+
   it('rejects an overflowed target-currency equivalent', () => {
     assert.throws(
       () => calculateTargetVndEquivalent('GEL', Number.MAX_VALUE, 2),
