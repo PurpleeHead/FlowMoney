@@ -993,3 +993,38 @@ describe('dashboard unknown top-up amount', () => {
     });
   });
 });
+
+describe('dashboard finite balance fallback versus historical rate precedence', () => {
+  it('keeps a finite legacy VND amount in the balance but excludes its malformed canonical amount from the historical rate', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'malformed-canonical-vnd-with-finite-legacy-amount',
+      mode: 'RUB_TARGET',
+      targetCurrency: 'VND',
+      rubSpent: 1000,
+      targetReceived: 500000,
+      targetVndEquivalent: Number.NaN,
+      vndReceived: Number.NaN,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        balanceVnd: number | null;
+        effectiveVndPerRub: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 500000);
+      assert.equal(body.balanceVnd, 500000);
+      assert.equal(body.effectiveVndPerRub, null);
+    });
+  });
+});
