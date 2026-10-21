@@ -165,6 +165,18 @@ try {
   near(aggregate.cardVnd, 96_536, 'fixture card VND includes expense exactly at cutoff and excludes later expense');
   near(aggregate.cardUsdt, 3.86, 'fixture card USDT includes expense exactly at cutoff and excludes later expense');
 
+  const aggregateWithoutFirstCard = await getDateAwareValuationAggregate(userId, valuationDate, expenses[0].id);
+  near(
+    aggregateWithoutFirstCard.cardVnd,
+    Number(aggregate.cardVnd) - Number(expenses[0].amountVnd),
+    'excluding an edited expense removes its VND from historical card aggregates',
+  );
+  near(
+    aggregateWithoutFirstCard.cardUsdt,
+    Number(aggregate.cardUsdt) - Number(expenses[0].usdtCharged),
+    'excluding an edited expense removes its USDT debit from historical card aggregates',
+  );
+
   const observedRate = calculateObservedVndPerUsdt(actualRows.map(x => ({
     amountVnd: x.vndReceived,
     usdtCharged: x.usdtReceived,
