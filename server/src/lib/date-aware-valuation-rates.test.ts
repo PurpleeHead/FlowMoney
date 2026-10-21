@@ -59,6 +59,22 @@ describe('date-aware valuation rates', () => {
     assert.equal(rates.vndPerUsdt, 25_000);
   });
 
+  it('falls back to valid exchange evidence when card aggregate values are non-finite', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      actualVnd: 2_500_000,
+      actualUsdt: 100,
+      directRub: 1_000,
+      directVnd: 300_000,
+      cardVnd: 'NaN',
+      cardUsdt: 2,
+    }));
+    assert.equal(rates.rubPerUsdt, 83);
+    assert.equal(rates.vndPerUsdt, 25_000);
+    assert.equal(rates.vndPerRub, 300);
+  });
+
   it('keeps a valid card VND/USDT observation when exchange totals are invalid', () => {
     const rates = calculateDateAwareValuationRates(aggregate({
       rubUsdtRub: 'Infinity',
