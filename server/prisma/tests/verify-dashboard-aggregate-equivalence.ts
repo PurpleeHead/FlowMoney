@@ -103,7 +103,7 @@ try {
     UPDATE "Exchange" SET "vndReceived" = 'NaN'::numeric WHERE "id" = ${badIndirect.id}
   `;
   await prisma.$executeRaw`
-    UPDATE "Exchange" SET "targetReceived" = 'Infinity'::numeric, "vndReceived" = 'NaN'::numeric
+    UPDATE "Exchange" SET "targetReceived" = 'NaN'::numeric, "vndReceived" = 'NaN'::numeric
     WHERE "id" = ${badDirectUsdt.id}
   `;
   await prisma.$executeRaw`
