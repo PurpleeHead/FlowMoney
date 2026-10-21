@@ -228,7 +228,7 @@ try {
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
   assert.equal(exchanges.length, 12, 'the cutoff instant is inclusive; later exchanges and other users must be excluded while malformed numeric rows remain available to the legacy-mapper comparison');
-  assert.equal(expenses.length, 6, 'the cutoff instant is inclusive; later expenses and other users are excluded while same-user legacy rows remain in the comparison set');
+  assert.equal(expenses.length, 8, 'the cutoff instant is inclusive; later expenses and other users are excluded while malformed numeric and same-user legacy rows remain in the comparison set');
   near(aggregate.rubUsdtRub, 13_300, 'fixture RUB/USDT numerator');
   near(aggregate.rubUsdtUsdt, 149.7853, 'fixture RUB/USDT denominator');
   near(aggregate.actualVnd, 2_300_000, 'fixture actual indirect VND excludes later exchange and rows with NaN numeric evidence');
