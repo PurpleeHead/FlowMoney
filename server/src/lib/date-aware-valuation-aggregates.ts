@@ -24,6 +24,7 @@ export type DateAwareValuationAggregate = {
 export async function getDateAwareValuationAggregate(
   userId: string,
   valuationDate: Date,
+  excludeExpenseId?: string,
 ): Promise<DateAwareValuationAggregate> {
   const [row] = await prisma.$queryRaw<DateAwareValuationAggregate[]>(Prisma.sql`
     WITH exchange_totals AS (
@@ -87,6 +88,7 @@ export async function getDateAwareValuationAggregate(
       WHERE "userId" = ${userId}
         AND "date" <= ${valuationDate}
         AND "usdtCharged" IS NOT NULL
+        ${excludeExpenseId ? Prisma.sql`AND "id" <> ${excludeExpenseId}` : Prisma.empty}
     )
     SELECT exchange_totals.*, card_totals.*
     FROM exchange_totals CROSS JOIN card_totals
