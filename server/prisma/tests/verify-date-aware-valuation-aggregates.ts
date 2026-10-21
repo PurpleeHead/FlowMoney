@@ -3,7 +3,6 @@ import { prisma } from '../../src/services/prisma.js';
 import { getDateAwareValuationAggregate } from '../../src/lib/date-aware-valuation-aggregates.js';
 import {
   calculateObservedVndPerUsdt,
-  calculateRubPerUsdt,
   mapActualVndUsdtExchanges,
   mapDirectVndExchanges,
   mapRubUsdtExchanges,
