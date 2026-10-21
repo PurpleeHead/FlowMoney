@@ -241,12 +241,10 @@ export function mapActualVndExchanges(exchanges: Array<{
   targetCurrency?: string | null;
 }>): DirectVndObservation[] {
   return exchanges.flatMap((exchange) => {
-    const targetCurrency = exchange.targetCurrency?.trim().toUpperCase();
-    const isDirectTarget = exchange.mode === 'RUB_TARGET' &&
-      (targetCurrency === 'VND' || targetCurrency === 'USDT');
-    // Direct RUB→USDT rows may carry stale legacy VND fields; they are not
-    // evidence of an actual VND outcome and must not skew the VND/RUB rate.
-    if (exchange.mode === 'RUB_VND' || isDirectTarget || exchange.vndReceived == null) return [];
+    // Every RUB_TARGET row is a direct target-currency operation. Its VND
+    // equivalent is handled by the direct-target mapper; stale vndReceived
+    // fields on any target currency must not become indirect VND/RUB evidence.
+    if (exchange.mode === 'RUB_VND' || exchange.mode === 'RUB_TARGET' || exchange.vndReceived == null) return [];
     return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
   });
 }
