@@ -86,3 +86,11 @@ The current test branch adds two more regression boundaries:
 - A dashboard API test supplies 101 exchange records and verifies that the response contains only 100 history rows while `totalExchangeCount` and the weighted RUB/USDT rate still include the 101st record. This protects summary correctness if the returned history window is later optimized independently.
 
 Both the application verification and migration verification workflows passed for the tested commit. These tests do not implement the PostgreSQL exchange aggregate refactor. The old-vs-aggregate PostgreSQL fixture comparison, realistic query-plan/payload measurements, and operational production release gates remain open.
+
+## Follow-up verification — 2026-10-21 (receipt valuation parity)
+
+The receipt-save valuation path now reuses the same direct-VND and actual-VND exchange mappers as ordinary expense creation and editing. This fixes a legacy-data discrepancy: direct `RUB_TARGET → VND` rows with padded/lowercase currency codes, or with the actual VND amount stored in `targetReceived` / `vndReceived`, are now interpreted using the same precedence and normalization rules as expense valuation.
+
+Regression coverage includes a legacy 500 RUB → 125,000 VND operation and verifies that a 50,000 VND receipt item stores a 200 RUB valuation. A separate receipt API test asserts that exchange and card-purchase observations are user-scoped and bounded to the receipt-save timestamp, and that planning-only rates remain excluded from factual saved RUB valuations.
+
+CI and PostgreSQL migration verification passed on head `f49562b10ab96523d85769c61c913d4371e126d2` (runs [#39614851150](https://github.com/PurpleeHead/FlowMoney/actions/runs/39614851150) and [#39614859415](https://github.com/PurpleeHead/FlowMoney/actions/runs/39614859415)). This closes the receipt-vs-expense direct-VND mapping discrepancy; it does not close the separate dashboard exchange-aggregate refactor or production query-plan / operational release gates.

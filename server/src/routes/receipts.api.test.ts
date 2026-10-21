@@ -249,3 +249,111 @@ describe('receipt pagination validation boundaries', () => {
     assert.equal(queryCalled, false);
   });
 });
+
+
+describe('receipt historical valuation cutoffs', () => {
+  it('scopes exchange and card-purchase observations to the receipt save timestamp', async () => {
+    let exchangeArgs: any;
+    let purchaseArgs: any;
+    let savedExpense: any;
+    exchangeModel.findMany = async (args: any) => {
+      exchangeArgs = args;
+      return [{
+        mode: 'RUB_USDT_VND',
+        rubSpent: 8300,
+        usdtReceived: 100,
+        vndReceived: null,
+        planningVndPerUsdt: 25000,
+        targetCurrency: 'VND',
+        targetReceived: null,
+        targetVndEquivalent: null,
+      }];
+    };
+    expenseModel.findMany = async (args: any) => {
+      purchaseArgs = args;
+      return [];
+    };
+    const tx = {
+      receipt: { create: async () => ({ id: 'receipt-historical-cutoff' }) },
+      expense: {
+        create: async (args: any) => {
+          savedExpense = args.data;
+          return { id: 'expense-historical-cutoff', ...args.data, usdtCharged: null };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-1'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rawText: 'Historical Vietnamese receipt',
+          items: [{ name: 'Coffee', price: 50000, currency: 'VND', amountVnd: 50000 }],
+        }),
+      });
+      assert.equal(response.status, 201);
+    });
+
+    assert.deepEqual(exchangeArgs.where.userId, 'user-1');
+    assert.ok(exchangeArgs.where.createdAt.lte instanceof Date);
+    assert.deepEqual(purchaseArgs.where, {
+      userId: 'user-1',
+      date: { lte: exchangeArgs.where.createdAt.lte },
+      usdtCharged: { not: null },
+    });
+    assert.equal(savedExpense.date.getTime(), exchangeArgs.where.createdAt.lte.getTime());
+    assert.equal(savedExpense.amountRub, null, 'a planning-only rate must not become a historical factual valuation');
+  });
+});
+
+
+describe('receipt legacy direct VND exchange rates', () => {
+  it('uses normalized target currency and legacy target amount when valuing a receipt', async () => {
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_TARGET',
+      rubSpent: 500,
+      usdtReceived: null,
+      vndReceived: null,
+      planningVndPerUsdt: null,
+      targetCurrency: ' vnd ',
+      targetReceived: 125000,
+      targetVndEquivalent: null,
+    }];
+    expenseModel.findMany = async () => [];
+    let savedExpense: any;
+    const tx = {
+      receipt: { create: async () => ({ id: 'receipt-legacy-direct-vnd' }) },
+      expense: {
+        create: async (args: any) => {
+          savedExpense = args.data;
+          return { id: 'expense-legacy-direct-vnd', ...args.data, usdtCharged: null };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-1'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rawText: 'Legacy direct VND exchange',
+          items: [{ name: 'Coffee', price: 50000, currency: 'VND', amountVnd: 50000 }],
+        }),
+      });
+      assert.equal(response.status, 201);
+    });
+
+    assert.equal(savedExpense.amountRub, 200, '50,000 VND at 250 VND/RUB must persist as 200 RUB');
+  });
+});
