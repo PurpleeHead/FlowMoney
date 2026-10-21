@@ -55,6 +55,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const purchases = observedVnd > 0 && observedUsdt > 0
       ? [{amountVnd:observedVnd,usdtCharged:observedUsdt}]
       : [];
+    // The aggregate query is scoped to VND expenses; stale conversion fields on other currencies are not purchase-rate evidence.
     const observedVndPerUsdt=calculateObservedVndPerUsdt(purchases);
 
     // Exchange-history financial totals are calculated by user-scoped PostgreSQL aggregates.
