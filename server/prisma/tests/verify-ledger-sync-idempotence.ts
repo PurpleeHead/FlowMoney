@@ -7,9 +7,9 @@ let userId: string | undefined;
 let expenseId: string | undefined;
 let exchangeId: string | undefined;
 
-async function movements(prefix: string) {
+async function movements(ownerId: string, prefix: string) {
   return prisma.walletMovement.findMany({
-    where: { userId, sourceKey: { startsWith: prefix } },
+    where: { userId: ownerId, sourceKey: { startsWith: prefix } },
     orderBy: { sourceKey: 'asc' },
   });
 }
@@ -32,7 +32,7 @@ try {
   // Repeating synchronization must replace, not duplicate, movements.
   await prisma.$transaction(tx => syncExpenseLedger(tx, expense));
   await prisma.$transaction(tx => syncExpenseLedger(tx, expense));
-  let expenseMovements = await movements(`expense:${expense.id}:`);
+  let expenseMovements = await movements(user.id, `expense:${expense.id}:`);
   assert.deepEqual(
     expenseMovements.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
     [['USDT', -2.19, `expense:${expense.id}:USDT`]],
@@ -63,7 +63,7 @@ try {
 
   await prisma.$transaction(tx => syncExchangeLedger(tx, exchange));
   await prisma.$transaction(tx => syncExchangeLedger(tx, exchange));
-  let exchangeMovements = await movements(`exchange:${exchange.id}:`);
+  let exchangeMovements = await movements(user.id, `exchange:${exchange.id}:`);
   assert.deepEqual(
     exchangeMovements.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
     [
