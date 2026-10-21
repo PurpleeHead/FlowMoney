@@ -312,6 +312,7 @@ describe('expense API ledger synchronization', () => {
       assert.equal(response.status, 200);
       assert.equal(updateArgs.data.usdtCharged, 4, 'omitting usdtCharged must preserve the existing actual card debit');
       assert.equal(aggregateQueries.length, 1, 'PATCH must use one historical aggregate query');
+      assert.ok(aggregateQueries[0].values.includes('user-42'), 'PATCH aggregate must be scoped to the authenticated owner');
       assert.ok(aggregateQueries[0].values.includes('expense-keep-card-debit'),
         'PATCH aggregate must exclude the edited expense from its own historical evidence');
       assert.ok(aggregateQueries[0].values.some((value: unknown) => value instanceof Date && value.getTime() === existing.date.getTime()),
@@ -494,6 +495,7 @@ describe('expense API ledger synchronization', () => {
 
       assert.equal(response.status, 404);
       assert.equal(transactionCalls, 0, 'must not start a write transaction for another user expense');
+      assert.equal(aggregateQueries.length, 0, 'must not query historical valuation for another user expense');
     });
   });
 
@@ -530,6 +532,7 @@ describe('expense API ledger synchronization', () => {
       });
 
       assert.equal(response.status, 400);
+      assert.equal(aggregateQueries.length, 0, 'must validate receipt ownership before valuation SQL');
       assert.equal(transactionCalls, 0, 'must not write expense or ledger when receipt ownership check fails');
     });
   });
@@ -580,6 +583,7 @@ describe('expense API ledger synchronization', () => {
       usdtCharged: { not: null },
     });
     assert.equal(aggregateQueries.length, 1, 'expense valuation must issue one aggregate query');
+    assert.ok(aggregateQueries[0].values.includes('user-42'), 'aggregate query must be scoped to the authenticated owner');
     assert.ok(aggregateQueries[0].values.some((value: unknown) => value instanceof Date && value.getTime() === effectiveDate.getTime()),
       'aggregate query must use the expense effective date as its historical cutoff');
   });
