@@ -35,6 +35,13 @@ afterEach(() => {
 });
 
 function mockDashboardExchangeAggregates(rows: any[]) {
+  // Mirror the SQL CTE's finite-safe aliases: PostgreSQL numeric NaN/Infinity
+  // behave like unavailable values, while rate precedence remains stricter.
+  const finiteOrNull = (value: unknown): number | null => {
+    if (value == null) return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
   const rubUsdt = mapRubUsdtExchanges(rows.map(x => ({
     mode: x.mode,
     rubSpent: Number(x.rubSpent),
@@ -53,17 +60,22 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     x.planningVndPerUsdt != null && Number(x.planningVndPerUsdt) > 0);
   const confirmedVnd = rows.reduce((sum, x) => {
     if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') {
-      const value = x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived;
-      return sum + (value == null ? 0 : Number(value));
+      // Balance totals may use a finite legacy fallback; historical rates do not.
+      const value = finiteOrNull(x.targetVndEquivalent) ??
+        finiteOrNull(x.targetReceived) ?? finiteOrNull(x.vndReceived);
+      return sum + (value ?? 0);
     }
     if (x.mode === 'RUB_VND' || x.mode === 'RUB_USDT_VND') {
-      return sum + (x.vndReceived == null ? 0 : Number(x.vndReceived));
+      return sum + (finiteOrNull(x.vndReceived) ?? 0);
     }
     return sum;
   }, 0);
-  const estimatedTargetVnd = rows.reduce((sum, x) =>
-    sum + (x.mode === 'RUB_TARGET' && !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null
-      ? Number(x.targetVndEquivalent) : 0), 0);
+  const estimatedTargetVnd = rows.reduce((sum, x) => {
+    const equivalent = finiteOrNull(x.targetVndEquivalent);
+    return sum + (x.mode === 'RUB_TARGET' &&
+      !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) &&
+      equivalent != null ? equivalent : 0);
+  }, 0);
   const estimatedUsdt = rows.reduce((sum, x) => {
     if (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
         x.targetCurrency.trim().toUpperCase() === 'USDT' &&
@@ -100,16 +112,18 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     estimatedTargetVnd,
     estimatedUsdt,
     hasUnpricedUsdtTopUp: rows.some(x =>
-      (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 && x.vndReceived == null &&
-        x.usdtReceived != null && Number(x.usdtReceived) > 0) ||
+      (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 && finiteOrNull(x.vndReceived) == null &&
+        finiteOrNull(x.usdtReceived) != null && finiteOrNull(x.usdtReceived)! > 0) ||
       (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
         x.targetCurrency.trim().toUpperCase() === 'USDT' &&
-        x.targetReceived != null && Number(x.targetReceived) > 0 && x.targetVndEquivalent == null)),
+        finiteOrNull(x.targetReceived) != null && finiteOrNull(x.targetReceived)! > 0 &&
+        finiteOrNull(x.targetVndEquivalent) == null)),
     hasUnknownTopUpAmount: rows.some(x =>
-      (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 && x.vndReceived == null && x.usdtReceived == null) ||
+      (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 &&
+        finiteOrNull(x.vndReceived) == null && finiteOrNull(x.usdtReceived) == null) ||
       (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
         x.targetCurrency.trim().toUpperCase() === 'USDT' &&
-        x.targetVndEquivalent == null && (x.targetReceived == null || !Number.isFinite(Number(x.targetReceived))))),
+        finiteOrNull(x.targetVndEquivalent) == null && finiteOrNull(x.targetReceived) == null)),
     hasEstimatedTarget: rows.some(x => x.mode === 'RUB_TARGET' &&
       !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null),
     rateExchangeRub: rateRows.reduce((sum, x) => sum + x.rubSpent, 0),
