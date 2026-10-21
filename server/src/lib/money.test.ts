@@ -159,6 +159,11 @@ describe('indirect VND exchange observations', () => {
       { mode: 'RUB_TARGET', targetCurrency: 'USD', rubSpent: 1500, vndReceived: null },
       // Unknown legacy modes are not authoritative actual exchange outcomes.
       { mode: 'LEGACY_UNKNOWN', targetCurrency: 'VND', rubSpent: 3000, vndReceived: 999_999 },
+      // Malformed legacy amounts must not escape as observations.
+      { mode: 'RUB_USDT_VND', rubSpent: -100, vndReceived: 2_300_000 },
+      { mode: 'RUB_USDT_VND', rubSpent: 8300, vndReceived: -1 },
+      { mode: 'RUB_USDT_VND', rubSpent: Number.POSITIVE_INFINITY, vndReceived: 2_300_000 },
+      { mode: 'RUB_USDT_VND', rubSpent: 8300, vndReceived: Number.NaN },
     ]), [
       { rubSpent: 8300, vndReceived: 2_300_000 },
     ]);
