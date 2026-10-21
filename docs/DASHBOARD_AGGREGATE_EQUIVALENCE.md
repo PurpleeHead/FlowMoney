@@ -101,3 +101,5 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - Non-finite values are treated as unavailable for that numeric field, not as evidence of an actual receipt. Other valid fields on the same exchange can still contribute when the legacy TypeScript logic permits it; for example, a finite direct VND target amount can be used when its canonical equivalent is malformed.
 - The disposable PostgreSQL equivalence fixture now creates malformed numeric values with raw SQL and asserts that every numeric aggregate remains finite, actual outcomes exclude invalid amounts, and valid planning estimates remain separate.
 - [ ] CI must pass on the updated work branch before this audit is considered verified. Production database and release operations remain untouched.
+
+- The Dashboard API also excludes PostgreSQL numeric `NaN` from all-time/month expense totals and from weighted card-purchase aggregates. Regression coverage verifies that malformed VND or USDT on one row cannot make the returned financial totals/rates `NaN`.
