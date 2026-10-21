@@ -86,9 +86,9 @@ export function exchangeLedgerDrafts(exchange: ExchangeLedgerSource): LedgerMove
     } else {
       const fee = exchange.vndFee == null ? 0 : Number(exchange.vndFee);
       // A malformed legacy fee cannot justify falling back to a gross amount.
-      vnd = !Number.isFinite(fee) || fee < 0 || fee > 0
-        ? null
-        : amount(exchange.targetReceived);
+      vnd = Number.isFinite(fee) && fee === 0
+        ? amount(exchange.targetReceived)
+        : null;
     }
     if (vnd != null) movements.push({
       userId: exchange.userId, currency: 'VND', amountDelta: vnd, kind: 'EXCHANGE',
