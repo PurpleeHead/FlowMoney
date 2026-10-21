@@ -126,3 +126,4 @@ describe('wallet ledger mapping', () => {
       ['RUB', -200],
     ]);
   });
+});
