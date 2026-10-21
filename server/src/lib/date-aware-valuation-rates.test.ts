@@ -362,4 +362,29 @@ describe('date-aware valuation rates', () => {
     assert.notEqual(rates.vndPerUsdt, (1_000_000 / 30 + 1_000_000 / 100) / 2);
   });
 
+
+  it('ignores non-finite SQL aggregate values without poisoning valid historical evidence', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      actualVnd: 2_500_000,
+      actualUsdt: 100,
+      directRub: 1_000,
+      directVnd: Number.NaN,
+      actualRubForVnd: 200,
+      actualVndForRub: 50_000,
+      cardVnd: Number.POSITIVE_INFINITY,
+      cardUsdt: 20,
+    }));
+
+    assert.equal(rates.rubPerUsdt, 83);
+    assert.equal(rates.vndPerUsdt, 25_000,
+      'malformed card aggregate must not suppress a valid actual-exchange VND/USDT rate');
+    assert.equal(rates.vndPerRub, (50_000 + 500_000) / (200 + 20 * 83),
+      'malformed direct VND aggregate must be ignored while valid indirect and card evidence remains');
+    for (const [name, value] of Object.entries(rates)) {
+      assert.ok(value == null || Number.isFinite(value), `${name} must be null or finite`);
+    }
+  });
+
 });
