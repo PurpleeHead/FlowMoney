@@ -3,6 +3,7 @@ import { prisma } from '../../src/services/prisma.js';
 import { getDateAwareValuationAggregate } from '../../src/lib/date-aware-valuation-aggregates.js';
 import {
   calculateObservedVndPerUsdt,
+  mapActualVndExchanges,
   mapActualVndUsdtExchanges,
   mapDirectVndExchanges,
   mapRubUsdtExchanges,
@@ -129,6 +130,12 @@ try {
     targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
     targetCurrency: x.targetCurrency,
   })));
+  const actualVndRubRows = mapActualVndExchanges(exchanges.map(x => ({
+    mode: x.mode,
+    rubSpent: Number(x.rubSpent),
+    vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+    targetCurrency: x.targetCurrency,
+  })));
   const cardRows = expenses.filter(x =>
     x.amountVnd != null && Number(x.amountVnd) > 0 &&
     x.usdtCharged != null && Number(x.usdtCharged) > 0
@@ -140,6 +147,8 @@ try {
   near(aggregate.actualUsdt, actualRows.reduce((sum, x) => sum + x.usdtReceived, 0), 'cutoff actual indirect USDT');
   near(aggregate.directRub, directRows.filter(x => x.rubSpent > 0 && x.vndReceived > 0).reduce((sum, x) => sum + x.rubSpent, 0), 'cutoff direct exchange RUB');
   near(aggregate.directVnd, directRows.filter(x => x.rubSpent > 0 && x.vndReceived > 0).reduce((sum, x) => sum + x.vndReceived, 0), 'cutoff direct exchange VND with canonical fallback');
+  near(aggregate.actualRubForVnd, actualVndRubRows.reduce((sum, x) => sum + x.rubSpent, 0), 'cutoff indirect/legacy RUB basis for VND/RUB');
+  near(aggregate.actualVndForRub, actualVndRubRows.reduce((sum, x) => sum + x.vndReceived, 0), 'cutoff indirect/legacy VND basis for VND/RUB');
   near(aggregate.cardVnd, cardRows.reduce((sum, x) => sum + Number(x.amountVnd), 0), 'cutoff card VND');
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
