@@ -38,7 +38,7 @@ function percentile(values: number[], p: number): number {
 async function measure<T>(run: () => Promise<T>): Promise<{ value: T; ms: number }> {
   const start = performance.now();
   const value = await run();
-  return { value: await run(), ms: performance.now() - start };
+  return { value, ms: performance.now() - start };
 }
 
 function finitePositive(value: unknown): number | null {
