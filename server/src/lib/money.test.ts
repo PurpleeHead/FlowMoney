@@ -281,6 +281,21 @@ describe('exchange rate consistency', () => {
       usdtReceived: 100, vndReceived: null, vndPerUsdt: null, vndFee: 0,
     }), true);
   });
+
+  it('rejects a supplied VND rate when the actual VND outcome is still unknown', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 100, vndReceived: null, vndPerUsdt: 25_000, vndFee: 0,
+    }), false);
+  });
+
+  it('rejects invalid USDT input even when the VND outcome is not yet recorded', () => {
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: 0, vndReceived: null, vndPerUsdt: null, vndFee: 0,
+    }), false);
+    assert.equal(isExchangeVndOutcomeConsistent({
+      usdtReceived: Number.POSITIVE_INFINITY, vndReceived: null, vndPerUsdt: null, vndFee: 0,
+    }), false);
+  });
 });
 
 
