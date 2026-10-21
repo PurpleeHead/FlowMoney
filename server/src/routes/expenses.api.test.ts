@@ -74,14 +74,21 @@ const mockQueryRaw = async (query: any) => {
     vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
     targetCurrency: x.targetCurrency,
   })));
-  const validCards = purchases.filter((x: any) => Number(x.amountVnd) > 0 && Number(x.usdtCharged) > 0);
+  const validDirect = direct.filter((x: any) =>
+    Number.isFinite(x.rubSpent) && x.rubSpent > 0 &&
+    Number.isFinite(x.vndReceived) && x.vndReceived > 0
+  );
+  const validCards = purchases.filter((x: any) =>
+    Number.isFinite(Number(x.amountVnd)) && Number(x.amountVnd) > 0 &&
+    Number.isFinite(Number(x.usdtCharged)) && Number(x.usdtCharged) > 0
+  );
   return [{
     rubUsdtRub: rubUsdt.reduce((sum: number, x: any) => sum + x.rubSpent, 0),
     rubUsdtUsdt: rubUsdt.reduce((sum: number, x: any) => sum + x.usdtReceived, 0),
     actualVnd: actual.reduce((sum: number, x: any) => sum + x.vndReceived, 0),
     actualUsdt: actual.reduce((sum: number, x: any) => sum + x.usdtReceived, 0),
-    directRub: direct.reduce((sum: number, x: any) => sum + x.rubSpent, 0),
-    directVnd: direct.reduce((sum: number, x: any) => sum + x.vndReceived, 0),
+    directRub: validDirect.reduce((sum: number, x: any) => sum + x.rubSpent, 0),
+    directVnd: validDirect.reduce((sum: number, x: any) => sum + x.vndReceived, 0),
     actualRubForVnd: indirect.reduce((sum: number, x: any) => sum + x.rubSpent, 0),
     actualVndForRub: indirect.reduce((sum: number, x: any) => sum + x.vndReceived, 0),
     cardVnd: validCards.reduce((sum: number, x: any) => sum + Number(x.amountVnd), 0),
