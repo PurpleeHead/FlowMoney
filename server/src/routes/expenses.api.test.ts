@@ -323,6 +323,32 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+  it('rejects a non-finite calculated VND valuation before writing', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    let transactionCalls = 0;
+    const originalTx = client.$transaction;
+    client.$transaction = async (...args: any[]) => {
+      transactionCalls += 1;
+      return originalTx(...args);
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Extreme conversion', category: 'Other', amount: 1e100,
+          currency: 'RUB', targetToVndRate: 1e100,
+        }),
+      });
+      assert.equal(response.status, 400);
+    });
+
+    assert.equal(aggregateQueries.length, 1, 'valid input should calculate against one historical aggregate');
+    assert.equal(transactionCalls, 0, 'unrepresentable calculated values must be rejected before opening a write transaction');
+  });
+
   it('keeps the actual USDT debit when the VND amount is edited', async () => {
     const existing = {
       id: 'expense-edit-vnd-amount', userId: 'user-42', title: 'Old groceries', category: 'Food',
