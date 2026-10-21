@@ -11,6 +11,7 @@ import {
   mapActualVndUsdtExchanges,
   mapDirectVndExchanges,
   mapRubUsdtExchanges,
+  resolveExchangeVndOutcome,
 } from './money.js';
 
 describe('money regression boundaries', () => {
@@ -139,6 +140,19 @@ describe('money regression boundaries', () => {
       cardPurchases: [{ amountVnd: Number.MAX_VALUE, usdtCharged: 2 }],
       rubPerUsdt: Number.MAX_VALUE,
     }), null);
+  });
+
+  it('rejects an underflowed observed VND/USDT rate when actual amounts are positive', () => {
+    assert.throws(() => resolveExchangeVndOutcome({
+      usdtReceived: Number.MAX_VALUE,
+      vndReceived: Number.MIN_VALUE,
+    }), /finite and positive/);
+
+    assert.deepEqual(resolveExchangeVndOutcome({
+      usdtReceived: 10,
+      vndReceived: 250_000,
+      vndPerUsdt: 25_000,
+    }), { vndReceived: 250_000, vndPerUsdt: 25_000 });
   });
 
   it('does not create a RUB estimate from zero, negative, or non-finite rates', () => {
