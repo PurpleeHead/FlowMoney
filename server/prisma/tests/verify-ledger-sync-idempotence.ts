@@ -46,7 +46,7 @@ try {
   });
   await prisma.$transaction(tx => syncExpenseLedger(tx, cashExpense));
   await prisma.$transaction(tx => syncExpenseLedger(tx, cashExpense));
-  expenseMovements = await movements(`expense:${expense.id}:`);
+  expenseMovements = await movements(user.id, `expense:${expense.id}:`);
   assert.deepEqual(
     expenseMovements.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
     [['VND', -60_000, `expense:${expense.id}:VND`]],
@@ -86,7 +86,7 @@ try {
   });
   await prisma.$transaction(tx => syncExchangeLedger(tx, directExchange));
   await prisma.$transaction(tx => syncExchangeLedger(tx, directExchange));
-  exchangeMovements = await movements(`exchange:${exchange.id}:`);
+  exchangeMovements = await movements(user.id, `exchange:${exchange.id}:`);
   assert.deepEqual(
     exchangeMovements.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
     [
