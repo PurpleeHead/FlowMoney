@@ -515,8 +515,7 @@ describe('expense API ledger synchronization', () => {
       targetCurrency: 'VND',
       targetReceived: null,
       targetVndEquivalent: null,
-      }];
-    };
+    }];
     let createdData: any;
     const tx = {
       expense: {
