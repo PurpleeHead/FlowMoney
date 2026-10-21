@@ -39,6 +39,21 @@ try {
     'Repeated card-expense sync must produce exactly one stable USDT debit',
   );
 
+  // Editing the amount without changing the payment method must update the same
+  // source key, not leave the old debit behind or create a second movement.
+  const resizedCardExpense = await prisma.expense.update({
+    where: { id: expense.id },
+    data: { amount: 57_000, amountVnd: 57_000, usdtCharged: 2.25 },
+  });
+  await prisma.$transaction(tx => syncExpenseLedger(tx, resizedCardExpense));
+  await prisma.$transaction(tx => syncExpenseLedger(tx, resizedCardExpense));
+  expenseMovements = await movements(user.id, `expense:${expense.id}:`);
+  assert.deepEqual(
+    expenseMovements.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
+    [['USDT', -2.25, `expense:${expense.id}:USDT`]],
+    'Same-currency card edit must replace the prior amount under the same source key',
+  );
+
   // Change a card expense into a cash expense. The old USDT leg must be removed.
   const cashExpense = await prisma.expense.update({
     where: { id: expense.id },
@@ -74,6 +89,25 @@ try {
     'Repeated indirect exchange sync must keep exactly three stable currency legs',
   );
 
+  // A same-mode exchange edit must refresh all three legs in place before
+  // testing the separate mode transition below.
+  const resizedExchange = await prisma.exchange.update({
+    where: { id: exchange.id },
+    data: { rubSpent: 8400, usdtReceived: 95, vndReceived: 2_400_000 },
+  });
+  await prisma.$transaction(tx => syncExchangeLedger(tx, resizedExchange));
+  await prisma.$transaction(tx => syncExchangeLedger(tx, resizedExchange));
+  exchangeMovements = await movements(user.id, `exchange:${exchange.id}:`);
+  assert.deepEqual(
+    exchangeMovements.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
+    [
+      ['RUB', -8400, `exchange:${exchange.id}:RUB`],
+      ['USDT', 95, `exchange:${exchange.id}:USDT`],
+      ['VND', 2_400_000, `exchange:${exchange.id}:VND`],
+    ],
+    'Same-mode exchange edit must update all amounts without duplicating currency legs',
+  );
+
   // Editing the same operation to a direct RUB→VND exchange must remove its
   // old USDT leg and use the actual net VND result, not the gross legacy target.
   const directExchange = await prisma.exchange.update({
@@ -96,7 +130,7 @@ try {
     'Indirect-to-direct edit must remove stale USDT and credit only net VND after fee',
   );
 
-  console.log('PostgreSQL ledger sync idempotence verified: repeated expense/exchange syncs do not duplicate movements; currency/mode edits remove stale legs and preserve stable source keys.');
+  console.log('PostgreSQL ledger sync verified: repeated syncs are idempotent; same-currency amount edits replace existing deltas; currency/mode edits remove stale legs and preserve stable source keys.');
 } finally {
   if (expenseId) await prisma.expense.deleteMany({ where: { id: expenseId } });
   if (exchangeId) await prisma.exchange.deleteMany({ where: { id: exchangeId } });
