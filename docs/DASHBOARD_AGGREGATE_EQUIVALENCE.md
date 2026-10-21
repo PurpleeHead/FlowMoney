@@ -1,14 +1,14 @@
 # Dashboard exchange-summary aggregation — implementation gate
 
-Status: PostgreSQL fixture implemented for the first equivalence slice. `server/prisma/tests/verify-dashboard-aggregate-equivalence.ts` now seeds disposable PostgreSQL and checks user-scoped reads, weighted RUB/USDT, actual-vs-planned VND observations, direct-VND legacy fallback behavior, weighted card-purchase rates, and cross-user exclusion. CI runs it after migrations. This does not change runtime dashboard accounting or authorize a deployment.
+Status: Runtime aggregate split and PostgreSQL equivalence fixture are implemented. `GET /api/dashboard` computes all-history financial summaries through user-scoped PostgreSQL aggregates and limits recent exchange activity to 100 rows; `server/prisma/tests/verify-dashboard-aggregate-equivalence.ts` checks weighted rates, actual-vs-planned VND, direct-VND legacy fallback, card-purchase rates, and cross-user exclusion. CI runs the fixture after migrations. These repository checks do not authorize a production deployment.
 
-## Why the dashboard still has an unbounded exchange query
+## Why the dashboard originally had an unbounded exchange query
 
-The dashboard currently fetches all exchange rows because the same rows feed both recent-activity UI and all-history financial calculations. The expenses query is already bounded to the last 12 calendar months, while all-time expense totals and card-purchase weighted rates use PostgreSQL aggregates. Replacing the exchange query with a simple `take` or date window would silently change balances and weighted rates for long-lived accounts.
+The original implementation fetched all exchange rows because the same rows fed both recent-activity UI and all-history financial calculations. That coupling has been removed: the runtime now reads only the latest 100 exchanges for activity, while user-scoped PostgreSQL aggregates independently calculate all-history accounting and weighted rates. The expenses chart is bounded to the last 12 calendar months, and all-time expense totals/card-purchase rates use PostgreSQL aggregates. A simple `take` or date window on the accounting source would still silently change balances and weighted rates for long-lived accounts.
 
-## Safe split of query responsibilities
+## Implemented split of query responsibilities
 
-Before bounding the dashboard exchange rows, split the response into two independent data paths:
+The dashboard response uses two independent data paths:
 
 1. **All-history summary aggregates**, scoped by authenticated `userId`, computed in PostgreSQL.
 2. **Bounded recent exchange rows** for the dashboard display, with full history served only by the cursor-paginated exchange/journal endpoints.
@@ -57,14 +57,14 @@ On the same disposable PostgreSQL dataset, capture:
 
 Do not claim a performance improvement without recorded before/after evidence. Avoid redundant indexes without a query-plan reason.
 
-## Rollout order
+## Rollout and remaining gates
 
-1. Add the fixture and equivalence tests first.
-2. Implement summary aggregates while leaving the existing full exchange query in place.
-3. Run CI, migration verification, and security workflow.
-4. Compare all response summary fields against the old implementation on the fixture.
-5. Only then bound the exchange activity query and rerun the full test matrix.
-6. Keep PR #83 Draft until the operational gates in `PRODUCTION_RELEASE_RUNBOOK.md` are independently satisfied. No production DB inspection, migration, merge, or deploy is implied by this plan.
+- [x] Add a disposable PostgreSQL fixture and compare aggregate results against the TypeScript reference path.
+- [x] Move all-history financial summaries into user-scoped SQL aggregates while keeping recent activity separate.
+- [x] Bound dashboard exchange activity to the latest 100 rows with deterministic timestamp/ID ordering.
+- [x] Run CI, migration verification, rollback/idempotency checks, and aggregate benchmarks on disposable PostgreSQL.
+- [ ] Record `EXPLAIN (ANALYZE, BUFFERS)`, historical expense/receipt valuation query timings, and response payload-size comparisons before claiming a performance improvement for the whole application.
+- [ ] Keep PR #83 Draft until the operational gates in `PRODUCTION_RELEASE_RUNBOOK.md` are independently satisfied. No production DB inspection, migration, merge, or deploy is implied by this document.
 
 
 ## Fixture implementation update — 2026-10-20
