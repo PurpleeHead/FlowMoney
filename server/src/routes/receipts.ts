@@ -9,6 +9,8 @@ import {
   calculateObservedVndPerRub,
   calculateObservedVndPerUsdt,
   calculateRubPerUsdt,
+  mapActualVndExchanges,
+  mapDirectVndExchanges,
   mapRubUsdtExchanges,
 } from '../lib/money.js';
 import { syncExpenseLedger } from '../lib/wallet-ledger.js';
@@ -73,12 +75,23 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     // estimated VND→RUB valuations as if they were based on actual exchange outcomes.
     const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : null);
     const vndPerRub = calculateObservedVndPerRub({
-      directExchanges: [
-        ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND' && x.targetVndEquivalent != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent) })),
-      ],
-      actualVndExchanges: exchanges.filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      // Share the same legacy normalization/fallback rules as expense creation and edits.
+      // In particular, older direct RUB_TARGET → VND rows may store the actual amount
+      // in targetReceived or vndReceived when targetVndEquivalent is absent.
+      directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+        targetCurrency: x.targetCurrency,
+      }))),
+      actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetCurrency: x.targetCurrency,
+      }))),
       cardPurchases: previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) })),
       rubPerUsdt,
     });
