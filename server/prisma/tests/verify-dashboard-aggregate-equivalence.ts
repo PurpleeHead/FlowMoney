@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { prisma } from '../../src/services/prisma.js';
 import {
   calculateObservedVndPerUsdt,
+  calculateObservedVndPerRub,
   calculateRubPerUsdt,
   mapDirectVndExchanges,
   mapRubUsdtExchanges,
@@ -224,6 +225,72 @@ try {
   near(sqlCardRate, helperCardRate, 'weighted card VND/USDT rate');
   assert.equal(Number(cardAggregate._sum.amountVnd), 95_536);
   assert.equal(Number(cardAggregate._sum.usdtCharged), 3.76);
+
+  // The effective VND/RUB rate must use the same eligible cost basis as the legacy
+  // TypeScript implementation: direct outcomes + actual non-direct outcomes + card debits.
+  // This aggregate is user-scoped and deliberately excludes planning-only records.
+  const [rubVndSql] = await prisma.$queryRaw<Array<{
+    directRub: unknown; directVnd: unknown; actualRub: unknown; actualVnd: unknown;
+  }>>`
+    SELECT
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_VND' AND "rubSpent" > 0 AND "vndReceived" > 0
+          THEN "rubSpent"
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+          AND "rubSpent" > 0
+          AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0
+          THEN "rubSpent"
+        ELSE 0
+      END), 0) AS "directRub",
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_VND' AND "rubSpent" > 0 AND "vndReceived" > 0
+          THEN "vndReceived"
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+          AND "rubSpent" > 0
+          AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0
+          THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
+        ELSE 0
+      END), 0) AS "directVnd",
+      COALESCE(SUM(CASE
+        WHEN "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND "rubSpent" > 0 AND "vndReceived" > 0
+          THEN "rubSpent" ELSE 0
+      END), 0) AS "actualRub",
+      COALESCE(SUM(CASE
+        WHEN "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND "rubSpent" > 0 AND "vndReceived" > 0
+          THEN "vndReceived" ELSE 0
+      END), 0) AS "actualVnd"
+    FROM "Exchange"
+    WHERE "userId" = ${mainUserId}
+  `;
+  const cardRows = expenseRows
+    .filter(x => x.amountVnd != null && Number(x.amountVnd) > 0 && x.usdtCharged != null && Number(x.usdtCharged) > 0)
+    .map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }));
+  const helperVndRub = calculateObservedVndPerRub({
+    directExchanges: directRows,
+    actualVndExchanges: exchangeRows
+      .filter(x => x.mode !== 'RUB_VND' &&
+        !(x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') &&
+        x.vndReceived != null)
+      .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+    cardPurchases: cardRows,
+    rubPerUsdt: helperRubUsdt,
+  });
+  const sqlVndRub = (
+    Number(rubVndSql.directVnd) + Number(rubVndSql.actualVnd) +
+    cardRows.reduce((sum, x) => sum + x.amountVnd, 0)
+  ) / (
+    Number(rubVndSql.directRub) + Number(rubVndSql.actualRub) +
+    cardRows.reduce((sum, x) => sum + x.usdtCharged * (helperRubUsdt ?? 0), 0)
+  );
+  near(sqlVndRub, helperVndRub, 'PostgreSQL direct/actual/card cost-basis aggregate matches effective VND/RUB helper');
+  assert.equal(Number(rubVndSql.directRub), 5_700, 'direct RUB cost basis excludes non-positive VND outcomes and uses canonical target values');
+  assert.equal(Number(rubVndSql.directVnd), 1_085_000, 'direct VND total excludes stale legacy values and preserves canonical/fallback values');
+  assert.equal(Number(rubVndSql.actualRub), 8_300, 'actual indirect VND cost basis excludes planning-only records');
+  assert.equal(Number(rubVndSql.actualVnd), 2_300_000, 'actual indirect VND amount excludes planned values and direct target rows');
 
   console.log('Dashboard aggregate fixture passed against disposable PostgreSQL: user scoping, weighted rates, actual-vs-planned VND, direct VND legacy fallback, card totals, and cross-user exclusion.');
 } finally {
