@@ -85,7 +85,7 @@ try {
   });
   // PostgreSQL numeric accepts NaN/Infinity even though the application helpers
   // intentionally reject non-finite JavaScript numbers. Exercise the real DB path.
-  const [badIndirect, badDirectUsdt, badDirectVnd] = await Promise.all([
+  const [badIndirect, badDirectUsdt, badDirectVnd, zeroRubActual, negativeRubPlanned] = await Promise.all([
     prisma.exchange.create({ data: {
       userId: nonFiniteUser.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
       rubSpent: 100, usdtReceived: 3, vndReceived: 1, planningVndPerUsdt: 25_000,
@@ -97,6 +97,14 @@ try {
     prisma.exchange.create({ data: {
       userId: nonFiniteUser.id, mode: 'RUB_TARGET', targetCurrency: 'VND',
       rubSpent: 300, targetReceived: 500_000, targetVndEquivalent: 500_000, vndReceived: 1,
+    } }),
+    prisma.exchange.create({ data: {
+      userId: nonFiniteUser.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
+      rubSpent: 0, usdtReceived: 7, vndReceived: 100_000,
+    } }),
+    prisma.exchange.create({ data: {
+      userId: nonFiniteUser.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
+      rubSpent: -10, usdtReceived: 5, vndReceived: null, planningVndPerUsdt: 25_000,
     } }),
   ]);
   await prisma.$executeRaw`
@@ -111,17 +119,17 @@ try {
     WHERE "id" = ${badDirectVnd.id}
   `;
   const nonFiniteAggregate = await getDashboardExchangeAggregates(nonFiniteUser.id);
-  assert.equal(nonFiniteAggregate.exchangeCount, 3);
+  assert.equal(nonFiniteAggregate.exchangeCount, 5);
   near(nonFiniteAggregate.rubUsdtRub, 100, 'non-finite direct USDT receipt cannot contaminate RUB/USDT numerator');
   near(nonFiniteAggregate.rubUsdtUsdt, 3, 'non-finite direct USDT receipt is excluded from RUB/USDT denominator');
   near(nonFiniteAggregate.actualVnd, 0, 'NaN indirect VND is not an actual outcome');
   near(nonFiniteAggregate.actualUsdt, 0, 'invalid actual VND prevents the indirect USDT observation');
   near(nonFiniteAggregate.plannedWeightedVnd, 75_000, 'invalid actual VND falls back to the valid planning estimate');
   near(nonFiniteAggregate.plannedUsdt, 3, 'planning denominator excludes invalid actual values');
-  near(nonFiniteAggregate.confirmedVnd, 500_000, 'non-finite canonical direct VND falls back to a finite legacy target receipt');
+  near(nonFiniteAggregate.confirmedVnd, 600_000, 'finite received VND is retained for balance even when the RUB cost basis is invalid');
   near(nonFiniteAggregate.estimatedUsdt, 3, 'invalid actual VND remains an unpriced indirect USDT top-up');
-  near(nonFiniteAggregate.rateExchangeRub, 300, 'only finite actual VND observations contribute to rate RUB');
-  near(nonFiniteAggregate.rateExchangeVnd, 500_000, 'non-finite VND fields cannot poison weighted-rate numerator');
+  near(nonFiniteAggregate.rateExchangeRub, 300, 'only finite actual VND observations with a positive RUB basis contribute to rate RUB');
+  near(nonFiniteAggregate.rateExchangeVnd, 500_000, 'non-finite VND fields and zero-cost rows cannot poison weighted-rate numerator');
   assert.equal(nonFiniteAggregate.hasUnpricedUsdtTopUp, true);
   for (const [key, value] of Object.entries(nonFiniteAggregate)) {
     if (typeof value === 'number') assert.ok(Number.isFinite(value), `${key} must be finite`);
