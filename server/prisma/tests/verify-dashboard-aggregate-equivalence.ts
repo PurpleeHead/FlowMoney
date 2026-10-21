@@ -36,6 +36,8 @@ try {
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
     // Canonical VND must win over a stale legacy vndReceived value.
     { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999 },
+    // An explicit zero net outcome must not fall back to the positive gross target.
+    { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 1800, targetReceived: 350_000, targetVndEquivalent: 0, vndReceived: 345_000 },
     // Non-VND target estimates are not factual VND outcomes.
     { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000 },
     // Planning rate is not an observed VND outcome.
@@ -144,7 +146,8 @@ try {
     targetCurrency: x.targetCurrency,
   })));
   const directVndExpected = directRows.reduce((sum, x) => sum + x.vndReceived, 0);
-  assert.equal(directVndExpected, 710_000, 'direct VND canonical/fallback values count once and ignore stale legacy values');
+  assert.ok(directRows.some(x => x.rubSpent === 1800 && x.vndReceived === 0), 'an explicit zero VND outcome must be preserved rather than replaced with gross targetReceived');
+  assert.equal(directVndExpected, 710_000, 'direct VND canonical/fallback values count once and ignore stale legacy values, including explicit zero outcomes');
   assert.equal(Number(directTargetSql.totalVnd) + Number(directAggregate._sum.vndReceived), directVndExpected, 'PostgreSQL direct VND aggregate buckets must equal the existing TypeScript mapping');
   assert.equal(Number(directAggregate._sum.vndReceived), 250_000, 'direct RUB→VND aggregate is scoped and includes actual VND only');
 
