@@ -63,18 +63,20 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - [x] Move all-history financial summaries into user-scoped SQL aggregates while keeping recent activity separate.
 - [x] Bound dashboard exchange activity to the latest 100 rows with deterministic timestamp/ID ordering.
 - [x] Run CI, migration verification, rollback/idempotency checks, and aggregate benchmarks on disposable PostgreSQL.
-- [x] Record `EXPLAIN (ANALYZE, BUFFERS)` and historical expense/receipt valuation aggregate timings on disposable PostgreSQL; confirm the existing user/date indexes are used.
-- [ ] Record bounded recent-activity query plans and before/after serialized response payload sizes; end-to-end latency and production-like database measurements remain open before claiming a whole-application performance improvement.
+- [x] Record `EXPLAIN (ANALYZE, BUFFERS)` for dashboard summary SQL, historical valuation SQL, and the bounded latest-100 activity query; confirm existing historical user/date indexes are used.
+- [x] Compare serialized exchange-activity payload sizes for latest-100 vs full-history baselines at 1k/10k/50k synthetic rows per user.
+- [ ] Measure full dashboard HTTP response payload and end-to-end latency with representative production-like data/configuration before claiming a whole-application performance improvement.
 - [ ] Keep PR #83 Draft until the operational gates in `PRODUCTION_RELEASE_RUNBOOK.md` are independently satisfied. No production DB inspection, migration, merge, or deploy is implied by this document.
 
 
 ## Date-aware valuation aggregate benchmark — 2026-10-21
 
 - [x] Added `server/prisma/tests/benchmark-date-aware-valuation-aggregates.ts` and wired 1k/10k/50k rows-per-user runs into disposable PostgreSQL CI. Each run first checks SQL bucket sums against the legacy TypeScript mapper path, then records `EXPLAIN (ANALYZE, BUFFERS)` and compares query time with fetching and aggregating the same user's full history in Node.
-- [x] Latest confirmed run [#1312](https://github.com/PurpleeHead/FlowMoney/actions/runs/39595652881) passed on `4c325f6943dd2c586bae2b3808803857604691df`, including the date-aware fixture, all three historical valuation benchmarks, dashboard aggregate benchmarks, rollback tests, and wallet reconciliation checks.
-- [x] Synthetic disposable-PostgreSQL medians (5 measured rounds after warm-up): 1k rows/user per table — SQL 4.78 ms vs Node full-history 14.40 ms; 10k — 38.98 ms vs 128.42 ms; 50k — 121.33 ms vs 652.59 ms. At 50k this is about 5.4× lower median query time. These are same-host microbenchmarks, not production HTTP latency or a service-level guarantee.
+- [x] Latest confirmed CI run [#1315](https://github.com/PurpleeHead/FlowMoney/actions/runs/39596366505) passed on `496598e6bcdd79823529fb56e9f59c79ec809deb`, including the server test/build job, date-aware equivalence, all six 1k/10k/50k aggregate benchmark steps, transaction rollback checks, and wallet reconciliation.
+- [x] Historical valuation aggregate medians (5 measured rounds after warm-up): 1k rows/user per table — SQL 4.78 ms vs Node full-history 14.40 ms; 10k — 38.98 ms vs 128.42 ms; 50k — 121.33 ms vs 652.59 ms. At 50k this is about 5.4× lower median query time.
 - [x] The historical query plans used `Exchange_userId_createdAt_idx` and `Expense_userId_date_idx` at all three sizes. No additional index was needed for this synthetic workload; revisit only if production-like query plans identify a real access-path bottleneck.
-- [ ] End-to-end expense/receipt request timings and before/after serialized response payload sizes remain unmeasured. Do not claim a whole-application performance gain from aggregate microbenchmarks alone.
+- [x] Added a bounded recent-activity query-plan and exchange-segment payload comparison to the dashboard benchmark. At 1k exchanges, latest-100 payload was 34,198 bytes vs 341,076 bytes for full history (89.97% smaller); at 10k, 34,198 vs 3,417,958 bytes (99.00% smaller); at 50k, 34,198 vs 17,089,786 bytes (99.80% smaller). At 50k, median bounded query time was 8.14 ms vs 960.06 ms for fetching the full activity history.
+- [ ] These are synthetic same-host database/serialization measurements, not production HTTP latency. Full end-to-end dashboard response timing and representative production-like data/configuration are still required before making a whole-application performance guarantee.
 - [ ] Production database identity, encrypted backup/restore, legacy wallet reconciliation, approved Render configuration, and target-environment smoke tests remain release blockers. No production database operation, deployment, merge, or live Render configuration change was performed.
 
 ## Fixture implementation update — 2026-10-20
