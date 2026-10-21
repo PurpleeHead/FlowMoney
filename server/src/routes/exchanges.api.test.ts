@@ -46,6 +46,72 @@ function bearer(userId = 'user-1') {
   return `Bearer ${jwt.sign({ id: userId, email: `${userId}@example.com` }, 'exchange-api-test-secret-long-enough-for-jwt-middleware')}`;
 }
 
+describe('direct RUB to VND exchange fees', () => {
+  it('persists and credits the net VND amount after the fee', async () => {
+    let createdData: any;
+    const movements: any[] = [];
+    const tx = {
+      exchange: {
+        create: async ({ data }: any) => {
+          createdData = data;
+          return { id: 'direct-vnd-fee', ...data, createdAt: new Date('2026-10-20T10:00:00.000Z') };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async ({ data }: any) => { movements.push(...data); return { count: data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250000, vndFee: 5000,
+        }),
+      });
+      assert.equal(response.status, 201);
+      const body = await response.json() as any;
+      assert.equal(Number(body.vndReceived), 245000);
+      assert.equal(Number(body.targetReceived), 245000);
+      assert.equal(Number(body.vndFee), 5000);
+    });
+
+    assert.equal(Number(createdData.vndReceived), 245000);
+    assert.equal(Number(createdData.effectiveVndPerRub), 245);
+    assert.deepEqual(movements.map(x => [x.currency, Number(x.amountDelta)]), [
+      ['RUB', -1000],
+      ['VND', 245000],
+    ]);
+  });
+
+  it('rejects a fee that consumes the entire gross VND amount before writing', async () => {
+    let createCalls = 0;
+    const tx = {
+      exchange: { create: async ({ data }: any) => { createCalls += 1; return { id: 'bad-vnd-fee', ...data }; } },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async ({ data }: any) => ({ count: data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250000, vndFee: 250000,
+        }),
+      });
+      assert.equal(response.status, 400);
+      assert.equal(createCalls, 0);
+    });
+  });
+});
+
 describe('direct RUB to USDT top-up without VND rate', () => {
   it('rejects a VND fee in direct-target mode instead of silently ignoring it', async () => {
     let createCalls = 0;
