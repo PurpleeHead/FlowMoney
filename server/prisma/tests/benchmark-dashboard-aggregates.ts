@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { Prisma } from '@prisma/client';
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import type { AddressInfo } from 'node:net';
 import { performance } from 'node:perf_hooks';
+import dashboardRoutes from '../../src/routes/dashboard.js';
 import { prisma } from '../../src/services/prisma.js';
 import { explainDashboardExchangeAggregates, getDashboardExchangeAggregates } from '../../src/lib/dashboard-aggregates.js';
 
@@ -19,6 +23,9 @@ assert.ok(
 
 const suffix = `dashboard-benchmark-${Date.now()}`;
 const userIds: string[] = [];
+const previousJwtSecret = process.env.JWT_SECRET;
+const benchmarkJwtSecret = 'flowmoney-disposable-dashboard-benchmark-secret';
+let httpServer: ReturnType<ReturnType<typeof express>['listen']> | undefined;
 const requestedSampleSize = Number(process.env.DASHBOARD_BENCHMARK_ROWS ?? 10000);
 assert.ok(Number.isInteger(requestedSampleSize) && requestedSampleSize >= 1000 && requestedSampleSize <= 50000,
   'DASHBOARD_BENCHMARK_ROWS must be an integer between 1000 and 50000.');
@@ -209,6 +216,41 @@ try {
       fullActivitySamples.push(full.ms);
     }
   }
+  // Exercise the real Express route over localhost as well as the SQL microbenchmarks.
+  // The route is mounted in isolation, and the benchmark JWT can authenticate only the
+  // disposable fixture user created above.
+  process.env.JWT_SECRET = benchmarkJwtSecret;
+  const app = express();
+  app.use('/api/dashboard', dashboardRoutes);
+  httpServer = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve, reject) => {
+    httpServer!.once('listening', resolve);
+    httpServer!.once('error', reject);
+  });
+  const address = httpServer.address() as AddressInfo;
+  const dashboardUrl = `http://127.0.0.1:${address.port}/api/dashboard`;
+  const dashboardToken = jwt.sign({ id: benchmarkUserId, email: `${suffix}-0@example.invalid` }, benchmarkJwtSecret);
+  const dashboardHttpSamples: number[] = [];
+  let dashboardResponseBytes = 0;
+  let dashboardFullHistoryProjectionBytes = 0;
+  for (let i = 0; i < rounds + 2; i++) {
+    const started = performance.now();
+    const response = await fetch(dashboardUrl, { headers: { authorization: `Bearer ${dashboardToken}` } });
+    const responseText = await response.text();
+    const elapsed = performance.now() - started;
+    assert.equal(response.status, 200, `GET /api/dashboard returned ${response.status}: ${responseText.slice(0, 500)}`);
+    const dashboardBody = JSON.parse(responseText) as { exchanges: Array<{ id: string }> } & Record<string, unknown>;
+    assert.equal(dashboardBody.exchanges.length, Math.min(sampleSize, 100),
+      'real dashboard endpoint must return only the latest 100 exchange activity rows');
+    const projectedFullHistory = {
+      ...dashboardBody,
+      exchanges: toDashboardExchangePayload(fullActivityRows),
+    };
+    dashboardResponseBytes = Buffer.byteLength(responseText);
+    dashboardFullHistoryProjectionBytes = Buffer.byteLength(JSON.stringify(projectedFullHistory));
+    if (i >= 2) dashboardHttpSamples.push(elapsed);
+  }
+
   const jsResult = await fullHistory();
   assert.equal(sqlResult.exchangeCount, jsResult.count, 'SQL and Node benchmark must read the same number of rows');
   for (const key of ['rubUsdtRub', 'rubUsdtUsdt', 'actualVnd', 'actualUsdt', 'confirmedVnd', 'estimatedTargetVnd', 'estimatedUsdt', 'plannedWeightedVnd', 'plannedUsdt'] as const) {
@@ -248,6 +290,21 @@ try {
       boundedLatest100: { median: Number(percentile(boundedActivitySamples, 0.5).toFixed(2)), p95: Number(percentile(boundedActivitySamples, 0.95).toFixed(2)) },
       fullHistoryBaseline: { median: Number(percentile(fullActivitySamples, 0.5).toFixed(2)), p95: Number(percentile(fullActivitySamples, 0.95).toFixed(2)) },
     },
+    dashboardHttp: {
+      currentResponseBytes: dashboardResponseBytes,
+      fullHistoryActivityProjectionBytes: dashboardFullHistoryProjectionBytes,
+      payloadReductionPercent: dashboardFullHistoryProjectionBytes > 0
+        ? Number(((1 - dashboardResponseBytes / dashboardFullHistoryProjectionBytes) * 100).toFixed(2))
+        : 0,
+      activityRows: Math.min(sampleSize, 100),
+      measuredRounds: dashboardHttpSamples.length,
+      latencyMs: {
+        median: Number(percentile(dashboardHttpSamples, 0.5).toFixed(2)),
+        p95: Number(percentile(dashboardHttpSamples, 0.95).toFixed(2)),
+        samples: dashboardHttpSamples.map(x => Number(x.toFixed(2))),
+      },
+      note: 'Measured GET /api/dashboard over localhost against disposable PostgreSQL. Full-history bytes are a response projection replacing only exchanges with all selected exchange rows; they are not a replay of the legacy endpoint latency.',
+    },
     timingsMs: {
       postgresAggregate: { median: Number(percentile(sqlSamples, 0.5).toFixed(2)), p95: Number(percentile(sqlSamples, 0.95).toFixed(2)), samples: sqlSamples.map(x => Number(x.toFixed(2))) },
       fetchAndAggregateInNode: { median: Number(percentile(nodeSamples, 0.5).toFixed(2)), p95: Number(percentile(nodeSamples, 0.95).toFixed(2)), samples: nodeSamples.map(x => Number(x.toFixed(2))) },
@@ -256,6 +313,11 @@ try {
   };
   console.log(JSON.stringify(report, null, 2));
 } finally {
+  if (httpServer) {
+    await new Promise<void>((resolve, reject) => httpServer!.close(error => error ? reject(error) : resolve()));
+  }
+  if (previousJwtSecret === undefined) delete process.env.JWT_SECRET;
+  else process.env.JWT_SECRET = previousJwtSecret;
   for (const userId of userIds) {
     await prisma.user.delete({ where: { id: userId } }).catch((error) => {
       console.error('Benchmark cleanup failed; remove the disposable user manually:', userId, error);
