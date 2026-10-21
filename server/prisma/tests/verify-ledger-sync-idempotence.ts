@@ -1,11 +1,67 @@
 import assert from 'node:assert/strict';
 import { prisma } from '../../src/services/prisma.js';
-import { syncExpenseLedger, syncExchangeLedger } from '../../src/lib/wallet-ledger.js';
+import { expenseLedgerDrafts, exchangeLedgerDrafts, syncExpenseLedger, syncExchangeLedger } from '../../src/lib/wallet-ledger.js';
 
 const suffix = `ledger-sync-idempotence-${Date.now()}`;
 let userId: string | undefined;
 let expenseId: string | undefined;
 let exchangeId: string | undefined;
+
+
+function verifyMalformedLegacyLedgerDrafts() {
+  const occurredAt = new Date('2026-10-18T08:00:00.000Z');
+  const expenseBase = {
+    id: 'pure-expense', userId: 'pure-user', amount: 100,
+    currency: 'RUB', usdtCharged: 4, date: occurredAt,
+  };
+  assert.deepEqual(
+    expenseLedgerDrafts(expenseBase).map(row => [row.currency, row.amountDelta]),
+    [['RUB', -100]],
+    'A stale card debit on a RUB expense must not change the ledger currency',
+  );
+  assert.deepEqual(
+    expenseLedgerDrafts({ ...expenseBase, currency: 'VND', usdtCharged: Number.NaN }).map(row => row.currency),
+    [],
+    'A present but malformed VND card debit must not silently become a cash debit',
+  );
+
+  const exchangeBase = {
+    id: 'pure-exchange', userId: 'pure-user', mode: 'RUB_VND',
+    rubSpent: 500, usdtReceived: 10, vndReceived: null,
+    targetCurrency: 'VND', targetReceived: 50_000, createdAt: occurredAt,
+  };
+  assert.deepEqual(
+    exchangeLedgerDrafts({ ...exchangeBase, vndFee: 1000 }).map(row => [row.currency, row.amountDelta]),
+    [['RUB', -500]],
+    'Gross legacy VND must not be credited when net outcome is unknown and a fee exists',
+  );
+  assert.deepEqual(
+    exchangeLedgerDrafts({ ...exchangeBase, vndFee: Number.NaN }).map(row => [row.currency, row.amountDelta]),
+    [['RUB', -500]],
+    'A malformed legacy fee must not authorize a gross VND fallback',
+  );
+  assert.deepEqual(
+    exchangeLedgerDrafts({ ...exchangeBase, vndFee: 0 }).map(row => [row.currency, row.amountDelta]),
+    [['RUB', -500], ['VND', 50_000]],
+    'A direct exchange with no fee may use the legacy gross target only when net VND is absent',
+  );
+  assert.deepEqual(
+    exchangeLedgerDrafts({
+      ...exchangeBase, mode: 'LEGACY_UNKNOWN', vndReceived: 25_000, vndFee: 0,
+    }).map(row => [row.currency, row.amountDelta]),
+    [['RUB', -500]],
+    'Unknown exchange modes must not create indirect USDT/VND receipt legs',
+  );
+  assert.deepEqual(
+    exchangeLedgerDrafts({
+      ...exchangeBase, mode: 'RUB_TARGET', targetCurrency: 'EUR', targetReceived: 30, vndFee: 0,
+    }).map(row => [row.currency, row.amountDelta]),
+    [['RUB', -500]],
+    'Foreign target currencies must not create unsupported wallet currency legs',
+  );
+}
+
+verifyMalformedLegacyLedgerDrafts();
 
 async function movements(ownerId: string, prefix: string) {
   return prisma.walletMovement.findMany({
