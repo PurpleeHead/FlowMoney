@@ -213,3 +213,10 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Checked historical aggregate fixture compatibility against the actual `numeric(p,s)` schema and removed unsupported Infinity inserts. The PostgreSQL fixture separately verifies that the finite-safe predicate excludes NaN and both Infinity signs on unconstrained `numeric`, then checks persisted NaN, cutoff boundaries, user isolation, and weighted-total equivalence.
 - [ ] The latest fixture and predicate-test changes (code commit `9f5b61b249f47c1369a2f5c60a77e90d9458b591`) still need a confirmed CI run; repository write success is not test evidence.
 - [ ] Production release blockers remain unchanged: target database identity, encrypted backup and isolated restore, legacy wallet reconciliation, owner-approved Render configuration, and target-environment smoke tests. No production database operation, deployment, merge, or live Render configuration change was performed.
+
+## PostgreSQL numeric fixture correction — 2026-10-21
+
+- [x] Removed unsupported `Infinity` inserts from precision-constrained `Expense` columns in the date-aware aggregate fixture; expected same-user cutoff row count is now eight.
+- [x] Kept coverage for `NaN`, `Infinity`, and `-Infinity` using an unconstrained PostgreSQL `numeric` expression, and retained persisted `NaN` cases for actual schema aggregate equivalence.
+- [ ] CI for fixture correction commit `e85a6faa10e1b870f2c9b5f061973a3a263ba46e` and the follow-up documentation commits is not yet confirmed; no green result is inferred from empty status endpoints.
+- [ ] PR #83 remains Draft and unmerged. Production database identity, encrypted backup and isolated restore, wallet reconciliation, approved Render configuration, and production smoke tests remain blockers.
