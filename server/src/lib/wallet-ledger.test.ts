@@ -186,6 +186,18 @@ describe('wallet ledger mapping', () => {
     assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [['RUB', -500]]);
   });
 
+  it('preserves one effective timestamp across every emitted exchange currency leg', () => {
+    const createdAt = new Date('2026-10-19T12:34:56.000Z');
+    const drafts = exchangeLedgerDrafts({
+      id: 'x-ledger-time', userId: 'u1', mode: 'RUB_USDT_VND', rubSpent: 8300,
+      usdtReceived: 93.7853, vndReceived: 2_300_000, targetCurrency: 'VND',
+      targetReceived: null, createdAt,
+    });
+
+    assert.equal(drafts.length, 3);
+    assert.ok(drafts.every(draft => draft.occurredAt === createdAt));
+  });
+
   it('does not create a RUB credit for an invalid legacy RUB_TARGET record', () => {
     const drafts = exchangeLedgerDrafts({
       id: 'x-invalid', userId: 'u1', mode: 'RUB_TARGET', rubSpent: 200,
