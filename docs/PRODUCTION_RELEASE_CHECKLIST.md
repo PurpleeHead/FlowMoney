@@ -181,3 +181,11 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [ ] Added a follow-up guard so expense valuation helpers return `null` if otherwise valid finite inputs overflow during multiplication/division. Regression coverage includes USDT expenses, card debits, VND estimates, and direct VND/RUB valuation; CI for this follow-up is pending.
 - [ ] Normalized whitespace-padded VND target currency before equivalent conversion, so values like ` vNd ` use the base-currency rate of 1 rather than requiring a supplied conversion rate. Regression coverage and CI are pending.
 - [ ] These changes are money-calculation hardening only. Historical expense/receipt date-aware SQL aggregation and all operational production release gates remain open. No production DB operation, deployment, or live Render configuration change was performed.
+
+
+## Follow-up numeric boundary verification — 2026-10-21
+
+- [x] CI #1292–#1296 passed on the money valuation overflow guards and VND target normalization, including both `verify` and `verify-migrations`: [#1292](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534159470), [#1293](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534168132), [#1294](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534182186), [#1295](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534189347), [#1296](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534168132).
+- [ ] Additional regression coverage now checks invalid direct VND/RUB observations, overflow in card-derived weighted totals, and underflow of a derived VND/USDT rate. CI for these newest commits is pending.
+- [ ] Historical date-aware SQL aggregates for expense/receipt valuations remain unimplemented. Preserve per-operation `createdAt <= expenseDate` / `date <= expenseDate`, user isolation, weighted totals, direct VND legacy fallback, and unknown RUB/USDT basis behavior before migrating route callers.
+- [ ] Production DB identity, encrypted backup plus isolated restore, legacy wallet reconciliation, Render configuration approval, and production smoke tests remain blockers. No production database operation, deployment, or live Render configuration change was performed.
