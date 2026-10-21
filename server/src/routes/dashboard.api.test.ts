@@ -254,9 +254,11 @@ function exchangeFixture() {
 
 describe('dashboard bounded activity and all-history summary', () => {
   it('returns only the latest 100 exchanges without truncating the all-history balance', async () => {
-    const allHistory = Array.from({ length: 120 }, (_, index) => ({
+    // Simulate storage order that does not match the requested activity order. Every
+    // third row shares a timestamp so the id tiebreaker is required for deterministic pages.
+    const storedRows = Array.from({ length: 120 }, (_, index) => ({
       ...exchangeFixture(),
-      id: `history-${String(119 - index).padStart(3, '0')}`,
+      id: `history-${String(index).padStart(3, '0')}`,
       mode: 'RUB_VND',
       targetCurrency: 'VND',
       rubSpent: 100,
@@ -264,14 +266,17 @@ describe('dashboard bounded activity and all-history summary', () => {
       targetVndEquivalent: 1000,
       targetToVndRate: null,
       vndReceived: 1000,
-      createdAt: new Date(Date.UTC(2026, 9, 21, 12, 0, 0) - index * 1000),
+      createdAt: new Date(Date.UTC(2026, 9, 21, 12, 0, 0) - Math.floor(index / 3) * 1000),
     }));
+    const allHistory = [...storedRows].sort((a, b) =>
+      b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
     dashboardExchangeAggregateRows = allHistory;
     expenseModel.findMany = async () => [];
     exchangeModel.findMany = async (args: any) => {
       assert.equal(args.take, 100);
       assert.deepEqual(args.orderBy, [{ createdAt: 'desc' }, { id: 'desc' }]);
-      return allHistory.slice(0, args.take);
+      return [...storedRows].sort((a, b) =>
+        b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id)).slice(0, args.take);
     };
 
     await withApi(async baseUrl => {
