@@ -177,6 +177,26 @@ try {
     'excluding an edited expense removes its USDT debit from historical card aggregates',
   );
 
+  const ratesWithEditedExpense = calculateDateAwareValuationRates(aggregate);
+  const ratesWithoutEditedExpense = calculateDateAwareValuationRates(aggregateWithoutFirstCard);
+  assert.equal(ratesWithEditedExpense.rubPerUsdt, ratesWithoutEditedExpense.rubPerUsdt,
+    'excluding a card expense must not change the RUB/USDT exchange rate');
+  near(
+    ratesWithEditedExpense.vndPerUsdt!,
+    Number(aggregate.cardVnd) / Number(aggregate.cardUsdt),
+    'card purchases take precedence for VND/USDT before edit',
+  );
+  near(
+    ratesWithoutEditedExpense.vndPerUsdt!,
+    Number(aggregateWithoutFirstCard.cardVnd) / Number(aggregateWithoutFirstCard.cardUsdt),
+    'remaining card purchases retain precedence for VND/USDT after edit',
+  );
+  assert.notEqual(
+    ratesWithEditedExpense.vndPerUsdt,
+    ratesWithoutEditedExpense.vndPerUsdt,
+    'excluding an edited card expense must recompute the weighted historical card rate',
+  );
+
   for (const field of [
     'rubUsdtRub', 'rubUsdtUsdt', 'actualVnd', 'actualUsdt',
     'directRub', 'directVnd', 'actualRubForVnd', 'actualVndForRub',
