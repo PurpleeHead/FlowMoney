@@ -301,6 +301,7 @@ try {
 
   const observedExchangeRows = mapActualVndUsdtExchanges(exchangeRows.map(x => ({
     mode: x.mode,
+    rubSpent: Number(x.rubSpent),
     usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
     vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
   })));
