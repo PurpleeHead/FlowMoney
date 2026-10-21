@@ -207,3 +207,14 @@ Implementation should expose a small typed helper returning only the required we
 CI runs [#1297](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534615332) through [#1301](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534668662) have now all completed successfully. This closes the pending verification note for the invalid direct/card observations and derived-rate underflow checks. The latest checked head is `630875104b075f1553e89bc95118d5bf3fa959dc`.
 
 The next implementation work remains date-aware SQL aggregation for expense create/edit and receipt save. Keep the current Node reference path available in tests until a PostgreSQL integration fixture proves matching weighted totals, cutoff semantics, normalized currency handling, direct-VND legacy fallback precedence, and user isolation. The dashboard all-history query is not a safe drop-in replacement for valuation-date queries. No production DB, Render configuration, or deployment changes were made.
+
+
+## Follow-up verification — 2026-10-21 10:00 ICT
+
+- [x] CI #1302 passed: [release checklist status reconciliation](https://github.com/PurpleeHead/FlowMoney/actions/runs/39535514237).
+- [x] CI #1303 passed: [numeric hardening verification documentation](https://github.com/PurpleeHead/FlowMoney/actions/runs/39535523857).
+- [x] CI #1304 passed on `90d3cfc786f05fdced2fb20e0be30f2998d74bb2`: [legacy direct-VND field precedence regression test](https://github.com/PurpleeHead/FlowMoney/actions/runs/39535564853).
+
+The legacy direct-VND regression locks down the existing nullish-fallback contract: use `targetVndEquivalent`, then `targetReceived`, then `vndReceived`. A present zero is not treated as missing and must not silently fall through to a later positive field. Target currency matching is normalized before interpreting the row as a VND target.
+
+Next engineering step remains the date-aware aggregate helper, not a route-wide rewrite. Build the PostgreSQL helper and mixed-mode fixture first; prove equality against the existing Node helpers for cutoff boundaries, other-user isolation, weighted ratios, invalid/overflow observations, and legacy field precedence. Then migrate one caller at a time and retain route-level regression tests. No production DB, Render configuration, or deployment changes were made.
