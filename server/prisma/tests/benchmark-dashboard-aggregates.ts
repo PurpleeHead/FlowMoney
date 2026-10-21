@@ -291,8 +291,8 @@ try {
         : 0,
     },
     activityQueryTimingsMs: {
-      boundedLatest100: { median: Number(percentile(boundedActivitySamples, 0.5).toFixed(2)), p95: Number(percentile(boundedActivitySamples, 0.95).toFixed(2)) },
-      fullHistoryBaseline: { median: Number(percentile(fullActivitySamples, 0.5).toFixed(2)), p95: Number(percentile(fullActivitySamples, 0.95).toFixed(2)) },
+      boundedLatest100: { median: Number(percentile(boundedActivitySamples, 0.5).toFixed(2)), max: Number(Math.max(...boundedActivitySamples).toFixed(2)) },
+      fullHistoryBaseline: { median: Number(percentile(fullActivitySamples, 0.5).toFixed(2)), max: Number(Math.max(...fullActivitySamples).toFixed(2)) },
     },
     dashboardHttp: {
       currentResponseBytes: dashboardResponseBytes,
@@ -304,14 +304,14 @@ try {
       measuredRounds: dashboardHttpSamples.length,
       latencyMs: {
         median: Number(percentile(dashboardHttpSamples, 0.5).toFixed(2)),
-        p95: Number(percentile(dashboardHttpSamples, 0.95).toFixed(2)),
+        max: Number(Math.max(...dashboardHttpSamples).toFixed(2)),
         samples: dashboardHttpSamples.map(x => Number(x.toFixed(2))),
       },
       note: 'Measured GET /api/dashboard over localhost against disposable PostgreSQL. Full-history bytes are a response projection replacing only exchanges with all selected exchange rows; they are not a replay of the legacy endpoint latency.',
     },
     timingsMs: {
-      postgresAggregate: { median: Number(percentile(sqlSamples, 0.5).toFixed(2)), p95: Number(percentile(sqlSamples, 0.95).toFixed(2)), samples: sqlSamples.map(x => Number(x.toFixed(2))) },
-      fetchAndAggregateInNode: { median: Number(percentile(nodeSamples, 0.5).toFixed(2)), p95: Number(percentile(nodeSamples, 0.95).toFixed(2)), samples: nodeSamples.map(x => Number(x.toFixed(2))) },
+      postgresAggregate: { median: Number(percentile(sqlSamples, 0.5).toFixed(2)), max: Number(Math.max(...sqlSamples).toFixed(2)), samples: sqlSamples.map(x => Number(x.toFixed(2))) },
+      fetchAndAggregateInNode: { median: Number(percentile(nodeSamples, 0.5).toFixed(2)), max: Number(Math.max(...nodeSamples).toFixed(2)), samples: nodeSamples.map(x => Number(x.toFixed(2))) },
     },
     note: 'Disposable local database only. Compare timings on the same host and database; this microbenchmark is directional, not a production latency guarantee.',
   };
