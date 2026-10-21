@@ -84,8 +84,9 @@ try {
   await prisma.exchange.create({
     data: { userId: secondUserId, mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1, usdtReceived: 1, vndReceived: 999_999 },
   });
-  // PostgreSQL numeric accepts NaN/Infinity even though the application helpers
-  // intentionally reject non-finite JavaScript numbers. Exercise the real DB path.
+  // PostgreSQL numeric columns with declared precision accept NaN but reject Infinity.
+  // Exercise persisted NaN values on the real schema; SQL also defensively excludes Infinity
+  // should the column type ever change to unconstrained numeric.
   const [badIndirect, badDirectUsdt, badDirectVnd, zeroRubActual, negativeRubPlanned, zeroUsdtActual, badPlanningRate] = await Promise.all([
     prisma.exchange.create({ data: {
       userId: nonFiniteUser.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
@@ -138,8 +139,6 @@ try {
       { id: suffix + '-purchase-stale-rub', userId: nonFiniteUser.id, title: 'Stale RUB conversion', category: 'Test', amount: 100, currency: 'RUB', amountVnd: 9_000_000, usdtCharged: 1, date: new Date('2026-10-12T08:00:00Z') },
       { id: suffix + '-purchase-nan-vnd', userId: nonFiniteUser.id, title: 'Malformed VND basis', category: 'Test', amount: 100, currency: 'VND', amountVnd: 1, usdtCharged: 2, date: new Date('2026-10-13T08:00:00Z') },
       { id: suffix + '-purchase-nan-usdt', userId: nonFiniteUser.id, title: 'Malformed USDT debit', category: 'Test', amount: 100, currency: 'VND', amountVnd: 20_000, usdtCharged: 1, date: new Date('2026-10-14T08:00:00Z') },
-      { id: suffix + '-purchase-infinity-vnd', userId: nonFiniteUser.id, title: 'Infinite VND basis', category: 'Test', amount: 100, currency: 'VND', amountVnd: 1, usdtCharged: 2, date: new Date('2026-10-15T08:00:00Z') },
-      { id: suffix + '-purchase-infinity-usdt', userId: nonFiniteUser.id, title: 'Infinite USDT debit', category: 'Test', amount: 100, currency: 'VND', amountVnd: 20_000, usdtCharged: 1, date: new Date('2026-10-16T08:00:00Z') },
     ],
   });
   await prisma.$executeRaw`
@@ -149,14 +148,6 @@ try {
   await prisma.$executeRaw`
     UPDATE "Expense" SET "usdtCharged" = 'NaN'::numeric
     WHERE "id" = ${suffix + '-purchase-nan-usdt'}
-  `;
-  await prisma.$executeRaw`
-    UPDATE "Expense" SET "amountVnd" = 'Infinity'::numeric
-    WHERE "id" = ${suffix + '-purchase-infinity-vnd'}
-  `;
-  await prisma.$executeRaw`
-    UPDATE "Expense" SET "usdtCharged" = 'Infinity'::numeric
-    WHERE "id" = ${suffix + '-purchase-infinity-usdt'}
   `;
   const purchaseAggregate = await getDashboardCardPurchaseAggregates(nonFiniteUser.id);
   near(purchaseAggregate.amountVnd, 150_000, 'dashboard card aggregate normalizes padded/case-insensitive VND and excludes stale or non-finite rows');
