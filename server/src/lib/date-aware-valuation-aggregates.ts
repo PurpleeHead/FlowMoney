@@ -86,6 +86,7 @@ export async function getDateAwareValuationAggregate(
         COALESCE(SUM("usdtCharged") FILTER (WHERE "amountVnd" > 0 AND "usdtCharged" > 0), 0) AS "cardUsdt"
       FROM "Expense"
       WHERE "userId" = ${userId}
+        AND upper(trim("currency")) = 'VND'
         AND "date" <= ${valuationDate}
         AND "usdtCharged" IS NOT NULL
         ${excludeExpenseId ? Prisma.sql`AND "id" <> ${excludeExpenseId}` : Prisma.empty}
