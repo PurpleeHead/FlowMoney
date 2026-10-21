@@ -143,11 +143,16 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   // as PostgreSQL. This keeps route tests independent of a live database.
   dashboardAggregateArgs = [];
   dashboardExchangeRows = [];
+  let dashboardExchangeRowsPromise: Promise<any[]> | null = null;
   const configuredExchangeFindMany = exchangeModel.findMany;
-  exchangeModel.findMany = (args: any) => configuredExchangeFindMany(args).then((rows: any[]) => {
-    dashboardExchangeRows = rows;
-    return rows;
-  });
+  exchangeModel.findMany = (args: any) => {
+    const pending = configuredExchangeFindMany(args).then((rows: any[]) => {
+      dashboardExchangeRows = rows;
+      return rows;
+    });
+    if (args.take === 100) dashboardExchangeRowsPromise = pending;
+    return pending;
+  };
   dashboardRawQueries = [];
   Object.defineProperty(prisma, '$queryRaw', {
     configurable: true,
@@ -182,8 +187,9 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
       // The aggregate query runs concurrently with the recent-activity query. Resolve
       // the fixture independently instead of relying on shared state that may not yet
       // have been populated by the other Promise.all branch.
-      const userId = (query?.values ?? []).find((value: unknown) => value === 'dashboard-user') ?? 'dashboard-user';
-      const exchangeRows = await exchangeModel.findMany({ where: { userId } });
+      const exchangeRows = dashboardExchangeRowsPromise
+        ? await dashboardExchangeRowsPromise
+        : dashboardExchangeRows;
       return mockDashboardExchangeAggregates(exchangeRows);
     },
   });
