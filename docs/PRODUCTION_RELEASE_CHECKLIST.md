@@ -200,6 +200,16 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 - [x] Replaced Prisma aggregate filters that excluded only PostgreSQL numeric NaN with a single user-scoped SQL aggregate for all-time and current-month VND totals. The SQL excludes NaN, Infinity, and -Infinity before summing.
 - [x] Expanded dashboard API regression coverage with positive and negative infinity, and added PostgreSQL fixture coverage for infinite card VND/USDT amounts in both dashboard and date-aware card aggregates.
-- [ ] CI has not been confirmed for the current work-branch head; latest commit is `637b81777569a8b4a0f83044d34c85c084674164`. The GitHub status endpoint currently returns no status records, so this change must not be described as verified.
+- [ ] CI was not confirmed for the dashboard hardening code commit `637b81777569a8b4a0f83044d34c85c084674164` at the time of this entry. A later date-aware fixture extension is recorded below; do not infer a passing run from an empty status endpoint.
 - [ ] Date-aware aggregate helpers and PostgreSQL fixtures exist, but expense create/edit and receipt-save route callers still need to adopt the helper; route-level equivalence remains open.
 - [ ] Production database identity, encrypted backup plus isolated restore, legacy wallet reconciliation, owner-approved Render configuration, and target-environment smoke tests remain release blockers. No production database operation, deployment, merge, or live Render configuration change was performed.
+
+
+## Date-aware route adoption reconciliation — 2026-10-21
+
+- [x] Re-inspected the current branch: expense POST and PATCH call `getDateAwareValuationAggregate` with the effective expense date; PATCH excludes the edited expense from card-rate evidence.
+- [x] Receipt POST calls the same aggregate using its receipt valuation timestamp before creating the receipt and expenses in one transaction.
+- [x] Existing API tests assert a single aggregate query, authenticated-user scoping, effective-date cutoffs, PATCH self-exclusion, and preservation of actual USDT debits. Existing PostgreSQL fixture compares the aggregate numerators/denominators and derived rates against legacy mappers.
+- [x] Extended the disposable PostgreSQL historical valuation fixture with positive Infinity values for RUB spent, USDT received, and VND received. These rows must be excluded without changing expected weighted totals.
+- [ ] The new Infinity fixture extension still needs a confirmed CI run; repository write success is not test evidence.
+- [ ] Production release blockers remain unchanged: target database identity, encrypted backup and isolated restore, legacy wallet reconciliation, owner-approved Render configuration, and target-environment smoke tests. No production database operation, deployment, merge, or live Render configuration change was performed.
