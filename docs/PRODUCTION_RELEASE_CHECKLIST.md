@@ -227,3 +227,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Existing Dashboard API tests cover all-time/month totals, weighted card rates, balance values, and non-finite expense inputs; they should fail if the route cannot resolve the aggregate outputs.
 - [ ] CI verification for the fix commit `43bc4a4c8253f33266a766cf63ceb730010f974d` and the latest fixture/docs commits is not yet confirmed through the available status endpoint.
 - [ ] No production deployment or database operation was performed. PR #83 remains Draft/unmerged and production operational gates remain open.
+
+
+## Dashboard aggregate regression CI reconciliation — 2026-10-21
+
+- [x] CI run [#1310](https://github.com/PurpleeHead/FlowMoney/actions/runs/39594824374) passed on code commit `19c62ba8f33edf225df764048b8711b0a2941cc0`: all 262 server tests passed, TypeScript production build passed, and disposable-PostgreSQL migration/equivalence, transaction rollback, wallet reconciliation, and 1k/10k/50k dashboard aggregate benchmark steps passed.
+- [x] Corrected dashboard API test expectations to match the SQL-aggregate architecture instead of the retired pair of Prisma aggregate calls; parameterized SQL assertions now check Prisma's actual placeholder format and authenticated user value.
+- [x] Made the dashboard exchange aggregate test double wait on the same bounded recent-activity fixture, avoiding a race between parallel `Promise.all` calls. Corrected the weighted-rate fixture to explicitly model indirect `RUB_USDT_VND` records instead of inheriting the direct-target mode from a generic fixture.
+- [x] These were test-harness corrections; no production code changes were needed after the aggregate result-alignment fix. The prior red runs are superseded by the passing run above.
+- [ ] Production database identity, encrypted backup plus isolated restore drill, legacy wallet reconciliation against a production snapshot, approved Render configuration reconciliation, and target-environment smoke tests remain release blockers. PR #83 remains Draft/unmerged. No production database operation, deployment, or live Render configuration change was performed.
