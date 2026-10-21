@@ -266,11 +266,13 @@ export function mapActualVndExchanges(exchanges: Array<{
 /** Only completed RUB→USDT→VND exchanges are observations of the VND/USDT rate. */
 export function mapActualVndUsdtExchanges(exchanges: Array<{
   mode: string;
+  rubSpent: number;
   usdtReceived?: number | null;
   vndReceived?: number | null;
 }>): Array<{ usdtReceived: number; vndReceived: number }> {
   return exchanges.flatMap((exchange) => {
     if (exchange.mode !== 'RUB_USDT_VND' ||
+        !Number.isFinite(exchange.rubSpent) || exchange.rubSpent <= 0 ||
         exchange.usdtReceived == null || exchange.vndReceived == null ||
         !Number.isFinite(exchange.usdtReceived) || exchange.usdtReceived <= 0 ||
         !Number.isFinite(exchange.vndReceived) || exchange.vndReceived <= 0) return [];
