@@ -132,8 +132,8 @@ try {
   near(nonFiniteAggregate.plannedUsdt, 3, 'planning denominator excludes invalid actual values');
   near(nonFiniteAggregate.confirmedVnd, 900_000, 'finite received VND is retained for balance even when the RUB/USDT cost basis is invalid');
   near(nonFiniteAggregate.estimatedUsdt, 3, 'invalid actual VND remains an unpriced indirect USDT top-up');
-  near(nonFiniteAggregate.rateExchangeRub, 350, 'VND/RUB observations require a positive RUB basis and VND outcome, not a USDT field');
-  near(nonFiniteAggregate.rateExchangeVnd, 800_000, 'finite VND outcomes remain valid VND/RUB evidence even when the legacy USDT field is zero');
+  near(nonFiniteAggregate.rateExchangeRub, 50, 'non-finite canonical direct VND is not replaced by a legacy target amount in the weighted rate');
+  near(nonFiniteAggregate.rateExchangeVnd, 300_000, 'a valid indirect VND outcome remains VND/RUB evidence even when the legacy USDT field is zero');
   assert.equal(nonFiniteAggregate.hasUnpricedUsdtTopUp, true);
   assert.equal(nonFiniteAggregate.hasUnknownTopUpAmount, true, 'a malformed direct USDT amount must be distinguishable from a known amount awaiting VND valuation');
   for (const [key, value] of Object.entries(nonFiniteAggregate)) {
