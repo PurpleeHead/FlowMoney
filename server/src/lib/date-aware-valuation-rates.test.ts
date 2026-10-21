@@ -308,6 +308,47 @@ describe('date-aware valuation rates', () => {
     assert.deepEqual(scaled, baseline);
   });
 
+  it('does not convert card VND/USDT observations into VND/RUB without a known RUB/USDT cost basis', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      directRub: 2_000,
+      directVnd: 600_000,
+      cardVnd: 1_000_000,
+      cardUsdt: 10,
+    }));
+
+    assert.equal(rates.rubPerUsdt, null);
+    assert.equal(rates.vndPerUsdt, 100_000);
+    assert.equal(rates.vndPerRub, 300,
+      'card purchases cannot contribute RUB cost until their USDT debit has a factual RUB conversion');
+  });
+
+  it('weights card purchases by their actual USDT debits when a factual RUB/USDT rate exists', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 16_600,
+      rubUsdtUsdt: 200,
+      directRub: 1_000,
+      directVnd: 300_000,
+      cardVnd: 750_000,
+      cardUsdt: 25,
+    }));
+
+    assert.equal(rates.rubPerUsdt, 83);
+    assert.equal(rates.vndPerUsdt, 30_000);
+    assert.equal(rates.vndPerRub, 1_050_000 / (1_000 + 25 * 83));
+  });
+
+  it('returns null rather than a misleading rate when all weighted RUB cost overflows', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      directRub: Number.MAX_VALUE,
+      directVnd: Number.MAX_VALUE,
+      actualRubForVnd: Number.MAX_VALUE,
+      actualVndForRub: Number.MAX_VALUE,
+    }));
+
+    assert.equal(rates.vndPerRub, null,
+      'a finite-looking ratio must not be returned after the underlying aggregate cost overflowed');
+  });
+
   it('uses weighted totals rather than averaging individual observed rates arithmetically', () => {
     const rates = calculateDateAwareValuationRates(aggregate({
       rubUsdtRub: 8_300,
