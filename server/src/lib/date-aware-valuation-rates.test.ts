@@ -380,8 +380,8 @@ describe('date-aware valuation rates', () => {
     assert.equal(rates.rubPerUsdt, 83);
     assert.equal(rates.vndPerUsdt, 25_000,
       'malformed card aggregate must not suppress a valid actual-exchange VND/USDT rate');
-    assert.equal(rates.vndPerRub, (50_000 + 500_000) / (200 + 20 * 83),
-      'malformed direct VND aggregate must be ignored while valid indirect and card evidence remains');
+    assert.equal(rates.vndPerRub, 50_000 / 200,
+      'malformed direct and card aggregates must be ignored while valid indirect evidence remains');
     for (const [name, value] of Object.entries(rates)) {
       assert.ok(value == null || Number.isFinite(value), `${name} must be null or finite`);
     }
