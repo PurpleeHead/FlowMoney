@@ -236,3 +236,13 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Made the dashboard exchange aggregate test double wait on the same bounded recent-activity fixture, avoiding a race between parallel `Promise.all` calls. Corrected the weighted-rate fixture to explicitly model indirect `RUB_USDT_VND` records instead of inheriting the direct-target mode from a generic fixture.
 - [x] These were test-harness corrections; no production code changes were needed after the aggregate result-alignment fix. The prior red runs are superseded by the passing run above.
 - [ ] Production database identity, encrypted backup plus isolated restore drill, legacy wallet reconciliation against a production snapshot, approved Render configuration reconciliation, and target-environment smoke tests remain release blockers. PR #83 remains Draft/unmerged. No production database operation, deployment, or live Render configuration change was performed.
+
+
+## Historical valuation benchmark and CI reconciliation — 2026-10-21
+
+- [x] CI run [#1312](https://github.com/PurpleeHead/FlowMoney/actions/runs/39595652881) passed on `4c325f6943dd2c586bae2b3808803857604691df`: server test/build job and disposable-PostgreSQL verification/benchmark job both succeeded.
+- [x] Corrected the historical aggregate query-template syntax after the first benchmark-enabled run exposed a parse error. Re-ran CI; SQL equivalence, date cutoff, user isolation, and migration/transaction checks pass.
+- [x] Added guarded, disposable-database-only date-aware aggregate benchmarks at 1k, 10k, and 50k exchange/expense rows per user, including `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and SQL-vs-TypeScript equivalence assertions.
+- [x] Recorded benchmark results in `docs/DASHBOARD_AGGREGATE_EQUIVALENCE.md`: at 50k rows/table, SQL aggregate median 121.33 ms vs fetch-and-aggregate in TypeScript 652.59 ms in CI's disposable PostgreSQL environment. This is directional microbenchmark evidence, not a production latency guarantee.
+- [ ] End-to-end dashboard response payload/latency comparisons and production-like database measurements remain open.
+- [ ] Production release blockers remain: verify target database identity, encrypted backup and isolated restore drill, reconcile legacy wallet balances against an approved production snapshot, confirm owner-approved Render configuration, and complete target-environment smoke tests. PR #83 remains Draft/unmerged; no production database or live deployment operation was performed.
