@@ -94,3 +94,10 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - Expanded the PostgreSQL equivalence fixture with stale VND fields on direct USDT and foreign-target rows, unknown-mode rows, an unknown-mode planning-only row, and an invalid legacy RUB target. Updated the Node-side benchmark reference and dashboard API aggregate mock to use the same explicit eligibility rules.
 - [ ] CI must pass on the updated work branch before this audit is considered verified. The benchmark remains a disposable-database microbenchmark, not a production latency guarantee.
 - Production database access, migrations, merge, and deployment remain outside this work.
+
+## Non-finite numeric hardening — 2026-10-21
+
+- The dashboard exchange aggregate now derives finite-safe numeric values in a user-scoped CTE before calculating sums, weighted rates, and estimates. PostgreSQL `numeric` supports `NaN`, which compares greater than ordinary numbers; relying on `> 0` alone can therefore poison sums and rates.
+- Non-finite values are treated as unavailable for that numeric field, not as evidence of an actual receipt. Other valid fields on the same exchange can still contribute when the legacy TypeScript logic permits it; for example, a finite direct VND target amount can be used when its canonical equivalent is malformed.
+- The disposable PostgreSQL equivalence fixture now creates malformed numeric values with raw SQL and asserts that every numeric aggregate remains finite, actual outcomes exclude invalid amounts, and valid planning estimates remain separate.
+- [ ] CI must pass on the updated work branch before this audit is considered verified. Production database and release operations remain untouched.
