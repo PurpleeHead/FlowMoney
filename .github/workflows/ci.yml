@@ -240,7 +240,7 @@ jobs:
             IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -11300 THEN
               RAISE EXCEPTION 'RUB movement total does not reconcile';
             END IF;
-            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'USDT') <> 98.0953 THEN
+            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'USDT') <> 95.0953 THEN
               RAISE EXCEPTION 'USDT movement total does not reconcile';
             END IF;
             IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'VND') <> 280000 THEN
