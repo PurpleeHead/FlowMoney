@@ -170,3 +170,18 @@ Workflow [39531463974](https://github.com/PurpleeHead/FlowMoney/actions/runs/395
 This run is approximately **5.5× faster by median** for the SQL aggregate path. The full aggregate query plan used the existing `Exchange_userId_createdAt_idx` index via a Bitmap Index Scan, then a Bitmap Heap Scan of 10,000 matching rows. The aggregate node took 19.839 ms; the heap scan node took 2.001 ms. There were 190 shared buffer hits, zero shared reads, and no temporary blocks. The table contained 50,000 rows split evenly among five users; this remains synthetic CI data.
 
 The measured result supports retaining the current user-scoped aggregate design and existing index; it does **not** justify adding an index or promise the same speedup in production. The “p95” column above is the maximum of seven samples, not a stable statistical p95. Full HTTP latency, response payload size, and measurements at multiple history sizes remain unverified.
+
+
+## Scaling benchmark — 1k, 10k, and 50k rows per user
+
+Workflow [39531588634](https://github.com/PurpleeHead/FlowMoney/actions/runs/39531588634) passed on commit `99a4ecd8f34f42e1e69a9146c94a989c95ef487a`. CI ran the same guarded benchmark at three history sizes, with five synthetic users at each size and the aggregate targeted to one user.
+
+| Rows for target user | Total fixture rows | SQL aggregate median | Fetch + Node aggregate median | Median ratio |
+|---:|---:|---:|---:|---:|
+| 1,000 | 5,000 | 3.26 ms | 8.36 ms | 2.6× |
+| 10,000 | 50,000 | 12.74 ms | 95.60 ms | 7.5× |
+| 50,000 | 250,000 | 35.57 ms | 547.65 ms | 15.4× |
+
+All three runs verified the selected aggregate totals against the Node-side reference before timing. PostgreSQL used the existing `Exchange_userId_createdAt_idx` for the user filter at all sizes. At 50,000 rows for the target user, the exact aggregate statement took about 30.4 ms in the captured plan and touched 946 shared buffers, with zero shared reads.
+
+These results show the expected benefit of not transferring every historical exchange row to Node.js as user history grows. They remain CI microbenchmarks on one ephemeral PostgreSQL instance with synthetic, uniformly distributed user histories. They do not establish production response latency, cold-cache behavior, multi-tenant skew, or a service-level p95. The reported “p95” field is the maximum of seven samples and is retained only for trend visibility.
