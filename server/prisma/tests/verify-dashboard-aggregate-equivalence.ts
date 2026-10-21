@@ -220,9 +220,10 @@ try {
       END), 0) AS "estimatedUsdt",
       SUM("usdtReceived" * "planningVndPerUsdt") FILTER (
         WHERE "mode" = 'RUB_USDT_VND'
+          AND "rubSpent" > 0
           AND "vndReceived" IS NULL
-          AND "usdtReceived" IS NOT NULL
-          AND "planningVndPerUsdt" IS NOT NULL
+          AND "usdtReceived" > 0
+          AND "planningVndPerUsdt" > 0
       ) / NULLIF(SUM("usdtReceived") FILTER (
         WHERE "mode" = 'RUB_USDT_VND'
           AND "vndReceived" IS NULL
@@ -300,8 +301,9 @@ try {
     sum + (x.mode === 'RUB_TARGET' && !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null
       ? Number(x.targetVndEquivalent) : 0), 0);
   const eligiblePlanned = exchangeRows.filter(x =>
-    x.mode === 'RUB_USDT_VND' &&
-    x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null
+    x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 &&
+    x.vndReceived == null && x.usdtReceived != null && Number(x.usdtReceived) > 0 &&
+    x.planningVndPerUsdt != null && Number(x.planningVndPerUsdt) > 0
   );
   const helperPlannedRate = eligiblePlanned.length
     ? eligiblePlanned.reduce((sum, x) => sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0) /
