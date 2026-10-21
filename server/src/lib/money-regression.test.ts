@@ -153,6 +153,10 @@ describe('money regression boundaries', () => {
     }, null, null, Number.MIN_VALUE), null);
   });
 
+  it('treats whitespace-padded VND as the base currency without requiring a conversion rate', () => {
+    assert.equal(calculateTargetVndEquivalent(' vNd ', 250_000, null), 250_000);
+  });
+
   it('rejects an overflowed target-currency equivalent', () => {
     assert.throws(
       () => calculateTargetVndEquivalent('GEL', Number.MAX_VALUE, 2),
