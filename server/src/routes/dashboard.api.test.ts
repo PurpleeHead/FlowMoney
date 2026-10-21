@@ -1038,3 +1038,46 @@ describe('dashboard all-time expense count', () => {
     });
   });
 });
+
+
+describe('dashboard query ownership boundaries', () => {
+  it('scopes every history and aggregate query to the authenticated user', async () => {
+    const expenseQueries: any[] = [];
+    const exchangeQueries: any[] = [];
+    expenseModel.findMany = async (args: any = {}) => {
+      expenseQueries.push(args);
+      return [];
+    };
+    exchangeModel.findMany = async (args: any = {}) => {
+      exchangeQueries.push(args);
+      return [];
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+    });
+
+    assert.ok(expenseQueries.length > 0, 'expense queries should have been observed');
+    assert.ok(exchangeQueries.length > 0, 'exchange queries should have been observed');
+    assert.ok(
+      expenseQueries.every(args => args.where?.userId === 'dashboard-user'),
+      'recent expense rows and aggregate source rows must be user-scoped',
+    );
+    assert.ok(
+      exchangeQueries.every(args => args.where?.userId === 'dashboard-user'),
+      'exchange history and exchange count source rows must be user-scoped',
+    );
+    assert.equal(dashboardAggregateArgs.length, 3);
+    assert.ok(
+      dashboardAggregateArgs.every(args => args.where?.userId === 'dashboard-user'),
+      'all-time, month, and card-purchase aggregates must be user-scoped',
+    );
+  });
+});
