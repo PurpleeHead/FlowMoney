@@ -5,8 +5,8 @@ import { prisma } from '../services/prisma.js';
  * Raw, date-scoped numerators and denominators for historical expense valuation.
  *
  * Keep this helper separate from dashboard all-history aggregates. Callers must
- * continue to use the established money helpers to apply validity/overflow rules
- * until the PostgreSQL equivalence fixture is in place.
+ * continue to use the established money helpers to apply validity/overflow rules.
+ * The PostgreSQL equivalence fixture verifies aggregate sums against legacy mappings.
  */
 export type DateAwareValuationAggregate = {
   rubUsdtRub: unknown;
