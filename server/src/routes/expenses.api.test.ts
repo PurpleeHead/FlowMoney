@@ -504,6 +504,71 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+  it('excludes the edited expense and future observations when recalculating a historical edit', async () => {
+    const effectiveDate = new Date('2026-10-12T09:30:00.000Z');
+    let exchangeQuery: any;
+    let purchaseQuery: any;
+    let updateData: any;
+    let findFirstCalls = 0;
+    const existing = {
+      id: 'expense-edit-historical', userId: 'user-42', title: 'Old title',
+      category: 'Food', amount: 10, currency: 'USDT', amountVnd: 250000,
+      amountRub: 250, usdtCharged: 10, date: effectiveDate,
+      receiptId: null, createdAt: new Date('2026-10-11T09:30:00.000Z'),
+    };
+    expenseModel.findFirst = async args => {
+      findFirstCalls += 1;
+      if (findFirstCalls === 1) {
+        assert.deepEqual(args.where, { id: 'expense-edit-historical', userId: 'user-42' });
+        return existing;
+      }
+      return { ...existing, ...updateData };
+    };
+    exchangeModel.findMany = async args => { exchangeQuery = args; return []; };
+    expenseModel.findMany = async args => { purchaseQuery = args; return []; };
+    const tx = {
+      expense: {
+        updateMany: async (args: any) => {
+          updateData = args.data;
+          assert.deepEqual(args.where, { id: 'expense-edit-historical', userId: 'user-42' });
+          return { count: 1 };
+        },
+        findFirst: async () => ({ ...existing, ...updateData }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-edit-historical`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Updated historical groceries', category: 'Food',
+          amount: 120000, amountVnd: 120000, currency: 'VND',
+          date: effectiveDate.toISOString(),
+        }),
+      });
+      assert.equal(response.status, 200);
+    });
+
+    assert.deepEqual(exchangeQuery.where, {
+      userId: 'user-42',
+      createdAt: { lte: effectiveDate },
+    });
+    assert.deepEqual(purchaseQuery.where, {
+      userId: 'user-42',
+      id: { not: 'expense-edit-historical' },
+      date: { lte: effectiveDate },
+      usdtCharged: { not: null },
+    });
+    assert.equal(updateData.date.toISOString(), effectiveDate.toISOString());
+    assert.equal(updateData.amountVnd, 120000);
+  });
+
   it('keeps a planning VND/USDT rate out of saved factual expense valuations', async () => {
     expenseModel.findMany = async () => [];
     exchangeModel.findMany = async () => [{
