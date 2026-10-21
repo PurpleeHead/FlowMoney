@@ -222,9 +222,18 @@ export function isExchangeVndOutcomeConsistent(input: {
   vndPerUsdt?: number | null;
   vndFee: number;
 }): boolean {
-  if (input.vndReceived == null) return input.vndFee === 0;
+  if (!Number.isFinite(input.usdtReceived) || input.usdtReceived <= 0 ||
+      !Number.isFinite(input.vndFee) || input.vndFee < 0 ||
+      (input.vndPerUsdt != null && (!Number.isFinite(input.vndPerUsdt) || input.vndPerUsdt <= 0))) {
+    return false;
+  }
+  if (input.vndReceived == null) {
+    // An incomplete exchange is valid only while both the actual VND outcome
+    // and any claimed observed rate remain unknown.
+    return input.vndFee === 0 && input.vndPerUsdt == null;
+  }
   if (!Number.isFinite(input.vndReceived) || input.vndReceived <= 0 ||
-      !Number.isFinite(input.vndFee) || input.vndFee < 0 || input.vndFee >= input.vndReceived) return false;
+      input.vndFee >= input.vndReceived) return false;
   if (input.vndPerUsdt == null) return true;
   const grossVnd = input.usdtReceived * input.vndPerUsdt;
   return Number.isFinite(grossVnd) && grossVnd > 0 &&
