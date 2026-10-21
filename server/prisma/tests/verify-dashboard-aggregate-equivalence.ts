@@ -13,6 +13,7 @@ import {
 const suffix = `dashboard-aggregate-equivalence-${Date.now()}`;
 let userId: string | undefined;
 let otherUserId: string | undefined;
+let nonFiniteUserId: string | undefined;
 
 function near(actual: number | null, expected: number | null, label: string) {
   if (actual === null || expected === null) {
@@ -30,12 +31,14 @@ function helperCardRateForBudget(expenses: Array<{ amountVnd: unknown; usdtCharg
 }
 
 try {
-  const [user, otherUser] = await Promise.all([
+  const [user, otherUser, nonFiniteUser] = await Promise.all([
     prisma.user.create({ data: { email: `${suffix}@example.invalid`, passwordHash: 'test-only' } }),
     prisma.user.create({ data: { email: `${suffix}-other@example.invalid`, passwordHash: 'test-only' } }),
+    prisma.user.create({ data: { email: `${suffix}-nonfinite@example.invalid`, passwordHash: 'test-only' } }),
   ]);
   userId = user.id;
   otherUserId = otherUser.id;
+  nonFiniteUserId = nonFiniteUser.id;
   const mainUserId = user.id;
   const secondUserId = otherUser.id;
 
@@ -80,6 +83,50 @@ try {
   await prisma.exchange.create({
     data: { userId: secondUserId, mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1, usdtReceived: 1, vndReceived: 999_999 },
   });
+  // PostgreSQL numeric accepts NaN/Infinity even though the application helpers
+  // intentionally reject non-finite JavaScript numbers. Exercise the real DB path.
+  const [badIndirect, badDirectUsdt, badDirectVnd] = await Promise.all([
+    prisma.exchange.create({ data: {
+      userId: nonFiniteUser.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
+      rubSpent: 100, usdtReceived: 3, vndReceived: 1, planningVndPerUsdt: 25_000,
+    } }),
+    prisma.exchange.create({ data: {
+      userId: nonFiniteUser.id, mode: 'RUB_TARGET', targetCurrency: 'USDT',
+      rubSpent: 200, targetReceived: 1, vndReceived: 1,
+    } }),
+    prisma.exchange.create({ data: {
+      userId: nonFiniteUser.id, mode: 'RUB_TARGET', targetCurrency: 'VND',
+      rubSpent: 300, targetReceived: 500_000, targetVndEquivalent: 500_000, vndReceived: 1,
+    } }),
+  ]);
+  await prisma.$executeRaw`
+    UPDATE "Exchange" SET "vndReceived" = 'NaN'::numeric WHERE "id" = ${badIndirect.id}
+  `;
+  await prisma.$executeRaw`
+    UPDATE "Exchange" SET "targetReceived" = 'Infinity'::numeric, "vndReceived" = 'NaN'::numeric
+    WHERE "id" = ${badDirectUsdt.id}
+  `;
+  await prisma.$executeRaw`
+    UPDATE "Exchange" SET "targetVndEquivalent" = 'NaN'::numeric, "vndReceived" = 'Infinity'::numeric
+    WHERE "id" = ${badDirectVnd.id}
+  `;
+  const nonFiniteAggregate = await getDashboardExchangeAggregates(nonFiniteUser.id);
+  assert.equal(nonFiniteAggregate.exchangeCount, 3);
+  near(nonFiniteAggregate.rubUsdtRub, 100, 'non-finite direct USDT receipt cannot contaminate RUB/USDT numerator');
+  near(nonFiniteAggregate.rubUsdtUsdt, 3, 'non-finite direct USDT receipt is excluded from RUB/USDT denominator');
+  near(nonFiniteAggregate.actualVnd, 0, 'NaN indirect VND is not an actual outcome');
+  near(nonFiniteAggregate.actualUsdt, 0, 'invalid actual VND prevents the indirect USDT observation');
+  near(nonFiniteAggregate.plannedWeightedVnd, 75_000, 'invalid actual VND falls back to the valid planning estimate');
+  near(nonFiniteAggregate.plannedUsdt, 3, 'planning denominator excludes invalid actual values');
+  near(nonFiniteAggregate.confirmedVnd, 500_000, 'non-finite canonical direct VND falls back to a finite legacy target receipt');
+  near(nonFiniteAggregate.estimatedUsdt, 3, 'invalid actual VND remains an unpriced indirect USDT top-up');
+  near(nonFiniteAggregate.rateExchangeRub, 300, 'only finite actual VND observations contribute to rate RUB');
+  near(nonFiniteAggregate.rateExchangeVnd, 500_000, 'non-finite VND fields cannot poison weighted-rate numerator');
+  assert.equal(nonFiniteAggregate.hasUnpricedUsdtTopUp, true);
+  for (const [key, value] of Object.entries(nonFiniteAggregate)) {
+    if (typeof value === 'number') assert.ok(Number.isFinite(value), `${key} must be finite`);
+  }
+
 
   await prisma.expense.createMany({
     data: [
@@ -356,5 +403,6 @@ try {
 } finally {
   if (userId) await prisma.user.deleteMany({ where: { id: userId } });
   if (otherUserId) await prisma.user.deleteMany({ where: { id: otherUserId } });
+  if (nonFiniteUserId) await prisma.user.deleteMany({ where: { id: nonFiniteUserId } });
   await prisma.$disconnect();
 }
