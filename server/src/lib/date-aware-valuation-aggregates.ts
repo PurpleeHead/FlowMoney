@@ -30,30 +30,42 @@ export async function getDateAwareValuationAggregate(
     WITH exchange_totals AS (
       SELECT
         COALESCE(SUM("rubSpent") FILTER (WHERE
-          "rubSpent" > 0 AND (
-            ("mode" = 'RUB_USDT_VND' AND "usdtReceived" > 0)
+          "rubSpent" > 0 AND "rubSpent"::text NOT IN ('NaN', 'Infinity', '-Infinity') AND (
+            ("mode" = 'RUB_USDT_VND' AND "usdtReceived" > 0
+              AND "usdtReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity'))
             OR ("mode" = 'RUB_TARGET'
               AND upper(trim("targetCurrency")) = 'USDT'
-              AND "targetReceived" > 0)
+              AND "targetReceived" > 0
+              AND "targetReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity'))
           )
         ), 0) AS "rubUsdtRub",
         COALESCE(SUM(CASE
-          WHEN "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 THEN "usdtReceived"
+          WHEN "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0
+            AND "rubSpent"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+            AND "usdtReceived" > 0
+            AND "usdtReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity') THEN "usdtReceived"
           WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
-            AND "rubSpent" > 0 AND "targetReceived" > 0 THEN "targetReceived"
+            AND "rubSpent" > 0 AND "rubSpent"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+            AND "targetReceived" > 0
+            AND "targetReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity') THEN "targetReceived"
           ELSE 0
         END), 0) AS "rubUsdtUsdt",
         COALESCE(SUM("vndReceived") FILTER (WHERE
-          "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 AND "vndReceived" > 0
+          "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0
+          AND "rubSpent"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+          AND "usdtReceived" > 0 AND "usdtReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+          AND "vndReceived" > 0 AND "vndReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity')
         ), 0) AS "actualVnd",
         COALESCE(SUM("usdtReceived") FILTER (WHERE
           "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 AND "vndReceived" > 0
         ), 0) AS "actualUsdt",
         COALESCE(SUM("rubSpent") FILTER (WHERE
-          "rubSpent" > 0 AND (
-            ("mode" = 'RUB_VND' AND "vndReceived" > 0)
+          "rubSpent" > 0 AND "rubSpent"::text NOT IN ('NaN', 'Infinity', '-Infinity') AND (
+            ("mode" = 'RUB_VND' AND "vndReceived" > 0
+              AND "vndReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity'))
             OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
-              AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
+              AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0
+              AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")::text NOT IN ('NaN', 'Infinity', '-Infinity'))
           )
         ), 0) AS "directRub",
         COALESCE(SUM(CASE
@@ -62,13 +74,18 @@ export async function getDateAwareValuationAggregate(
           WHEN "mode" = 'RUB_VND' THEN "vndReceived"
           ELSE 0
         END) FILTER (WHERE
-          ("mode" = 'RUB_VND' AND "rubSpent" > 0 AND "vndReceived" > 0)
+          ("mode" = 'RUB_VND' AND "rubSpent" > 0
+            AND "rubSpent"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+            AND "vndReceived" > 0 AND "vndReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity'))
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
             AND "rubSpent" > 0
-            AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
+            AND "rubSpent"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+            AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0
+            AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")::text NOT IN ('NaN', 'Infinity', '-Infinity'))
         ), 0) AS "directVnd",
         COALESCE(SUM("rubSpent") FILTER (WHERE
-          "rubSpent" > 0 AND "vndReceived" > 0
+          "rubSpent" > 0 AND "rubSpent"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+          AND "vndReceived" > 0 AND "vndReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity')
           AND "mode" = 'RUB_USDT_VND'
         ), 0) AS "actualRubForVnd",
         COALESCE(SUM("vndReceived") FILTER (WHERE
@@ -80,8 +97,12 @@ export async function getDateAwareValuationAggregate(
     ),
     card_totals AS (
       SELECT
-        COALESCE(SUM("amountVnd") FILTER (WHERE "amountVnd" > 0 AND "usdtCharged" > 0), 0) AS "cardVnd",
-        COALESCE(SUM("usdtCharged") FILTER (WHERE "amountVnd" > 0 AND "usdtCharged" > 0), 0) AS "cardUsdt"
+        COALESCE(SUM("amountVnd") FILTER (WHERE "amountVnd" > 0
+          AND "amountVnd"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+          AND "usdtCharged" > 0 AND "usdtCharged"::text NOT IN ('NaN', 'Infinity', '-Infinity')), 0) AS "cardVnd",
+        COALESCE(SUM("usdtCharged") FILTER (WHERE "amountVnd" > 0
+          AND "amountVnd"::text NOT IN ('NaN', 'Infinity', '-Infinity')
+          AND "usdtCharged" > 0 AND "usdtCharged"::text NOT IN ('NaN', 'Infinity', '-Infinity')), 0) AS "cardUsdt"
       FROM "Expense"
       WHERE "userId" = ${userId}
         AND upper(trim("currency")) = 'VND'
