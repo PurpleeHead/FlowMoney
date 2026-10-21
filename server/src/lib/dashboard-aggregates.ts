@@ -68,22 +68,26 @@ function dashboardExchangeAggregateQuery(userId: string) {
         ELSE 0
       END), 0) AS "rubUsdtUsdt",
       COALESCE(SUM("safeVndReceived") FILTER (
-        WHERE "mode" = 'RUB_USDT_VND' AND "safeUsdtReceived" > 0 AND "safeVndReceived" > 0
+        WHERE "mode" = 'RUB_USDT_VND'
+          AND "safeRubSpent" > 0 AND "safeUsdtReceived" > 0 AND "safeVndReceived" > 0
       ), 0) AS "actualVnd",
       COALESCE(SUM("safeUsdtReceived") FILTER (
-        WHERE "mode" = 'RUB_USDT_VND' AND "safeUsdtReceived" > 0 AND "safeVndReceived" > 0
+        WHERE "mode" = 'RUB_USDT_VND'
+          AND "safeRubSpent" > 0 AND "safeUsdtReceived" > 0 AND "safeVndReceived" > 0
       ), 0) AS "actualUsdt",
       COALESCE(SUM("safeUsdtReceived" * "safePlanningVndPerUsdt") FILTER (
         WHERE "mode" = 'RUB_USDT_VND'
+          AND "safeRubSpent" > 0
           AND "safeVndReceived" IS NULL
-          AND "safeUsdtReceived" IS NOT NULL
-          AND "safePlanningVndPerUsdt" IS NOT NULL
+          AND "safeUsdtReceived" > 0
+          AND "safePlanningVndPerUsdt" > 0
       ), 0) AS "plannedWeightedVnd",
       COALESCE(SUM("safeUsdtReceived") FILTER (
         WHERE "mode" = 'RUB_USDT_VND'
+          AND "safeRubSpent" > 0
           AND "safeVndReceived" IS NULL
-          AND "safeUsdtReceived" IS NOT NULL
-          AND "safePlanningVndPerUsdt" IS NOT NULL
+          AND "safeUsdtReceived" > 0
+          AND "safePlanningVndPerUsdt" > 0
       ), 0) AS "plannedUsdt",
       -- Only documented modes are VND evidence; other modes may retain stale legacy vndReceived.
       COALESCE(SUM(CASE
@@ -100,17 +104,17 @@ function dashboardExchangeAggregateQuery(userId: string) {
       -- A direct USDT receipt remains unpriced even if vndReceived contains a stale legacy value.
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
-          AND "safeTargetReceived" IS NOT NULL AND "safeTargetVndEquivalent" IS NULL
+          AND "safeRubSpent" > 0 AND "safeTargetReceived" > 0 AND "safeTargetVndEquivalent" IS NULL
           THEN "safeTargetReceived"
-        WHEN "mode" = 'RUB_USDT_VND' AND "safeVndReceived" IS NULL
-          AND "safeUsdtReceived" IS NOT NULL
+        WHEN "mode" = 'RUB_USDT_VND' AND "safeRubSpent" > 0
+          AND "safeVndReceived" IS NULL AND "safeUsdtReceived" > 0
           THEN "safeUsdtReceived"
         ELSE 0
       END), 0) AS "estimatedUsdt",
       COALESCE(BOOL_OR(
-        ("mode" = 'RUB_USDT_VND' AND "safeVndReceived" IS NULL AND "safeUsdtReceived" IS NOT NULL)
+        ("mode" = 'RUB_USDT_VND' AND "safeRubSpent" > 0 AND "safeVndReceived" IS NULL AND "safeUsdtReceived" > 0)
         OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
-          AND "safeTargetReceived" IS NOT NULL AND "safeTargetVndEquivalent" IS NULL)
+          AND "safeRubSpent" > 0 AND "safeTargetReceived" > 0 AND "safeTargetVndEquivalent" IS NULL)
       ), false) AS "hasUnpricedUsdtTopUp",
       COALESCE(BOOL_OR(
         "mode" = 'RUB_TARGET'
