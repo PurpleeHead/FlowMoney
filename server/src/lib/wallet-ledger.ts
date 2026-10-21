@@ -46,6 +46,9 @@ export function expenseLedgerDrafts(expense: ExpenseLedgerSource): LedgerMovemen
   // A USDT card debit is valid only for VND-denominated expenses. Ignore
   // stale/malformed usdtCharged values on RUB or USDT expenses.
   const cardDebit = currency === 'VND' ? amount(expense.usdtCharged) : null;
+  // Null means a cash VND expense; a present but invalid card debit is
+  // malformed evidence and must not silently turn into a VND cash debit.
+  if (currency === 'VND' && expense.usdtCharged != null && cardDebit == null) return [];
   const debitCurrency = cardDebit != null ? 'USDT' : currency;
   const debitAmount = cardDebit ?? sourceAmount;
 
