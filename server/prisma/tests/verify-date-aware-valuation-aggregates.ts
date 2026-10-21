@@ -110,7 +110,7 @@ try {
       where: { userId, createdAt: { lte: valuationDate } },
       orderBy: { createdAt: 'asc' },
     }),
-    prisma.expense.findMany({ where: { userId, date: { lte: valuationDate } } }),
+    prisma.expense.findMany({ where: { userId, date: { lte: valuationDate } }, orderBy: { date: 'asc' } }),
   ]);
 
   const rubUsdtRows = mapRubUsdtExchanges(exchanges.map(x => ({
