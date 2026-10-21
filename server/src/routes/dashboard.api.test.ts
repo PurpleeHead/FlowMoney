@@ -164,6 +164,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
     const where = args.where ?? {};
     const filtered = rows.filter((row: any) => {
       if (where.date?.gte && new Date(row.date) < where.date.gte) return false;
+      if (where.currency?.equals && String(row.currency).toUpperCase() !== String(where.currency.equals).toUpperCase()) return false;
       if (where.amountVnd?.gt != null && !(row.amountVnd != null && Number(row.amountVnd) > where.amountVnd.gt)) return false;
       if (where.usdtCharged?.gt != null && !(row.usdtCharged != null && Number(row.usdtCharged) > where.usdtCharged.gt)) return false;
       if (where.amountVnd?.not != null && Number.isNaN(Number(row.amountVnd))) return false;
