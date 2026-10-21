@@ -18,7 +18,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND';
     // Return only fields consumed by dashboard calculations and the client. This keeps
     // internal ownership/audit metadata out of the response and avoids fetching unused columns.
-    const [expenses,exchanges,totalExpenseAggregate,monthExpenseAggregate,purchaseAggregate]=await Promise.all([
+    const [expenses,exchanges,totalExpenseAggregate,monthExpenseAggregate,purchaseAggregate,totalExpenseCount]=await Promise.all([
       prisma.expense.findMany({
         where:{userId:req.user!.id,date:{gte:chartStart}},
         orderBy:{date:'desc'},
@@ -40,6 +40,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       prisma.expense.aggregate({where:{userId:req.user!.id},_sum:{amountVnd:true}}),
       prisma.expense.aggregate({where:{userId:req.user!.id,date:{gte:start},},_sum:{amountVnd:true}}),
       prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{gt:0},usdtCharged:{gt:0}},_sum:{amountVnd:true,usdtCharged:true}}),
+      prisma.expense.count({where:{userId:req.user!.id}}),
     ]);
 
     const totalVnd=Number(totalExpenseAggregate._sum.amountVnd ?? 0);
@@ -130,7 +131,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       : confirmedExchangeVnd + estimatedUnconvertedVnd - totalVnd;
 
     res.json({
-      totalVnd,monthVnd,balanceVnd,confirmedExchangeVnd,estimatedUnconvertedVnd,planningVndPerUsdt,
+      totalVnd,monthVnd,totalExpenseCount,balanceVnd,confirmedExchangeVnd,estimatedUnconvertedVnd,planningVndPerUsdt,
       balanceIsEstimated: estimatedUnconvertedVnd > 0 || exchanges.some(x => x.mode === 'RUB_TARGET' && !isDirectVndTarget(x) && x.targetVndEquivalent != null),
       observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerUsdt,effectiveVndPerRub,
       expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:x.amountVnd==null?null:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
