@@ -105,6 +105,11 @@ function mockDashboardExchangeAggregates(rows: any[]) {
       (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
         x.targetCurrency.trim().toUpperCase() === 'USDT' &&
         x.targetReceived != null && Number(x.targetReceived) > 0 && x.targetVndEquivalent == null)),
+    hasUnknownTopUpAmount: rows.some(x =>
+      (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 && x.vndReceived == null && x.usdtReceived == null) ||
+      (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
+        x.targetCurrency.trim().toUpperCase() === 'USDT' &&
+        x.targetVndEquivalent == null && (x.targetReceived == null || !Number.isFinite(Number(x.targetReceived))))),
     hasEstimatedTarget: rows.some(x => x.mode === 'RUB_TARGET' &&
       !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null),
     rateExchangeRub: rateRows.reduce((sum, x) => sum + x.rubSpent, 0),
@@ -940,6 +945,37 @@ describe('dashboard rejects non-finite legacy expense amounts', () => {
       assert.equal(body.observedVnd, 100000, 'weighted rate excludes rows with a non-finite VND or USDT side');
       assert.equal(body.observedUsdt, 4);
       assert.equal(body.observedVndPerUsdt, 25000);
+    });
+  });
+});
+
+
+describe('dashboard unknown top-up amount', () => {
+  it('does not present a zero balance when a direct USDT receipt amount is malformed', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      rubSpent: 8300,
+      targetReceived: Number.NaN,
+      targetVndEquivalent: null,
+      targetToVndRate: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        balanceVnd: number | null;
+        estimatedUnconvertedVnd: number;
+      };
+      assert.equal(body.balanceVnd, null, 'an unknown acquired amount cannot be valued as a zero balance');
+      assert.equal(body.estimatedUnconvertedVnd, 0);
     });
   });
 });
