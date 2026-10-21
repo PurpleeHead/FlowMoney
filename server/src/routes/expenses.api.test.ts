@@ -654,6 +654,48 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+
+  it('does not price a card expense from direct VND/RUB when the USDT RUB cost basis is unknown', async () => {
+    expenseModel.findMany = async () => [];
+    // A direct RUB → VND exchange provides an observed VND/RUB rate, but it
+    // cannot establish the RUB acquisition cost of a separate USDT card debit.
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_TARGET', rubSpent: 2000, usdtReceived: null, vndReceived: null,
+      planningVndPerUsdt: null, targetCurrency: 'VND', targetReceived: 500000,
+      targetVndEquivalent: null,
+    }];
+    let createdData: any;
+    const tx = {
+      expense: {
+        create: async (args: any) => {
+          createdData = args.data;
+          return { id: 'expense-card-cost-unknown', ...args.data, date: new Date('2026-10-18T08:00:00.000Z') };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Card purchase', category: 'Food', amount: 100000, currency: 'VND',
+          usdtCharged: 2.5,
+        }),
+      });
+
+      assert.equal(response.status, 201);
+      assert.equal(createdData.amountVnd, 100000);
+      assert.equal(createdData.amountRub, null,
+        'unknown USDT acquisition cost must remain unknown; direct VND/RUB must not fabricate a confirmed card cost');
+    });
+  });
+
 });
 
 
