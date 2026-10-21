@@ -152,6 +152,53 @@ describe('direct RUB to VND exchange fees', () => {
   });
 });
 
+  it('recalculates the net VND wallet credit when editing a direct exchange fee', async () => {
+    let updateArgs: any;
+    const deleted: any[] = [];
+    const created: any[] = [];
+    const current = {
+      id: 'direct-fee-edit', userId: 'user-42', mode: 'RUB_VND',
+      rubSpent: 1000, usdtReceived: null, vndReceived: 245000, vndFee: 5000,
+      targetCurrency: 'VND', targetReceived: 245000, targetToVndRate: 1,
+      targetVndEquivalent: null, createdAt: new Date('2026-10-20T10:00:00.000Z'),
+    };
+    const tx = {
+      exchange: {
+        updateMany: async (args: any) => { updateArgs = args; return { count: 1 }; },
+        findFirst: async () => current,
+      },
+      walletMovement: {
+        deleteMany: async (args: any) => { deleted.push(args); return { count: 1 }; },
+        createMany: async (args: any) => { created.push(...args.data); return { count: args.data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/direct-fee-edit`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_VND', rubSpent: 1000, vndReceived: 260000, vndFee: 10000,
+        }),
+      });
+      assert.equal(response.status, 200);
+    });
+
+    assert.deepEqual(updateArgs.where, { id: 'direct-fee-edit', userId: 'user-42' });
+    assert.equal(updateArgs.data.vndReceived, 250000, 'persisted VND outcome must be net of the new fee');
+    assert.equal(updateArgs.data.targetReceived, 250000, 'legacy target amount must stay aligned with the net outcome');
+    assert.equal(updateArgs.data.effectiveVndPerRub, 250);
+    assert.deepEqual(deleted, [{
+      where: { userId: 'user-42', sourceKey: { startsWith: 'exchange:direct-fee-edit:' } },
+    }]);
+    assert.deepEqual(created.map(x => [x.currency, Number(x.amountDelta), x.sourceKey]), [
+      ['RUB', -1000, 'exchange:direct-fee-edit:RUB'],
+      ['VND', 250000, 'exchange:direct-fee-edit:VND'],
+    ]);
+  });
+
+
 describe('direct RUB to USDT top-up without VND rate', () => {
   it('rejects a VND fee in direct-target mode instead of silently ignoring it', async () => {
     let createCalls = 0;
