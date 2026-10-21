@@ -244,14 +244,29 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Corrected the historical aggregate query-template syntax after the first benchmark-enabled run exposed a parse error. Re-ran CI; SQL equivalence, date cutoff, user isolation, and migration/transaction checks pass.
 - [x] Added guarded, disposable-database-only date-aware aggregate benchmarks at 1k, 10k, and 50k exchange/expense rows per user, including `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and SQL-vs-TypeScript equivalence assertions.
 - [x] Recorded benchmark results in `docs/DASHBOARD_AGGREGATE_EQUIVALENCE.md`: at 50k rows/table, SQL aggregate median 121.33 ms vs fetch-and-aggregate in TypeScript 652.59 ms in CI's disposable PostgreSQL environment. This is directional microbenchmark evidence, not a production latency guarantee.
-- [ ] End-to-end dashboard response payload/latency comparisons and production-like database measurements remain open.
+- [x] Synthetic end-to-end dashboard HTTP payload/latency benchmark is now recorded below; production-like database distribution, target-host measurements, and telemetry remain open.
 - [ ] Production release blockers remain: verify target database identity, encrypted backup and isolated restore drill, reconcile legacy wallet balances against an approved production snapshot, confirm owner-approved Render configuration, and complete target-environment smoke tests. PR #83 remains Draft/unmerged; no production database or live deployment operation was performed.
 
+
+## Dashboard HTTP response benchmark — 2026-10-21
+
+- [x] CI run [#1545](https://github.com/PurpleeHead/FlowMoney/actions/runs/39599000187) passed on `44c9a1c16d684ad687dfcae96fa9b58e9681384f`. The guarded benchmark starts the actual Express `GET /api/dashboard` route on localhost, authenticates as the disposable fixture user, and measures seven rounds after two warm-ups at 1k, 10k, and 50k exchanges per user.
+- [x] Results from disposable PostgreSQL 16:
+
+  | Exchanges for target user | Current HTTP response | Full-history activity projection | Reduction | HTTP median / max of 7 |
+  |---:|---:|---:|---:|---:|
+  | 1,000 | 34,606 bytes | 341,484 bytes | 89.87% | 11.22 ms / 13.16 ms |
+  | 10,000 | 34,593 bytes | 3,418,353 bytes | 98.99% | 31.86 ms / 36.30 ms |
+  | 50,000 | 34,596 bytes | 17,090,184 bytes | 99.80% | 100.39 ms / 104.42 ms |
+
+- [x] The full-history projection changes only the `exchanges` array, replacing the bounded 100 records with all selected exchange rows while retaining the measured response's other fields. It compares payload size, not legacy endpoint latency. Seven-sample maximum is not a statistically stable p95.
+- [ ] These are synthetic same-host CI results. They do not close production database identity, encrypted backup/restore, legacy wallet reconciliation, approved Render configuration, target-host smoke tests, or representative production-like latency/telemetry gates.
 
 ## Bounded dashboard activity payload benchmark — 2026-10-21
 
 - [x] CI run [#1538](https://github.com/PurpleeHead/FlowMoney/actions/runs/39596366505) passed on `496598e6bcdd79823529fb56e9f59c79ec809deb`: server tests/build and all disposable-PostgreSQL equivalence, date-aware aggregate, dashboard aggregate, rollback, and wallet reconciliation checks succeeded.
 - [x] Extended the guarded dashboard benchmark to run `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` for the actual latest-100 activity query and measure serialized exchange-segment payload sizes against a full-history baseline using the same response field conversion.
 - [x] Synthetic fixture results: at 1k exchanges, latest-100 payload was 34,198 bytes vs 341,076 bytes (89.97% smaller), and query median 3.54 ms vs 18.22 ms; at 10k, 34,198 vs 3,417,958 bytes (99.00% smaller), and 6.86 ms vs 203.48 ms; at 50k, 34,198 vs 17,089,786 bytes (99.80% smaller), and 8.14 ms vs 960.06 ms.
-- [ ] Measurements are disposable same-host microbenchmarks. Full dashboard HTTP response payload/latency, realistic production data distribution, and target-host measurements remain open.
+- [x] Exchange-segment payload and query timing were measured in disposable CI; see the separate Dashboard HTTP response benchmark section above for the real route's response size and latency.
+- [ ] Realistic production data distribution and target-host measurements remain open.
 - [ ] Production release gates remain open: target database identity, encrypted backup and isolated restore drill, legacy wallet reconciliation against approved production snapshot, owner-approved Render configuration, and target-environment smoke tests. PR #83 remains Draft/unmerged; no production DB operation or live deployment was performed.
