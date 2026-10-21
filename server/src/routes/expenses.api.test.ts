@@ -578,6 +578,9 @@ describe('expense API ledger synchronization', () => {
       date: { lte: effectiveDate },
       usdtCharged: { not: null },
     });
+    assert.equal(aggregateQueries.length, 1, 'expense valuation must issue one aggregate query');
+    assert.ok(aggregateQueries[0].values.includes(effectiveDate),
+      'aggregate query must use the expense effective date as its historical cutoff');
   });
 
   it('keeps a planning VND/USDT rate out of saved factual expense valuations', async () => {
@@ -786,9 +789,6 @@ describe('expense API ledger synchronization', () => {
     assert.ok(purchaseQuery.where.date.lte instanceof Date,
       'expense valuation must exclude card purchases dated after the expense date');
     assert.deepEqual(purchaseQuery.where.usdtCharged, { not: null });
-    assert.equal(aggregateQueries.length, 1, 'expense valuation must issue one aggregate query');
-    assert.ok(aggregateQueries[0].values.includes(effectiveDate),
-      'aggregate query must use the expense effective date as its historical cutoff');
   });
 
 });
