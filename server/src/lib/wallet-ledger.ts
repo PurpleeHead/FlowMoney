@@ -80,12 +80,16 @@ export function exchangeLedgerDrafts(exchange: ExchangeLedgerSource): LedgerMove
     // Prefer the net VND outcome. Legacy targetReceived may contain the gross amount before fees.
     // A gross legacy target amount is not a safe wallet credit if a fee was
     // recorded but the net VND outcome is missing.
-    const fee = amount(exchange.vndFee) ?? 0;
-    const vnd = exchange.vndReceived != null
-      ? amount(exchange.vndReceived)
-      : fee > 0
+    let vnd: number | null;
+    if (exchange.vndReceived != null) {
+      vnd = amount(exchange.vndReceived);
+    } else {
+      const fee = exchange.vndFee == null ? 0 : Number(exchange.vndFee);
+      // A malformed legacy fee cannot justify falling back to a gross amount.
+      vnd = !Number.isFinite(fee) || fee < 0 || fee > 0
         ? null
         : amount(exchange.targetReceived);
+    }
     if (vnd != null) movements.push({
       userId: exchange.userId, currency: 'VND', amountDelta: vnd, kind: 'EXCHANGE',
       sourceKey: `exchange:${exchange.id}:VND`, occurredAt: exchange.createdAt,
