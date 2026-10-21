@@ -126,4 +126,61 @@ describe('wallet ledger mapping', () => {
       ['RUB', -200],
     ]);
   });
+}
+
+describe('wallet ledger identity and malformed inputs', () => {
+  it('keeps an expense source key stable when its amount changes', () => {
+    const date = new Date('2026-10-18T08:00:00.000Z');
+    const before = expenseLedgerDrafts({
+      id: 'expense-edit-1', userId: 'u1', amount: 100000, currency: 'VND',
+      usdtCharged: 3.25, date,
+    });
+    const after = expenseLedgerDrafts({
+      id: 'expense-edit-1', userId: 'u1', amount: 125000, currency: 'VND',
+      usdtCharged: 4.1, date,
+    });
+
+    assert.equal(before.length, 1);
+    assert.equal(after.length, 1);
+    assert.equal(before[0].sourceKey, 'expense:expense-edit-1:USDT');
+    assert.equal(after[0].sourceKey, before[0].sourceKey);
+    assert.equal(before[0].amountDelta, -3.25);
+    assert.equal(after[0].amountDelta, -4.1);
+  });
+
+  it('isolates otherwise identical expense source keys by expense ID and user', () => {
+    const base = {
+      amount: 100, currency: 'RUB', usdtCharged: null,
+      date: new Date('2026-10-18T08:00:00.000Z'),
+    };
+    const first = expenseLedgerDrafts({ ...base, id: 'expense-a', userId: 'u1' });
+    const second = expenseLedgerDrafts({ ...base, id: 'expense-b', userId: 'u1' });
+    const otherUser = expenseLedgerDrafts({ ...base, id: 'expense-a', userId: 'u2' });
+
+    assert.notEqual(first[0].sourceKey, second[0].sourceKey);
+    assert.equal(first[0].sourceKey, otherUser[0].sourceKey);
+    assert.notEqual(first[0].userId, otherUser[0].userId);
+  });
+
+  it('does not emit ledger movements for non-finite or unsupported expense values', () => {
+    const date = new Date('2026-10-18T08:00:00.000Z');
+    assert.deepEqual(expenseLedgerDrafts({
+      id: 'expense-nan', userId: 'u1', amount: Number.NaN, currency: 'RUB',
+      usdtCharged: null, date,
+    }), []);
+    assert.deepEqual(expenseLedgerDrafts({
+      id: 'expense-unsupported', userId: 'u1', amount: 100, currency: 'EUR',
+      usdtCharged: null, date,
+    }), []);
+  });
+
+  it('uses the expense effective date as the ledger movement timestamp', () => {
+    const date = new Date('2026-10-18T08:00:00.000Z');
+    const [draft] = expenseLedgerDrafts({
+      id: 'expense-date', userId: 'u1', amount: 100, currency: 'RUB',
+      usdtCharged: null, date,
+    });
+    assert.equal(draft.occurredAt, date);
+  });
 });
+
