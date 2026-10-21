@@ -160,6 +160,24 @@ describe('money regression boundaries', () => {
     }
   });
 
+  it('ignores invalid direct observations when building a weighted VND/RUB rate', () => {
+    assert.equal(calculateObservedVndPerRub({
+      directExchanges: [
+        { rubSpent: 1_000, vndReceived: 250_000 },
+        { rubSpent: 0, vndReceived: 900_000 },
+        { rubSpent: 500, vndReceived: Number.NaN },
+      ],
+      actualVndExchanges: [
+        { rubSpent: 2_000, vndReceived: 500_000 },
+      ],
+      cardPurchases: [
+        { amountVnd: 100_000, usdtCharged: 4 },
+        { amountVnd: Number.POSITIVE_INFINITY, usdtCharged: 1 },
+      ],
+      rubPerUsdt: 100,
+    }), 850_000 / 3_400);
+  });
+
   it('combines direct exchanges and card observations into a weighted VND/RUB rate', () => {
     const rate = calculateObservedVndPerRub({
       directExchanges: [{ rubSpent: 10_000, vndReceived: 2_500_000 }],
