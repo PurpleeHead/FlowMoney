@@ -51,6 +51,12 @@ try {
         vndReceived: 888_888, createdAt: new Date('2026-10-12T13:00:00.000Z'),
       },
       {
+        // Unknown legacy modes are not authoritative indirect exchange outcomes.
+        userId, mode: 'LEGACY_UNKNOWN', targetCurrency: 'VND', rubSpent: 4000,
+        usdtReceived: 40, vndReceived: 999_999,
+        createdAt: new Date('2026-10-12T14:00:00.000Z'),
+      },
+      {
         userId, mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000,
         vndReceived: 250_000, createdAt: new Date('2026-10-13T12:00:00.000Z'),
       },
@@ -182,7 +188,7 @@ try {
   near(aggregate.cardVnd, cardRows.reduce((sum, x) => sum + Number(x.amountVnd), 0), 'cutoff card VND');
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
-  assert.equal(exchanges.length, 7, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
+  assert.equal(exchanges.length, 8, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
   assert.equal(expenses.length, 6, 'the cutoff instant is inclusive; later expenses and other users are excluded while same-user legacy rows remain in the comparison set');
   near(aggregate.rubUsdtRub, 13_300, 'fixture RUB/USDT numerator');
   near(aggregate.rubUsdtUsdt, 149.7853, 'fixture RUB/USDT denominator');
