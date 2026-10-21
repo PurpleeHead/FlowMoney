@@ -58,7 +58,8 @@ const mockQueryRaw = async (query: any) => {
     targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
   })));
   const actual = mapActualVndUsdtExchanges(exchanges.map((x: any) => ({
-    mode: x.mode, usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+    mode: x.mode, rubSpent: Number(x.rubSpent),
+    usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
     vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
   })));
   const direct = mapDirectVndExchanges(exchanges.map((x: any) => ({
