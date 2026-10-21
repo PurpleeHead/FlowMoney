@@ -156,3 +156,17 @@ With 10,000 synthetic rows for the temporary user, the complete aggregate statem
 The same CI run measured median **20.62 ms** for the SQL aggregate path versus **113.97 ms** for fetching all rows and aggregating in Node.js, about **5.5× faster** in this run. As above, these timings are a directional microbenchmark on a disposable CI database, not a production latency guarantee.
 
 The exact aggregate query plan is now captured automatically in CI output. Remaining performance evidence: run the benchmark with multiple users and realistic per-user history sizes, capture dashboard HTTP response time and payload size, and repeat locally or on a representative staging database. No production database, Render configuration, or deployment was changed.
+
+
+## Multi-user benchmark — 2026-10-21
+
+Workflow [39531463974](https://github.com/PurpleeHead/FlowMoney/actions/runs/39531463974) passed on commit `802c28d0ca31c4c0782c2cdb33c088bc3f60091f`. The guarded CI benchmark now creates **five synthetic users and 50,000 total exchange rows** (10,000 per user), then compares the aggregate path with the full-history Node reference for one user.
+
+| Path | Median | Highest of 7 measured rounds (reported as p95) |
+|---|---:|---:|
+| PostgreSQL aggregate | 21.53 ms | 24.97 ms |
+| Fetch 10,000 rows + aggregate in Node | 118.27 ms | 137.01 ms |
+
+This run is approximately **5.5× faster by median** for the SQL aggregate path. The full aggregate query plan used the existing `Exchange_userId_createdAt_idx` index via a Bitmap Index Scan, then a Bitmap Heap Scan of 10,000 matching rows. The aggregate node took 19.839 ms; the heap scan node took 2.001 ms. There were 190 shared buffer hits, zero shared reads, and no temporary blocks. The table contained 50,000 rows split evenly among five users; this remains synthetic CI data.
+
+The measured result supports retaining the current user-scoped aggregate design and existing index; it does **not** justify adding an index or promise the same speedup in production. The “p95” column above is the maximum of seven samples, not a stable statistical p95. Full HTTP latency, response payload size, and measurements at multiple history sizes remain unverified.
