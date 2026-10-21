@@ -253,7 +253,11 @@ export function mapActualVndExchanges(exchanges: Array<{
     // Only the documented indirect mode is evidence for an indirect VND/RUB
     // outcome. Direct-target rows and unknown legacy modes may contain stale
     // vndReceived fields, which must never influence historical rates.
-    if (exchange.mode !== 'RUB_USDT_VND' || exchange.vndReceived == null) return [];
+    // Also reject malformed legacy amounts here, so every consumer receives
+    // observations with the same positive/finite invariants.
+    if (exchange.mode !== 'RUB_USDT_VND' ||
+        !Number.isFinite(exchange.rubSpent) || exchange.rubSpent <= 0 ||
+        !Number.isFinite(exchange.vndReceived) || exchange.vndReceived == null || exchange.vndReceived <= 0) return [];
     return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
   });
 }
