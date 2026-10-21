@@ -138,10 +138,11 @@ describe('direct exchange observations', () => {
 describe('actual VND/USDT exchange observations', () => {
   it('uses only completed indirect RUB-USDT-VND exchanges, never direct VND target rows', () => {
     assert.deepEqual(mapActualVndUsdtExchanges([
-      { mode: 'RUB_USDT_VND', usdtReceived: 93.7853, vndReceived: 2_300_000 },
-      { mode: 'RUB_TARGET', usdtReceived: 10, vndReceived: 250_000 },
-      { mode: 'RUB_VND', usdtReceived: 5, vndReceived: 125_000 },
-      { mode: 'RUB_USDT_VND', usdtReceived: 20, vndReceived: null },
+      { mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 2_300_000 },
+      { mode: 'RUB_TARGET', rubSpent: 1000, usdtReceived: 10, vndReceived: 250_000 },
+      { mode: 'RUB_VND', rubSpent: 1000, usdtReceived: 5, vndReceived: 125_000 },
+      { mode: 'RUB_USDT_VND', rubSpent: 1000, usdtReceived: 20, vndReceived: null },
+      { mode: 'RUB_USDT_VND', rubSpent: -1, usdtReceived: 20, vndReceived: 100_000 },
     ]), [
       { usdtReceived: 93.7853, vndReceived: 2_300_000 },
     ]);
