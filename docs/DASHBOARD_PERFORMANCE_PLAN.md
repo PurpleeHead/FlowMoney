@@ -200,3 +200,10 @@ Before switching these paths to PostgreSQL aggregates, retain an equivalence/ref
 - For every mixed-mode fixture, compare SQL aggregate outputs with the current helper-based Node reference before timing. Include rows just before, exactly at, and just after the valuation cutoff, plus another user's rows.
 
 Implementation should expose a small typed helper returning only the required weighted numerators/denominators and direct-target fallback fields, with parameterized SQL and no arbitrary history limit. Route tests currently mock Prisma `findMany`; update the mocks or isolate the aggregate helper so route tests still assert user/date scoping. Only after equivalence passes should the route call sites change. Capture query plans and query/payload timings on disposable PostgreSQL; production latency is a separate gate.
+
+
+## Latest numeric hardening verification — 2026-10-21
+
+CI runs [#1297](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534615332) through [#1301](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534668662) have now all completed successfully. This closes the pending verification note for the invalid direct/card observations and derived-rate underflow checks. The latest checked head is `630875104b075f1553e89bc95118d5bf3fa959dc`.
+
+The next implementation work remains date-aware SQL aggregation for expense create/edit and receipt save. Keep the current Node reference path available in tests until a PostgreSQL integration fixture proves matching weighted totals, cutoff semantics, normalized currency handling, direct-VND legacy fallback precedence, and user isolation. The dashboard all-history query is not a safe drop-in replacement for valuation-date queries. No production DB, Render configuration, or deployment changes were made.
