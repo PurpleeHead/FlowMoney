@@ -65,11 +65,13 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     sum + (x.mode === 'RUB_TARGET' && !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null
       ? Number(x.targetVndEquivalent) : 0), 0);
   const estimatedUsdt = rows.reduce((sum, x) => {
-    if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'USDT' &&
-        x.targetReceived != null && x.targetVndEquivalent == null) {
+    if (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
+        x.targetCurrency.trim().toUpperCase() === 'USDT' &&
+        x.targetReceived != null && Number(x.targetReceived) > 0 && x.targetVndEquivalent == null) {
       return sum + Number(x.targetReceived);
     }
-    if (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) {
+    if (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 &&
+        x.vndReceived == null && x.usdtReceived != null && Number(x.usdtReceived) > 0) {
       return sum + Number(x.usdtReceived);
     }
     return sum;
@@ -98,9 +100,11 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     estimatedTargetVnd,
     estimatedUsdt,
     hasUnpricedUsdtTopUp: rows.some(x =>
-      (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
-      (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'USDT' &&
-        x.targetReceived != null && x.targetVndEquivalent == null)),
+      (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 && x.vndReceived == null &&
+        x.usdtReceived != null && Number(x.usdtReceived) > 0) ||
+      (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
+        x.targetCurrency.trim().toUpperCase() === 'USDT' &&
+        x.targetReceived != null && Number(x.targetReceived) > 0 && x.targetVndEquivalent == null)),
     hasEstimatedTarget: rows.some(x => x.mode === 'RUB_TARGET' &&
       !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null),
     rateExchangeRub: rateRows.reduce((sum, x) => sum + x.rubSpent, 0),
