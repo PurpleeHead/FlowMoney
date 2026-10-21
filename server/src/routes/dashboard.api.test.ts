@@ -23,9 +23,11 @@ const originalQueryRaw = rawModel.$queryRaw;
 const previousSecret = process.env.JWT_SECRET;
 let dashboardAggregateArgs: any[] = [];
 let dashboardExchangeRows: any[] = [];
+let dashboardExchangeAggregateRows: any[] | null = null;
 let dashboardRawQueries: any[] = [];
 
 afterEach(() => {
+  dashboardExchangeAggregateRows = null;
   userModel.findFirst = originalUserFindFirst;
   expenseModel.findMany = originalExpenseFindMany;
   expenseModel.aggregate = originalExpenseAggregate;
@@ -187,9 +189,9 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
       // The aggregate query runs concurrently with the recent-activity query. Resolve
       // the fixture independently instead of relying on shared state that may not yet
       // have been populated by the other Promise.all branch.
-      const exchangeRows = dashboardExchangeRowsPromise
+      const exchangeRows = dashboardExchangeAggregateRows ?? (dashboardExchangeRowsPromise
         ? await dashboardExchangeRowsPromise
-        : dashboardExchangeRows;
+        : dashboardExchangeRows);
       return mockDashboardExchangeAggregates(exchangeRows);
     },
   });
@@ -249,6 +251,52 @@ function exchangeFixture() {
     createdAt: new Date('2026-10-18T08:00:00.000Z'),
   };
 }
+
+describe('dashboard bounded activity and all-history summary', () => {
+  it('returns only the latest 100 exchanges without truncating the all-history balance', async () => {
+    const allHistory = Array.from({ length: 120 }, (_, index) => ({
+      ...exchangeFixture(),
+      id: `history-${String(119 - index).padStart(3, '0')}`,
+      mode: 'RUB_VND',
+      targetCurrency: 'VND',
+      rubSpent: 100,
+      targetReceived: 1000,
+      targetVndEquivalent: 1000,
+      targetToVndRate: null,
+      vndReceived: 1000,
+      createdAt: new Date(Date.UTC(2026, 9, 21, 12, 0, 0) - index * 1000),
+    }));
+    dashboardExchangeAggregateRows = allHistory;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async (args: any) => {
+      assert.equal(args.take, 100);
+      assert.deepEqual(args.orderBy, [{ createdAt: 'desc' }, { id: 'desc' }]);
+      return allHistory.slice(0, args.take);
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        balanceVnd: number | null;
+        confirmedExchangeVnd: number;
+        exchanges: Array<{ id: string }>;
+      };
+      assert.equal(body.exchanges.length, 100);
+      assert.deepEqual(body.exchanges.map(row => row.id), allHistory.slice(0, 100).map(row => row.id));
+      assert.equal(body.confirmedExchangeVnd, 120_000,
+        'all-history confirmed VND must include all 120 exchanges, not only the 100 activity rows');
+      assert.equal(body.balanceVnd, 120_000,
+        'balance must be based on the all-history aggregate, independent from activity pagination');
+    });
+  });
+});
 
 describe('dashboard unpriced USDT balance', () => {
   it('does not present an unknown VND balance as zero after a direct USDT top-up', async () => {
