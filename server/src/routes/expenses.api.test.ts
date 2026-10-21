@@ -323,9 +323,12 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
-  it('rejects a non-finite calculated VND valuation before writing', async () => {
+  it('rejects an unrepresentable derived VND valuation before writing', async () => {
     expenseModel.findMany = async () => [];
-    exchangeModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      mode: 'RUB_USDT_VND', rubSpent: 83, usdtReceived: 1, vndReceived: 20000,
+      planningVndPerUsdt: 20000, targetCurrency: 'VND', targetReceived: 20000, targetVndEquivalent: 20000,
+    }];
     let transactionCalls = 0;
     const originalTx = client.$transaction;
     client.$transaction = async (...args: any[]) => {
@@ -338,14 +341,14 @@ describe('expense API ledger synchronization', () => {
         method: 'POST',
         headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
         body: JSON.stringify({
-          title: 'Extreme conversion', category: 'Other', amount: 1e100,
-          currency: 'RUB', targetToVndRate: 1e100,
+          title: 'Extreme conversion', category: 'Other', amount: 999999999999.99,
+          currency: 'USDT',
         }),
       });
       assert.equal(response.status, 400);
     });
 
-    assert.equal(aggregateQueries.length, 1, 'valid input should calculate against one historical aggregate');
+    assert.equal(aggregateQueries.length, 1, 'valid source input should calculate against one historical aggregate');
     assert.equal(transactionCalls, 0, 'unrepresentable calculated values must be rejected before opening a write transaction');
   });
 
