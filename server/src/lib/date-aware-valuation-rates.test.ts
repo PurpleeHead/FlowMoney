@@ -131,6 +131,22 @@ describe('date-aware valuation rates', () => {
     assert.equal(rates.vndPerRub, null);
   });
 
+  it('does not derive RUB/USDT from a zero USDT denominator', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 0,
+      actualVnd: 2_500_000,
+      actualUsdt: 100,
+      directRub: 1_000,
+      directVnd: 300_000,
+      cardVnd: 0,
+      cardUsdt: 0,
+    }));
+    assert.equal(rates.rubPerUsdt, null);
+    assert.equal(rates.vndPerUsdt, 25_000);
+    assert.equal(rates.vndPerRub, 300);
+  });
+
   it('rejects non-finite aggregate conversions when no other valid evidence exists', () => {
     const rates = calculateDateAwareValuationRates(aggregate({
       rubUsdtRub: 'Infinity',
