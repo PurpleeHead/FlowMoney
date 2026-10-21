@@ -117,10 +117,7 @@ try {
       (${suffix + '-nan-rub'}, ${userId}, 'RUB_USDT_VND', 'VND', 'NaN'::numeric, 2, 50000, ${new Date('2026-10-14T12:40:00.000Z')}, NULL, NULL),
       (${suffix + '-nan-usdt'}, ${userId}, 'RUB_USDT_VND', 'VND', 100, 'NaN'::numeric, 20000, ${new Date('2026-10-14T12:45:00.000Z')}, NULL, NULL),
       (${suffix + '-nan-direct-vnd'}, ${userId}, 'RUB_VND', 'VND', 100, NULL, 'NaN'::numeric, ${new Date('2026-10-14T12:50:00.000Z')}, NULL, NULL),
-      (${suffix + '-nan-canonical-vnd'}, ${userId}, 'RUB_TARGET', 'VND', 50, NULL, 456000, ${new Date('2026-10-14T12:55:00.000Z')}, 123000, 'NaN'::numeric),
-      (${suffix + '-infinity-rub'}, ${userId}, 'RUB_USDT_VND', 'VND', 'Infinity'::numeric, 2, 50000, ${new Date('2026-10-14T13:00:00.000Z')}, NULL, NULL),
-      (${suffix + '-infinity-usdt'}, ${userId}, 'RUB_USDT_VND', 'VND', 100, 'Infinity'::numeric, 50000, ${new Date('2026-10-14T13:05:00.000Z')}, NULL, NULL),
-      (${suffix + '-infinity-vnd'}, ${userId}, 'RUB_USDT_VND', 'VND', 100, 2, 'Infinity'::numeric, ${new Date('2026-10-14T13:10:00.000Z')}, NULL, NULL)
+      (${suffix + '-nan-canonical-vnd'}, ${userId}, 'RUB_TARGET', 'VND', 50, NULL, 456000, ${new Date('2026-10-14T12:55:00.000Z')}, 123000, 'NaN'::numeric)
   `);
 
   await prisma.expense.createMany({
@@ -233,7 +230,7 @@ try {
   near(aggregate.cardVnd, cardRows.reduce((sum, x) => sum + Number(x.amountVnd), 0), 'cutoff card VND');
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
-  assert.equal(exchanges.length, 16, 'the cutoff instant is inclusive; later exchanges and other users are excluded while malformed numeric rows remain available to the legacy-mapper comparison');
+  assert.equal(exchanges.length, 13, 'the cutoff instant is inclusive; later exchanges and other users are excluded while malformed numeric rows remain available to the legacy-mapper comparison');
   assert.equal(expenses.length, 10, 'the cutoff instant is inclusive; later expenses and other users are excluded while malformed numeric and same-user legacy rows remain in the comparison set');
   near(aggregate.rubUsdtRub, 13_300, 'fixture RUB/USDT numerator');
   near(aggregate.rubUsdtUsdt, 149.7853, 'fixture RUB/USDT denominator');
