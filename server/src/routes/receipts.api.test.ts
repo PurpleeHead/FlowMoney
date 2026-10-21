@@ -122,7 +122,11 @@ describe('receipt API ownership', () => {
     });
   });
   it('uses legacy direct VND target fields even when the currency casing is inconsistent', async () => {
-    exchangeModel.findMany = async () => [{
+    let exchangeQuery: any;
+    let purchaseQuery: any;
+    exchangeModel.findMany = async (args: any) => {
+      exchangeQuery = args;
+      return [{
       mode: 'RUB_TARGET',
       rubSpent: 1000,
       usdtReceived: null,
@@ -131,8 +135,12 @@ describe('receipt API ownership', () => {
       targetCurrency: ' vNd ',
       targetReceived: 250000,
       targetVndEquivalent: null,
-    }];
-    expenseModel.findMany = async () => [];
+      }];
+    };
+    expenseModel.findMany = async (args: any) => {
+      purchaseQuery = args;
+      return [];
+    };
     let savedExpense: any;
     const tx = {
       receipt: { create: async () => ({ id: 'receipt-legacy-direct-vnd' }) },
@@ -163,6 +171,14 @@ describe('receipt API ownership', () => {
       assert.equal(savedExpense.amountVnd, 250000);
       assert.equal(savedExpense.amountRub, 1000, 'legacy targetReceived VND amount should value the receipt at the observed direct exchange rate');
     });
+
+    assert.deepEqual(exchangeQuery.where.userId, 'user-1');
+    assert.ok(exchangeQuery.where.createdAt.lte instanceof Date,
+      'receipt valuation must not include exchanges created after the receipt');
+    assert.deepEqual(purchaseQuery.where.userId, 'user-1');
+    assert.ok(purchaseQuery.where.date.lte instanceof Date,
+      'receipt valuation must not include card purchases dated after the receipt');
+    assert.deepEqual(purchaseQuery.where.usdtCharged, { not: null });
   });
 
   it('does not value receipt expenses using a planning-only VND/USDT rate', async () => {
