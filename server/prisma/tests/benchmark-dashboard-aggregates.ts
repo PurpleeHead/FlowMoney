@@ -192,6 +192,11 @@ try {
   const boundedActivityBytes = Buffer.byteLength(JSON.stringify(toDashboardExchangePayload(boundedActivityRows)));
   assert.equal(boundedActivityRows.length, Math.min(sampleSize, 100),
     'bounded activity must return at most 100 newest rows');
+  assert.deepEqual(
+    toDashboardExchangePayload(boundedActivityRows),
+    toDashboardExchangePayload(fullActivityRows.slice(0, 100)),
+    'bounded activity must contain exactly the newest rows from the full-history ordering',
+  );
   assert.ok(boundedActivityBytes <= fullActivityBytes,
     'bounded exchange payload must not exceed the full-history exchange payload');
   const boundedActivitySamples: number[] = [];
