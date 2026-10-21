@@ -199,6 +199,28 @@ describe('direct RUB to VND exchange fees', () => {
   });
 
 
+  it('rejects editing a direct exchange when the fee consumes all gross VND before opening a transaction', async () => {
+    let transactionCalls = 0;
+    client.$transaction = async (...args: any[]) => {
+      transactionCalls += 1;
+      return originalTransaction(...args);
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/direct-fee-invalid`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250000, vndFee: 250000,
+        }),
+      });
+      assert.equal(response.status, 400);
+    });
+
+    assert.equal(transactionCalls, 0, 'invalid net outcome must be rejected before update or ledger synchronization');
+  });
+
+
 describe('direct RUB to USDT top-up without VND rate', () => {
   it('rejects a VND fee in direct-target mode instead of silently ignoring it', async () => {
     let createCalls = 0;
