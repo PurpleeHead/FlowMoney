@@ -133,19 +133,31 @@ function dashboardExchangeAggregateQuery(userId: string) {
         "safeRubSpent" > 0 AND (
           ("mode" = 'RUB_VND' AND "safeVndReceived" > 0)
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
-            AND COALESCE("safeTargetVndEquivalent", "safeTargetReceived", "safeVndReceived") > 0)
+            AND CASE
+              WHEN "targetVndEquivalent" IS NOT NULL THEN "safeTargetVndEquivalent"
+              WHEN "targetReceived" IS NOT NULL THEN "safeTargetReceived"
+              ELSE "safeVndReceived"
+            END > 0)
           OR ("mode" = 'RUB_USDT_VND' AND "safeVndReceived" > 0)
         )
       ), 0) AS "rateExchangeRub",
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
-          THEN COALESCE("safeTargetVndEquivalent", "safeTargetReceived", "safeVndReceived")
+          THEN CASE
+            WHEN "targetVndEquivalent" IS NOT NULL THEN "safeTargetVndEquivalent"
+            WHEN "targetReceived" IS NOT NULL THEN "safeTargetReceived"
+            ELSE "safeVndReceived"
+          END
         ELSE "safeVndReceived"
       END) FILTER (WHERE
         "safeRubSpent" > 0 AND (
           ("mode" = 'RUB_VND' AND "safeVndReceived" > 0)
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
-            AND COALESCE("safeTargetVndEquivalent", "safeTargetReceived", "safeVndReceived") > 0)
+            AND CASE
+              WHEN "targetVndEquivalent" IS NOT NULL THEN "safeTargetVndEquivalent"
+              WHEN "targetReceived" IS NOT NULL THEN "safeTargetReceived"
+              ELSE "safeVndReceived"
+            END > 0)
           OR ("mode" = 'RUB_USDT_VND' AND "safeVndReceived" > 0)
         )
       ), 0) AS "rateExchangeVnd"
