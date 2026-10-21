@@ -117,16 +117,16 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     estimatedTargetVnd,
     estimatedUsdt,
     hasUnpricedUsdtTopUp: rows.some(x =>
-      (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 && finiteOrNull(x.vndReceived) == null &&
+      (x.mode === 'RUB_USDT_VND' && finiteOrNull(x.rubSpent) != null && finiteOrNull(x.rubSpent)! > 0 && finiteOrNull(x.vndReceived) == null &&
         finiteOrNull(x.usdtReceived) != null && finiteOrNull(x.usdtReceived)! > 0) ||
-      (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
+      (x.mode === 'RUB_TARGET' && finiteOrNull(x.rubSpent) != null && finiteOrNull(x.rubSpent)! > 0 &&
         x.targetCurrency.trim().toUpperCase() === 'USDT' &&
         finiteOrNull(x.targetReceived) != null && finiteOrNull(x.targetReceived)! > 0 &&
         finiteOrNull(x.targetVndEquivalent) == null)),
     hasUnknownTopUpAmount: rows.some(x =>
-      (x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 &&
+      (x.mode === 'RUB_USDT_VND' && finiteOrNull(x.rubSpent) != null && finiteOrNull(x.rubSpent)! > 0 &&
         finiteOrNull(x.vndReceived) == null && finiteOrNull(x.usdtReceived) == null) ||
-      (x.mode === 'RUB_TARGET' && Number(x.rubSpent) > 0 &&
+      (x.mode === 'RUB_TARGET' && finiteOrNull(x.rubSpent) != null && finiteOrNull(x.rubSpent)! > 0 &&
         x.targetCurrency.trim().toUpperCase() === 'USDT' &&
         finiteOrNull(x.targetVndEquivalent) == null && finiteOrNull(x.targetReceived) == null)),
     hasEstimatedTarget: rows.some(x => x.mode === 'RUB_TARGET' &&
