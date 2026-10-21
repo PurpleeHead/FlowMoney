@@ -103,3 +103,4 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - [ ] CI must pass on the updated work branch before this audit is considered verified. Production database and release operations remain untouched.
 
 - The Dashboard API also excludes PostgreSQL numeric `NaN` from all-time/month expense totals and from weighted card-purchase aggregates. Regression coverage verifies that malformed VND or USDT on one row cannot make the returned financial totals/rates `NaN`.
+- Weighted exchange observations now require a finite positive RUB cost basis and positive USDT/VND amounts, matching `mapActualVndUsdtExchanges` and the existing `money.ts` validity rules. Planning estimates require a positive RUB basis, USDT amount, and planning rate; an invalid cost-basis row cannot make the VND balance unknown or distort the effective rate.
