@@ -74,3 +74,12 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - [x] CI run [#1223](https://github.com/PurpleeHead/FlowMoney/actions/runs/39429935414) passed on `6daa9115a8166ee446fa2de3aee334656c3ab8e7`; its disposable-PostgreSQL fixture, migration/rollback/idempotency checks, test suite, production build, and dependency audits passed. Security workflow [#208](https://github.com/PurpleeHead/FlowMoney/actions/runs/39429935408) also passed.
 - [ ] This is the first equivalence slice, not the complete release gate. Extend database-side aggregate comparisons to canonical direct-target VND totals, confirmed/estimated budget components, and planning-rate aggregates before changing `dashboard.ts` summary calculations or bounding its exchange query.
 - [ ] Capture realistic `EXPLAIN (ANALYZE, BUFFERS)`, query timings, and response payload sizes before claiming a performance improvement.
+
+
+## Fixture implementation update — 2026-10-21
+
+- [x] Extended the disposable PostgreSQL fixture to verify budget/planning buckets in addition to the first exchange/card-rate slice.
+- [x] Asserted the confirmed VND total (direct and indirect actual outcomes, legacy fallback, no duplicate stale fields), estimated non-VND target total, planning weighted numerator/denominator, unconverted-USDT estimate inputs, and count of unpriced top-ups.
+- [x] CI runs [#39615512162](https://github.com/PurpleeHead/FlowMoney/actions/runs/39615512162) and [#39615548010](https://github.com/PurpleeHead/FlowMoney/actions/runs/39615548010) passed on `076ff56b60f1874674342dd9cc8659aba50cf019`, including the disposable PostgreSQL equivalence fixture and migration/rollback/concurrency checks.
+- [ ] Runtime dashboard exchange-history query is still unbounded. Do not change it until the complete SQL aggregate implementation is compared field-by-field with the legacy TypeScript formulas, including null/unknown-balance behavior.
+- [ ] Performance evidence (EXPLAIN ANALYZE/BUFFERS, representative history sizes, timings, and response payload sizes) remains outstanding.
