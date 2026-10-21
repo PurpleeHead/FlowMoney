@@ -4,7 +4,7 @@ import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
 import { calculateObservedVndPerUsdt } from '../lib/money.js';
-import { getDashboardExchangeAggregates } from '../lib/dashboard-aggregates.js';
+import { getDashboardCardPurchaseAggregates, getDashboardExchangeAggregates } from '../lib/dashboard-aggregates.js';
 
 const router=Router();
 router.use(auth);
@@ -42,14 +42,14 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       // explicitly so corrupted legacy values cannot poison totals or weighted rates.
       prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true}}),
       prisma.expense.aggregate({where:{userId:req.user!.id,date:{gte:start},amountVnd:{not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true}}),
-      prisma.expense.aggregate({where:{userId:req.user!.id,currency:{mode:'insensitive',equals:'VND'},amountVnd:{gt:0,not:new Prisma.Decimal('NaN')},usdtCharged:{gt:0,not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true,usdtCharged:true}}),
+      getDashboardCardPurchaseAggregates(req.user!.id),
       getDashboardExchangeAggregates(req.user!.id),
     ]);
 
     const totalVnd=Number(totalExpenseAggregate._sum.amountVnd ?? 0);
     const monthVnd=Number(monthExpenseAggregate._sum.amountVnd ?? 0);
-    const observedVnd=Number(purchaseAggregate._sum.amountVnd ?? 0);
-    const observedUsdt=Number(purchaseAggregate._sum.usdtCharged ?? 0);
+    const observedVnd=purchaseAggregate.amountVnd;
+    const observedUsdt=purchaseAggregate.usdtCharged;
     // Aggregate sums preserve weighted rates exactly: sum(VND) / sum(USDT), not
     // an average of individual rates. One synthetic observation carries those sums.
     const purchases = observedVnd > 0 && observedUsdt > 0
