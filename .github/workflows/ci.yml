@@ -122,6 +122,21 @@ jobs:
         run: npx tsx server/prisma/tests/verify-dashboard-aggregate-equivalence.ts
       - name: Verify date-aware valuation aggregates against disposable PostgreSQL
         run: npx tsx server/prisma/tests/verify-date-aware-valuation-aggregates.ts
+      - name: Benchmark date-aware valuation aggregates (1k rows/user)
+        env:
+          FLOWMONEY_BENCHMARK_DATABASE: disposable
+          DATE_AWARE_BENCHMARK_ROWS: 1000
+        run: npx tsx server/prisma/tests/benchmark-date-aware-valuation-aggregates.ts
+      - name: Benchmark date-aware valuation aggregates (10k rows/user)
+        env:
+          FLOWMONEY_BENCHMARK_DATABASE: disposable
+          DATE_AWARE_BENCHMARK_ROWS: 10000
+        run: npx tsx server/prisma/tests/benchmark-date-aware-valuation-aggregates.ts
+      - name: Benchmark date-aware valuation aggregates (50k rows/user)
+        env:
+          FLOWMONEY_BENCHMARK_DATABASE: disposable
+          DATE_AWARE_BENCHMARK_ROWS: 50000
+        run: npx tsx server/prisma/tests/benchmark-date-aware-valuation-aggregates.ts
       - name: Benchmark dashboard aggregates (1k rows/user)
         env:
           FLOWMONEY_BENCHMARK_DATABASE: disposable
