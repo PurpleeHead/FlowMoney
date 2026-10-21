@@ -58,12 +58,8 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       getDashboardExchangeAggregates(req.user!.id),
     ]);
 
-    const finiteTotal = (value: unknown) => {
-      const number = Number(value ?? 0);
-      return Number.isFinite(number) ? number : 0;
-    };
-    const totalVnd=finiteTotal(totalExpenseAggregate?.[0]?.totalVnd);
-    const monthVnd=finiteTotal(totalExpenseAggregate?.[0]?.monthVnd);
+    const totalVnd=Number(totalExpenseAggregate?.[0]?.totalVnd ?? 0);
+    const monthVnd=Number(totalExpenseAggregate?.[0]?.monthVnd ?? 0);
     const observedVnd=purchaseAggregate.amountVnd;
     const observedUsdt=purchaseAggregate.usdtCharged;
     // Aggregate sums preserve weighted rates exactly: sum(VND) / sum(USDT), not
