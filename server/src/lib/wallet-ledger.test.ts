@@ -130,6 +130,16 @@ describe('wallet ledger mapping', () => {
     ]);
   });
 
+  it('does not treat an unknown exchange mode as an indirect top-up', () => {
+    const drafts = exchangeLedgerDrafts({
+      id: 'x-unknown-mode', userId: 'u1', mode: 'UNRECOGNIZED_MODE', rubSpent: 500,
+      usdtReceived: 10, vndReceived: 250000, targetCurrency: 'VND',
+      targetReceived: 250000, createdAt: new Date('2026-10-16T07:00:00.000Z'),
+    });
+
+    assert.deepEqual(drafts.map(x => [x.currency, x.amountDelta]), [['RUB', -500]]);
+  });
+
   it('does not create a RUB credit for an invalid legacy RUB_TARGET record', () => {
     const drafts = exchangeLedgerDrafts({
       id: 'x-invalid', userId: 'u1', mode: 'RUB_TARGET', rubSpent: 200,
