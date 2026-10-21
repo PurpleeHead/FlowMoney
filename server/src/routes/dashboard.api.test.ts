@@ -48,8 +48,9 @@ function mockDashboardExchangeAggregates(rows: any[]) {
     usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
     vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
   })));
-  const planned = rows.filter(x => x.mode === 'RUB_USDT_VND' &&
-    x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
+  const planned = rows.filter(x => x.mode === 'RUB_USDT_VND' && Number(x.rubSpent) > 0 &&
+    x.vndReceived == null && x.usdtReceived != null && Number(x.usdtReceived) > 0 &&
+    x.planningVndPerUsdt != null && Number(x.planningVndPerUsdt) > 0);
   const confirmedVnd = rows.reduce((sum, x) => {
     if (x.mode === 'RUB_TARGET' && x.targetCurrency.trim().toUpperCase() === 'VND') {
       const value = x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived;
