@@ -130,7 +130,8 @@ function mockDashboardExchangeAggregates(rows: any[]) {
         x.targetCurrency.trim().toUpperCase() === 'USDT' &&
         finiteOrNull(x.targetVndEquivalent) == null && finiteOrNull(x.targetReceived) == null)),
     hasEstimatedTarget: rows.some(x => x.mode === 'RUB_TARGET' &&
-      !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) && x.targetVndEquivalent != null),
+      !['VND', 'RUB'].includes(x.targetCurrency.trim().toUpperCase()) &&
+      finiteOrNull(x.targetVndEquivalent) != null),
     rateExchangeRub: rateRows.reduce((sum, x) => sum + x.rubSpent, 0),
     rateExchangeVnd: rateRows.reduce((sum, x) => sum + x.vndReceived, 0),
   }];
