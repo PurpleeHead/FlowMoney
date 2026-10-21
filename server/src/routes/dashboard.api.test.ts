@@ -786,3 +786,46 @@ describe('dashboard canonical direct VND amount precedence', () => {
     });
   });
 });
+
+
+describe('dashboard normalizes legacy direct VND target currency', () => {
+  it('classifies padded lowercase VND as a direct VND outcome, not an estimated target currency', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'legacy-padded-lowercase-vnd-target',
+      mode: 'RUB_TARGET',
+      targetCurrency: ' vnd ',
+      targetReceived: 125_000,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+      // Stale legacy data must not override the supported targetReceived fallback.
+      vndReceived: 777_777,
+      usdtReceived: null,
+      rubSpent: 500,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+        effectiveVndPerRub: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 125_000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 125_000);
+      assert.equal(body.balanceIsEstimated, false);
+      assert.equal(body.effectiveVndPerRub, 250);
+    });
+  });
+});
