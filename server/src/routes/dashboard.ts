@@ -1,4 +1,5 @@
 import {Router} from 'express';
+import { Prisma } from '@prisma/client';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
@@ -37,9 +38,11 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
           effectiveRubPerUsdt:true,createdAt:true,
         },
       }),
-      prisma.expense.aggregate({where:{userId:req.user!.id},_sum:{amountVnd:true}}),
-      prisma.expense.aggregate({where:{userId:req.user!.id,date:{gte:start},},_sum:{amountVnd:true}}),
-      prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{gt:0},usdtCharged:{gt:0}},_sum:{amountVnd:true,usdtCharged:true}}),
+      // PostgreSQL numeric NaN compares greater than ordinary numbers; exclude it
+      // explicitly so corrupted legacy values cannot poison totals or weighted rates.
+      prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true}}),
+      prisma.expense.aggregate({where:{userId:req.user!.id,date:{gte:start},amountVnd:{not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true}}),
+      prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{gt:0,not:new Prisma.Decimal('NaN')},usdtCharged:{gt:0,not:new Prisma.Decimal('NaN')}},_sum:{amountVnd:true,usdtCharged:true}}),
       getDashboardExchangeAggregates(req.user!.id),
     ]);
 
