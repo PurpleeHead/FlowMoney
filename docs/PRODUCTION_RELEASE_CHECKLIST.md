@@ -154,3 +154,11 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [ ] Added the same legacy-casing regression to the expense PATCH API fixture in commit `8a86924`; CI [run](https://github.com/PurpleeHead/FlowMoney/actions/runs/39532638230) was pending when this checklist entry was written.
 - [ ] Expense/receipt valuation still loads date-bounded historical rows before reducing them in application code. A safe SQL aggregate replacement remains open; it must preserve effective-date limits, weighted ratios, direct-target legacy precedence, and the distinction between actual and planning rates.
 - [ ] Production database identity, encrypted backup plus isolated restore drill, legacy wallet reconciliation, live Render configuration reconciliation, and target-environment smoke tests remain release blockers. PR #83 remains Draft and unmerged. No production database operation, deployment, or live configuration change was performed.
+
+## Historical valuation regression follow-up — 2026-10-21
+
+- [x] CI run [#1277](https://github.com/PurpleeHead/FlowMoney/actions/runs/39532638230) passed on `8a8692426295b6a9607dd3cbbb99629990820caf`; both `verify` and `verify-migrations` succeeded for the legacy direct-VND PATCH regression.
+- [x] CI run [#1278](https://github.com/PurpleeHead/FlowMoney/actions/runs/39532678556) passed on `5a9004e73314c86f19f071e30c79d3bebf04805f`; both `verify` and `verify-migrations` succeeded, including PostgreSQL aggregate-equivalence, 1k/10k/50k dashboard aggregate benchmarks, transaction rollback checks, and legacy wallet preflight fixture.
+- [x] Added a card-expense API regression test ensuring a direct RUB→VND observation cannot be used as a substitute for a missing USDT RUB acquisition cost basis. This protects the rule that a recorded USDT debit with unknown RUB cost must remain unpriced instead of receiving an unrelated confirmed valuation.
+- [ ] The new card-expense regression test requires its own CI run before it can be considered verified.
+- [ ] Historical expense/receipt route calculations still fetch date-bounded exchange and card-purchase rows into Node.js. They must be moved to date-aware PostgreSQL aggregates only after equivalent eligibility, date cutoffs, and weighted totals are covered by tests.
