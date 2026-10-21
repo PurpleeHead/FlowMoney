@@ -232,3 +232,20 @@ describe('receipt cursor continuation', () => {
     ]);
   });
 });
+
+
+describe('receipt pagination validation boundaries', () => {
+  it('rejects malformed and repeated cursor parameters before querying receipts', async () => {
+    let queryCalled = false;
+    receiptModel.findMany = async () => { queryCalled = true; return []; };
+    await withApi(async baseUrl => {
+      for (const query of ['cursor=not-a-cursor', 'limit=1.25', 'limit=10&limit=20']) {
+        const response = await fetch(`${baseUrl}/api/receipts?${query}`, {
+          headers: { authorization: bearer('user-1') },
+        });
+        assert.equal(response.status, 400, query);
+      }
+    });
+    assert.equal(queryCalled, false);
+  });
+});

@@ -386,3 +386,52 @@ describe('exchange cursor pagination', () => {
     assert.deepEqual(queryArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
   });
 });
+
+
+describe('exchange cursor continuation boundaries', () => {
+  it('uses the timestamp and ID tie-breaker for a continuation cursor', async () => {
+    let queryArgs: any;
+    exchangeModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [{ id: 'exchange-z', createdAt: new Date('2026-10-18T08:00:00.000Z') }];
+    };
+    const cursor = Buffer.from(JSON.stringify({
+      timestamp: '2026-10-18T08:00:00.000Z',
+      id: 'exchange-m',
+    }), 'utf8').toString('base64url');
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges?limit=5&cursor=${encodeURIComponent(cursor)}`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['exchange-z']);
+      assert.equal(body.hasMore, false);
+      assert.equal(body.nextCursor, null);
+    });
+
+    assert.deepEqual(queryArgs.where, {
+      userId: 'user-42',
+      OR: [
+        { createdAt: { lt: new Date('2026-10-18T08:00:00.000Z') } },
+        { createdAt: new Date('2026-10-18T08:00:00.000Z'), id: { gt: 'exchange-m' } },
+      ],
+    });
+    assert.equal(queryArgs.take, 6);
+  });
+
+  it('rejects invalid page limits before querying exchanges', async () => {
+    let queryCalled = false;
+    exchangeModel.findMany = async () => { queryCalled = true; return []; };
+    await withApi(async baseUrl => {
+      for (const query of ['limit=0', 'limit=501', 'limit=Infinity']) {
+        const response = await fetch(`${baseUrl}/api/exchanges?${query}`, {
+          headers: { authorization: bearer('user-42') },
+        });
+        assert.equal(response.status, 400, query);
+      }
+    });
+    assert.equal(queryCalled, false);
+  });
+});
