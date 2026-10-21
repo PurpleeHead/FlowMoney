@@ -169,8 +169,8 @@ jobs:
             card_delta numeric;
           BEGIN
             SELECT count(*) INTO movement_count FROM "WalletMovement" WHERE "userId" = 'backfill-test-user';
-            IF movement_count <> 15 THEN
-              RAISE EXCEPTION 'Expected 15 unique movements after two backfills, got %', movement_count;
+            IF movement_count <> 16 THEN
+              RAISE EXCEPTION 'Expected 16 unique movements after two backfills, got %', movement_count;
             END IF;
             SELECT count(*), min("amountDelta") INTO card_count, card_delta
               FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-card-expense:USDT';
@@ -237,7 +237,13 @@ jobs:
             IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-fee-net-unknown:VND') <> 0 THEN
               RAISE EXCEPTION 'Fee-bearing direct exchange must not credit gross VND when net VND is unknown';
             END IF;
-            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -11300 THEN
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-nan-usdt-target:RUB' AND "amountDelta" = -250) <> 1 THEN
+              RAISE EXCEPTION 'Malformed direct USDT receipt must preserve the known RUB outflow';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-nan-usdt-target:USDT') <> 0 THEN
+              RAISE EXCEPTION 'Malformed direct USDT receipt must not create a USDT credit';
+            END IF;
+            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -11550 THEN
               RAISE EXCEPTION 'RUB movement total does not reconcile';
             END IF;
             IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'USDT') <> 95.0953 THEN
