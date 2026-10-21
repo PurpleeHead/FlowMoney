@@ -189,3 +189,10 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [ ] Additional regression coverage now checks invalid direct VND/RUB observations, overflow in card-derived weighted totals, and underflow of a derived VND/USDT rate. CI for these newest commits is pending.
 - [ ] Historical date-aware SQL aggregates for expense/receipt valuations remain unimplemented. Preserve per-operation `createdAt <= expenseDate` / `date <= expenseDate`, user isolation, weighted totals, direct VND legacy fallback, and unknown RUB/USDT basis behavior before migrating route callers.
 - [ ] Production DB identity, encrypted backup plus isolated restore, legacy wallet reconciliation, Render configuration approval, and production smoke tests remain blockers. No production database operation, deployment, or live Render configuration change was performed.
+
+
+## Numeric boundary CI reconciliation — 2026-10-21 (verified)
+
+- [x] CI runs [#1297](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534615332), [#1298](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534627250), [#1299](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534635795), [#1300](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534647299), and [#1301](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534668662) all completed successfully. This confirms invalid direct/card observations, overflow/underflow rate handling, and the follow-up documentation correction on the respective commits.
+- [ ] Date-aware PostgreSQL aggregates for expense create/edit and receipt save remain the next code milestone. They are not yet implemented; no claim of route-level SQL equivalence is made.
+- [ ] Production DB identity, encrypted backup and isolated restore, legacy wallet reconciliation, Render configuration approval, and production smoke tests remain release blockers. No production database operation, deployment, or live Render configuration change was performed.
