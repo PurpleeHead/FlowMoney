@@ -176,7 +176,7 @@ async function raceExchangePatchPatch(user: { id: string }, iteration: number) {
   const [saved, rows] = await Promise.all([
     prisma.exchange.findFirst({ where: { id: exchange.id, userId: user.id } }),
     prisma.walletMovement.findMany({
-      where: { userId: user.id, sourceKey: { startsWith: `exchange:${exchange.id}:` },
+      where: { userId: user.id, sourceKey: { startsWith: `exchange:${exchange.id}:` } },
       orderBy: { sourceKey: 'asc' },
     }),
   ]);
