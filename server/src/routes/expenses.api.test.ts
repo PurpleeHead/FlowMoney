@@ -299,8 +299,8 @@ describe('expense API ledger synchronization', () => {
     expenseModel.findMany = async () => [];
     exchangeModel.findMany = async () => [{
       mode: 'RUB_TARGET', rubSpent: 2000, usdtReceived: null, vndReceived: null,
-      planningVndPerUsdt: null, targetCurrency: 'VND', targetReceived: 460000,
-      targetVndEquivalent: null, // legacy row only has targetReceived
+      planningVndPerUsdt: null, targetCurrency: ' vNd ', targetReceived: 460000,
+      targetVndEquivalent: null, // legacy row only has targetReceived and non-canonical currency casing
     }];
     let updateData: any;
     const tx = {
