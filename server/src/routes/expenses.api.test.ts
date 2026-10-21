@@ -172,6 +172,7 @@ describe('expense API ledger synchronization', () => {
       });
 
       assert.equal(response.status, 400);
+      assert.equal(aggregateQueries.length, 0, 'invalid input must be rejected before valuation SQL runs');
     });
   });
 
@@ -313,7 +314,7 @@ describe('expense API ledger synchronization', () => {
       assert.equal(aggregateQueries.length, 1, 'PATCH must use one historical aggregate query');
       assert.ok(aggregateQueries[0].values.includes('expense-keep-card-debit'),
         'PATCH aggregate must exclude the edited expense from its own historical evidence');
-      assert.ok(aggregateQueries[0].values.includes(existing.date),
+      assert.ok(aggregateQueries[0].values.some((value: unknown) => value instanceof Date && value.getTime() === existing.date.getTime()),
         'PATCH aggregate must use the effective expense date as its cutoff');
       assert.equal(updateArgs.data.amountRub, 332, 'RUB cost must use the preserved actual debit (4 USDT × 83 RUB/USDT), not the planning estimate');
       const movements = createdMovements[0].data as Array<{ currency: string; amountDelta: number }>;
@@ -579,7 +580,7 @@ describe('expense API ledger synchronization', () => {
       usdtCharged: { not: null },
     });
     assert.equal(aggregateQueries.length, 1, 'expense valuation must issue one aggregate query');
-    assert.ok(aggregateQueries[0].values.includes(effectiveDate),
+    assert.ok(aggregateQueries[0].values.some((value: unknown) => value instanceof Date && value.getTime() === effectiveDate.getTime()),
       'aggregate query must use the expense effective date as its historical cutoff');
   });
 
