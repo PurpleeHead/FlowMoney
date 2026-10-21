@@ -938,7 +938,9 @@ describe('dashboard estimates legacy direct USDT targets', () => {
 describe('dashboard exchange response bounds', () => {
   it('keeps lifetime exchange count and financial totals while returning only the latest 100 rows', async () => {
     expenseModel.findMany = async () => [];
-    const rows = Array.from({ length: 125 }, (_, i) => ({
+    const rows = Array.from({ length: 125 }, (_, offset) => {
+      const i = 124 - offset;
+      return ({
       ...exchangeFixture(),
       id: `exchange-${i}`,
       mode: 'RUB_VND',
@@ -949,7 +951,8 @@ describe('dashboard exchange response bounds', () => {
       usdtReceived: null,
       vndReceived: 1000,
       createdAt: new Date(Date.UTC(2026, 9, 21, 0, i)),
-    }));
+      });
+    });
     exchangeModel.findMany = async () => rows;
     exchangeModel.count = async (args: any) => {
       assert.deepEqual(args.where, { userId: 'dashboard-user' });
@@ -975,7 +978,7 @@ describe('dashboard exchange response bounds', () => {
       assert.equal(body.exchanges.length, 100);
       assert.equal(body.confirmedExchangeVnd, 125000, 'lifetime financial totals must use all records, not only the response slice');
       assert.equal(body.balanceVnd, 125000);
-      assert.equal(body.exchanges[0].id, 'exchange-0', 'the list preserves the existing newest-first query order');
+      assert.equal(body.exchanges[0].id, 'exchange-124', 'the list preserves the existing newest-first query order');
     });
   });
 });
