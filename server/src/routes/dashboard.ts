@@ -18,7 +18,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     const chartStart=new Date(now.getFullYear(),now.getMonth()-11,1);
     // Return only fields consumed by dashboard calculations and the client. This keeps
     // internal ownership/audit metadata out of the response and avoids fetching unused columns.
-    const [expenses,exchanges,totalExpenseAggregate,monthExpenseAggregate,purchaseAggregate,exchangeAggregates]=await Promise.all([
+    const [expenses,exchanges,totalExpenseAggregate,purchaseAggregate,exchangeAggregates]=await Promise.all([
       prisma.expense.findMany({
         where:{userId:req.user!.id,date:{gte:chartStart}},
         orderBy:{date:'desc'},
