@@ -197,6 +197,12 @@ try {
     'excluding an edited card expense must recompute the weighted historical card rate',
   );
 
+  assert.notEqual(
+    ratesWithEditedExpense.vndPerRub,
+    ratesWithoutEditedExpense.vndPerRub,
+    'excluding an edited card expense must recompute the historical VND/RUB rate when card evidence contributes',
+  );
+
   for (const field of [
     'rubUsdtRub', 'rubUsdtUsdt', 'actualVnd', 'actualUsdt',
     'directRub', 'directVnd', 'actualRubForVnd', 'actualVndForRub',
