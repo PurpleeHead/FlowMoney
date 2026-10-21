@@ -645,3 +645,49 @@ describe('exchange cursor pagination', () => {
     assert.deepEqual(queryArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
   });
 });
+
+describe('derived exchange amount storage limits', () => {
+  it('rejects a direct RUB-to-VND derived rate overflow before opening a transaction', async () => {
+    let transactionCalls = 0;
+    client.$transaction = async () => {
+      transactionCalls += 1;
+      throw new Error('transaction must not run for an unrepresentable derived rate');
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_VND', rubSpent: 0.0001, vndReceived: 999999999999.99,
+        }),
+      });
+      assert.equal(response.status, 400);
+      assert.match((await response.json() as any).message, /storage range/i);
+    });
+
+    assert.equal(transactionCalls, 0);
+  });
+
+  it('rejects a direct RUB-to-VND derived rate overflow on edit before opening a transaction', async () => {
+    let transactionCalls = 0;
+    client.$transaction = async () => {
+      transactionCalls += 1;
+      throw new Error('transaction must not run for an unrepresentable derived rate');
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/exchange-overflow`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_VND', rubSpent: 0.0001, vndReceived: 999999999999.99,
+        }),
+      });
+      assert.equal(response.status, 400);
+      assert.match((await response.json() as any).message, /storage range/i);
+    });
+
+    assert.equal(transactionCalls, 0);
+  });
+});
