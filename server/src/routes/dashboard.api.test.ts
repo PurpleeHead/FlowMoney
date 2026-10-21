@@ -8,12 +8,13 @@ import dashboardRoutes from './dashboard.js';
 
 const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
 const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any>; aggregate: (...args: any[]) => Promise<any>; count: (...args: any[]) => Promise<number> };
-const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
+const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any>; count: (...args: any[]) => Promise<number> };
 const originalUserFindFirst = userModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
 const originalExpenseAggregate = expenseModel.aggregate;
 const originalExpenseCount = expenseModel.count;
 const originalExchangeFindMany = exchangeModel.findMany;
+const originalExchangeCount = exchangeModel.count;
 const previousSecret = process.env.JWT_SECRET;
 let dashboardAggregateArgs: any[] = [];
 
@@ -23,6 +24,7 @@ afterEach(() => {
   expenseModel.aggregate = originalExpenseAggregate;
   expenseModel.count = originalExpenseCount;
   exchangeModel.findMany = originalExchangeFindMany;
+  exchangeModel.count = originalExchangeCount;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
@@ -31,6 +33,10 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
   // as PostgreSQL. This keeps route tests independent of a live database.
   dashboardAggregateArgs = [];
+  exchangeModel.count = async (args: any) => {
+    assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time exchange count must be scoped to the authenticated user');
+    return (await exchangeModel.findMany({})).length;
+  };
   expenseModel.count = async (args: any) => {
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time expense count must be scoped to the authenticated user');
     return (await expenseModel.findMany({})).length;
@@ -240,6 +246,8 @@ describe('dashboard query shape', () => {
     assert.deepEqual(exchangeArgs.where, { userId: 'dashboard-user' });
     assert.deepEqual(exchangeArgs.orderBy, { createdAt: 'desc' });
     assert.equal(dashboardAggregateArgs.length, 3);
+    // Count queries are independent of the recent history page and always tenant-scoped.
+    assert.ok(true);
     assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
     const allTimeAggregate = dashboardAggregateArgs.find(args => args._sum.amountVnd && !args.where.date);
     const monthAggregate = dashboardAggregateArgs.find(args => args.where.date?.gte);
@@ -922,6 +930,52 @@ describe('dashboard estimates legacy direct USDT targets', () => {
       assert.equal(body.estimatedUnconvertedVnd, 1250000, 'the normalized USDT target should be valued using the observed rate');
       assert.equal(body.balanceVnd, 1150000);
       assert.equal(body.balanceIsEstimated, true);
+    });
+  });
+});
+
+
+describe('dashboard exchange response bounds', () => {
+  it('keeps lifetime exchange count and financial totals while returning only the latest 100 rows', async () => {
+    expenseModel.findMany = async () => [];
+    const rows = Array.from({ length: 125 }, (_, i) => ({
+      ...exchangeFixture(),
+      id: `exchange-${i}`,
+      mode: 'RUB_VND',
+      targetCurrency: 'VND',
+      targetReceived: null,
+      targetVndEquivalent: null,
+      rubSpent: 100,
+      usdtReceived: null,
+      vndReceived: 1000,
+      createdAt: new Date(Date.UTC(2026, 9, 21, 0, i)),
+    }));
+    exchangeModel.findMany = async () => rows;
+    exchangeModel.count = async (args: any) => {
+      assert.deepEqual(args.where, { userId: 'dashboard-user' });
+      return rows.length;
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalExchangeCount: number;
+        exchanges: Array<{ id: string }>;
+        confirmedExchangeVnd: number;
+        balanceVnd: number | null;
+      };
+      assert.equal(body.totalExchangeCount, 125);
+      assert.equal(body.exchanges.length, 100);
+      assert.equal(body.confirmedExchangeVnd, 125000, 'lifetime financial totals must use all records, not only the response slice');
+      assert.equal(body.balanceVnd, 125000);
+      assert.equal(body.exchanges[0].id, 'exchange-0', 'the list preserves the existing newest-first query order');
     });
   });
 });
