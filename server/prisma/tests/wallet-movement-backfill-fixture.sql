@@ -79,6 +79,16 @@ INSERT INTO "Expense" (
   'test', 1000, 'VND', 1000, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 );
 
+-- A valid recorded USDT debit remains authoritative even if the separate legacy
+-- VND basis is malformed; runtime ledger sync still emits the known USDT movement.
+INSERT INTO "Expense" (
+  "id", "userId", "title", "category", "amount", "currency",
+  "amountVnd", "usdtCharged", "date", "createdAt", "updatedAt"
+) VALUES (
+  'backfill-card-invalid-vnd-basis', 'backfill-test-user', 'Card expense with malformed VND basis',
+  'test', 'NaN'::numeric, 'VND', 'NaN'::numeric, 1.5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+);
+
 -- Unknown exchange modes preserve only the known RUB outflow; stale USDT/VND fields are not credits.
 INSERT INTO "Exchange" (
   "id", "userId", "mode", "targetCurrency", "rubSpent", "usdtReceived", "vndReceived", "createdAt"
