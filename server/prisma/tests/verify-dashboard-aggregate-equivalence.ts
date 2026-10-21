@@ -41,7 +41,8 @@ try {
 
   const rows = [
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 2_300_000 },
-    { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 5000, targetReceived: 56 },
+    // A direct USDT target can retain stale legacy VND fields; these are not VND outcomes.
+    { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 5000, targetReceived: 56, vndReceived: 888_888 },
     // Legacy casing/whitespace must behave like the normalized TypeScript helper.
     { mode: 'RUB_TARGET', targetCurrency: ' usdt ', rubSpent: 200, targetReceived: 2 },
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
@@ -50,7 +51,12 @@ try {
     // Legacy direct-target currency values must use the same normalized matching as TypeScript.
     { mode: 'RUB_TARGET', targetCurrency: ' vNd ', rubSpent: 100, targetReceived: 200, targetVndEquivalent: 210, vndReceived: 999_999 },
     // Non-VND target estimates are not factual VND outcomes.
-    { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000 },
+    { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000, vndReceived: 444_444 },
+    // Unknown legacy modes must not contribute stale actual, estimated, or planned amounts.
+    { mode: 'LEGACY_UNKNOWN', targetCurrency: 'VND', rubSpent: 4000, usdtReceived: 40, vndReceived: 999_999 },
+    { mode: 'LEGACY_UNKNOWN', targetCurrency: 'VND', rubSpent: 500, usdtReceived: 7, vndReceived: null, planningVndPerUsdt: 10_000 },
+    // RUB is not a valid target currency and must not be treated as a target valuation.
+    { mode: 'RUB_TARGET', targetCurrency: 'RUB', rubSpent: 300, targetReceived: 100, targetVndEquivalent: 12_000 },
     // Planning rate is not an observed VND outcome.
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1000, usdtReceived: 10, vndReceived: null, planningVndPerUsdt: 25_000 },
   ] as const;
@@ -149,12 +155,11 @@ try {
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
           THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
-        WHEN NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
-          THEN "vndReceived"
+        WHEN "mode" IN ('RUB_VND', 'RUB_USDT_VND') THEN "vndReceived"
         ELSE 0
       END), 0) AS "confirmedVnd",
       COALESCE(SUM(CASE
-        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) <> 'VND'
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) NOT IN ('VND', 'RUB')
           THEN "targetVndEquivalent"
         ELSE 0
       END), 0) AS "estimatedTargetVnd",
@@ -162,15 +167,12 @@ try {
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
           AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL
           THEN "targetReceived"
-        WHEN "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
-          AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL
+        WHEN "mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL
           THEN "usdtReceived"
         ELSE 0
       END), 0) AS "estimatedUsdt",
       SUM("usdtReceived" * "planningVndPerUsdt") FILTER (
-        WHERE "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+        WHERE "mode" = 'RUB_USDT_VND'
           AND "vndReceived" IS NULL
           AND "usdtReceived" IS NOT NULL
           AND "planningVndPerUsdt" IS NOT NULL
@@ -195,9 +197,7 @@ try {
           ("mode" = 'RUB_VND' AND "vndReceived" > 0)
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
               AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
-          OR ("mode" <> 'RUB_VND'
-              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
-              AND "vndReceived" > 0)
+          OR ("mode" = 'RUB_USDT_VND' AND "vndReceived" > 0)
         )
       ), 0) AS "exchangeRub",
       COALESCE(SUM(CASE
@@ -209,9 +209,7 @@ try {
           ("mode" = 'RUB_VND' AND "vndReceived" > 0)
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
               AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
-          OR ("mode" <> 'RUB_VND'
-              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
-              AND "vndReceived" > 0)
+          OR ("mode" = 'RUB_USDT_VND' AND "vndReceived" > 0)
         )
       ), 0) AS "exchangeVnd"
     FROM "Exchange"
