@@ -136,6 +136,8 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
       if (where.date?.gte && new Date(row.date) < where.date.gte) return false;
       if (where.amountVnd?.gt != null && !(row.amountVnd != null && Number(row.amountVnd) > where.amountVnd.gt)) return false;
       if (where.usdtCharged?.gt != null && !(row.usdtCharged != null && Number(row.usdtCharged) > where.usdtCharged.gt)) return false;
+      if (where.amountVnd?.not != null && Number.isNaN(Number(row.amountVnd))) return false;
+      if (where.usdtCharged?.not != null && Number.isNaN(Number(row.usdtCharged))) return false;
       return true;
     });
     const sums: Record<string, number | null> = {};
@@ -342,9 +344,11 @@ describe('dashboard query shape', () => {
     assert.ok(monthAggregate, 'month aggregate must have a date boundary');
     assert.ok(purchaseAggregate, 'weighted card aggregate must sum VND and USDT');
     assert.ok(monthAggregate.where.date.gte instanceof Date);
-    assert.deepEqual(purchaseAggregate.where, {
-      userId: 'dashboard-user', amountVnd: { gt: 0 }, usdtCharged: { gt: 0 },
-    });
+    assert.equal(purchaseAggregate.where.userId, 'dashboard-user');
+    assert.equal(purchaseAggregate.where.amountVnd.gt, 0);
+    assert.equal(purchaseAggregate.where.usdtCharged.gt, 0);
+    assert.ok(Number.isNaN(Number(purchaseAggregate.where.amountVnd.not)), 'purchase aggregate excludes PostgreSQL numeric NaN');
+    assert.ok(Number.isNaN(Number(purchaseAggregate.where.usdtCharged.not)), 'purchase aggregate excludes PostgreSQL numeric NaN');
     assert.deepEqual(Object.keys(purchaseAggregate._sum).sort(), ['amountVnd', 'usdtCharged']);
     assert.deepEqual(Object.keys(exchangeArgs.select).sort(), [
       'createdAt', 'effectiveRubPerUsdt', 'effectiveVndPerRub', 'id', 'mode',
@@ -883,6 +887,54 @@ describe('dashboard canonical direct VND amount precedence', () => {
       assert.equal(body.balanceVnd, 1_000_000);
       assert.ok(body.effectiveVndPerRub != null);
       assert.equal(body.effectiveVndPerRub, 250, 'the stale legacy VND field must not distort the observed VND/RUB rate');
+    });
+  });
+});
+
+
+describe('dashboard rejects non-finite legacy expense amounts', () => {
+  it('keeps totals and weighted purchase rates finite when legacy numeric fields contain NaN', async () => {
+    const now = new Date();
+    expenseModel.findMany = async () => [
+      {
+        id: 'valid-card', title: 'Valid', category: 'Food', amount: 100000,
+        currency: 'VND', amountVnd: 100000, amountRub: 280, usdtCharged: 4,
+        date: now, receiptId: null,
+      },
+      {
+        id: 'nan-vnd', title: 'Broken VND', category: 'Other', amount: 50000,
+        currency: 'VND', amountVnd: Number.NaN, amountRub: null, usdtCharged: 2,
+        date: now, receiptId: null,
+      },
+      {
+        id: 'nan-usdt', title: 'Broken card debit', category: 'Other', amount: 50000,
+        currency: 'VND', amountVnd: 50000, amountRub: null, usdtCharged: Number.NaN,
+        date: now, receiptId: null,
+      },
+    ];
+    exchangeModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalVnd: number;
+        monthVnd: number;
+        observedVnd: number;
+        observedUsdt: number;
+        observedVndPerUsdt: number | null;
+      };
+      assert.equal(body.totalVnd, 200000, 'all-time total excludes malformed VND while preserving other finite expenses');
+      assert.equal(body.monthVnd, 200000, 'month total excludes malformed VND');
+      assert.equal(body.observedVnd, 100000, 'weighted rate excludes rows with a non-finite VND or USDT side');
+      assert.equal(body.observedUsdt, 4);
+      assert.equal(body.observedVndPerUsdt, 25000);
     });
   });
 });
