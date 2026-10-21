@@ -15,6 +15,8 @@ export type DateAwareValuationAggregate = {
   actualUsdt: unknown;
   directRub: unknown;
   directVnd: unknown;
+  actualRubForVnd: unknown;
+  actualVndForRub: unknown;
   cardVnd: unknown;
   cardUsdt: unknown;
 };
@@ -63,7 +65,17 @@ export async function getDateAwareValuationAggregate(
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
             AND "rubSpent" > 0
             AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
-        ), 0) AS "directVnd"
+        ), 0) AS "directVnd",
+        COALESCE(SUM("rubSpent") FILTER (WHERE
+          "rubSpent" > 0 AND "vndReceived" > 0
+          AND "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+        ), 0) AS "actualRubForVnd",
+        COALESCE(SUM("vndReceived") FILTER (WHERE
+          "rubSpent" > 0 AND "vndReceived" > 0
+          AND "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+        ), 0) AS "actualVndForRub"
       FROM "Exchange"
       WHERE "userId" = ${userId} AND "createdAt" <= ${valuationDate}
     ),
