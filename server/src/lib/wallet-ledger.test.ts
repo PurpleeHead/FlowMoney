@@ -13,6 +13,16 @@ describe('wallet ledger mapping', () => {
     assert.equal(drafts[0].amountDelta, -2.19);
   });
 
+  it('does not reinterpret a malformed VND card debit as a cash expense', () => {
+    for (const usdtCharged of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const drafts = expenseLedgerDrafts({
+        id: `e-invalid-card-${String(usdtCharged)}`, userId: 'u1', amount: 40000,
+        currency: 'VND', usdtCharged, date: new Date('2026-10-16T08:00:00.000Z'),
+      });
+      assert.deepEqual(drafts, []);
+    }
+  });
+
   it('ignores stale card-debit fields on non-VND expenses', () => {
     const rub = expenseLedgerDrafts({
       id: 'e-stale-card-rub', userId: 'u1', amount: 2500, currency: 'RUB',
