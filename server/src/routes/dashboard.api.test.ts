@@ -451,6 +451,8 @@ describe('dashboard weighted rates preserve actual observations', () => {
     exchangeModel.findMany = async () => [
       {
         ...exchangeFixture(),
+        mode: 'RUB_USDT_VND',
+        targetCurrency: 'VND',
         id: 'actual-exchange',
         targetToVndRate: null,
         targetVndEquivalent: null,
@@ -462,6 +464,8 @@ describe('dashboard weighted rates preserve actual observations', () => {
       },
       {
         ...exchangeFixture(),
+        mode: 'RUB_USDT_VND',
+        targetCurrency: 'VND',
         id: 'planning-only-exchange',
         targetToVndRate: null,
         targetVndEquivalent: null,
