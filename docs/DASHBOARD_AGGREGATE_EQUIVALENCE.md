@@ -76,7 +76,18 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - [x] Historical valuation aggregate medians (5 measured rounds after warm-up): 1k rows/user per table — SQL 4.78 ms vs Node full-history 14.40 ms; 10k — 38.98 ms vs 128.42 ms; 50k — 121.33 ms vs 652.59 ms. At 50k this is about 5.4× lower median query time.
 - [x] The historical query plans used `Exchange_userId_createdAt_idx` and `Expense_userId_date_idx` at all three sizes. No additional index was needed for this synthetic workload; revisit only if production-like query plans identify a real access-path bottleneck.
 - [x] Added a bounded recent-activity query-plan and exchange-segment payload comparison to the dashboard benchmark. At 1k exchanges, latest-100 payload was 34,198 bytes vs 341,076 bytes for full history (89.97% smaller); at 10k, 34,198 vs 3,417,958 bytes (99.00% smaller); at 50k, 34,198 vs 17,089,786 bytes (99.80% smaller). At 50k, median bounded query time was 8.14 ms vs 960.06 ms for fetching the full activity history.
-- [ ] These are synthetic same-host database/serialization measurements, not production HTTP latency. Full end-to-end dashboard response timing and representative production-like data/configuration are still required before making a whole-application performance guarantee.
+- [x] Added an isolated localhost HTTP benchmark for the real `GET /api/dashboard` route against disposable PostgreSQL. CI run [#1545](https://github.com/PurpleeHead/FlowMoney/actions/runs/39599000187) passed on `44c9a1c16d684ad687dfcae96fa9b58e9681384f`, including tests/build, PostgreSQL equivalence and migration/rollback checks, plus seven measured HTTP rounds after two warm-ups at each scale.
+- [x] Full HTTP response and same-summary full-history activity projection results from CI #1545:
+
+  | Exchanges for target user | Current HTTP response | Full-history projection | Payload reduction | HTTP median / max of 7 |
+  |---:|---:|---:|---:|---:|
+  | 1,000 | 34,606 bytes | 341,484 bytes | 89.87% | 11.22 ms / 13.16 ms |
+  | 10,000 | 34,593 bytes | 3,418,353 bytes | 98.99% | 31.86 ms / 36.30 ms |
+  | 50,000 | 34,596 bytes | 17,090,184 bytes | 99.80% | 100.39 ms / 104.42 ms |
+
+  The full-history numbers replace only the `exchanges` field in the measured HTTP response with the same selected fields from all exchanges; they are a payload projection, not a replay or latency measurement of the old endpoint. The displayed maximum of seven samples is not a statistically stable p95. The real HTTP measurements include local HTTP, auth, database queries, and JSON serialization, but remain synthetic same-host CI data.
+- [x] Added an API regression test with 120 exchanges: the response returns the latest 100 in deterministic order while the confirmed VND total and balance still include all 120.
+- [ ] Representative production-like data/configuration and staging/production telemetry are still required before making a whole-application performance guarantee.
 - [ ] Production database identity, encrypted backup/restore, legacy wallet reconciliation, approved Render configuration, and target-environment smoke tests remain release blockers. No production database operation, deployment, merge, or live Render configuration change was performed.
 
 ## Fixture implementation update — 2026-10-20
