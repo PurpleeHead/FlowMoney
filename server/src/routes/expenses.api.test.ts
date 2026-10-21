@@ -799,6 +799,51 @@ describe('expense API ledger synchronization', () => {
 });
 
 
+
+  it('revalues an edited expense against the newly selected historical date', async () => {
+    const existing = {
+      id: 'expense-move-date', userId: 'user-42', title: 'Old groceries', category: 'Food',
+      amount: 100000, currency: 'VND', amountVnd: 100000, amountRub: 332,
+      usdtCharged: 4, date: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+    };
+    const effectiveDate = new Date('2026-10-10T12:00:00.000Z');
+    let updateData: any;
+    expenseModel.findFirst = async () => existing;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    const tx = {
+      expense: {
+        updateMany: async (args: any) => { updateData = args.data; return { count: 1 }; },
+        findFirst: async () => ({ ...existing, date: effectiveDate }),
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 1 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-move-date`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Moved groceries', category: 'Food', amount: 100000,
+          currency: 'VND', date: effectiveDate.toISOString(),
+        }),
+      });
+      assert.equal(response.status, 200);
+    });
+
+    assert.equal(updateData.date.toISOString(), effectiveDate.toISOString());
+    assert.equal(aggregateQueries.length, 1, 'date edit must use one aggregate query');
+    assert.ok(aggregateQueries[0].values.includes('expense-move-date'),
+      'date edit must exclude the old expense row from historical evidence');
+    assert.ok(aggregateQueries[0].values.some((value: unknown) =>
+      value instanceof Date && value.getTime() === effectiveDate.getTime()),
+    'date edit must recompute rates using the new effective date, not the previous date');
+  });
+
 describe('expense list response privacy', () => {
   it('scopes the query to the authenticated user and omits the internal userId field', async () => {
     let queryArgs: any;
