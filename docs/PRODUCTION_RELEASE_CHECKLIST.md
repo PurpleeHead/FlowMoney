@@ -173,3 +173,11 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] CI #1286 confirms repository verification and disposable-PostgreSQL migration checks for the direct-USDT normalization regression. It does not verify production data or deployment readiness.
 - [ ] Date-aware PostgreSQL aggregates for expense/receipt valuation remain unimplemented. Preserve per-operation date cutoffs, weighted numerator/denominator totals, and direct-target legacy precedence before replacing application-side history scans.
 - [ ] Production database identity, encrypted backup and isolated restore, legacy wallet reconciliation, approved Render configuration reconciliation, and target-environment smoke tests remain release blockers. PR #83 remains Draft/unmerged; no production database access, deployment, or live configuration changes were performed.
+
+
+## Money arithmetic hardening — 2026-10-21
+
+- [x] CI runs [#1290](https://github.com/PurpleeHead/FlowMoney/actions/runs/39533707782) and [#1291](https://github.com/PurpleeHead/FlowMoney/actions/runs/39533714928) passed. Weighted RUB/USDT, VND/USDT, and VND/RUB rate helpers now reject overflowed aggregate totals/results instead of returning Infinity.
+- [ ] Added a follow-up guard so expense valuation helpers return `null` if otherwise valid finite inputs overflow during multiplication/division. Regression coverage includes USDT expenses, card debits, VND estimates, and direct VND/RUB valuation; CI for this follow-up is pending.
+- [ ] Normalized whitespace-padded VND target currency before equivalent conversion, so values like ` vNd ` use the base-currency rate of 1 rather than requiring a supplied conversion rate. Regression coverage and CI are pending.
+- [ ] These changes are money-calculation hardening only. Historical expense/receipt date-aware SQL aggregation and all operational production release gates remain open. No production DB operation, deployment, or live Render configuration change was performed.
