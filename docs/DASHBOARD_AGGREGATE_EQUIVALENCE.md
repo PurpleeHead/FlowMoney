@@ -63,16 +63,17 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - [x] Move all-history financial summaries into user-scoped SQL aggregates while keeping recent activity separate.
 - [x] Bound dashboard exchange activity to the latest 100 rows with deterministic timestamp/ID ordering.
 - [x] Run CI, migration verification, rollback/idempotency checks, and aggregate benchmarks on disposable PostgreSQL.
-- [ ] Record `EXPLAIN (ANALYZE, BUFFERS)`, historical expense/receipt valuation query timings, and response payload-size comparisons before claiming a performance improvement for the whole application.
+- [x] Record `EXPLAIN (ANALYZE, BUFFERS)` and historical expense/receipt valuation aggregate timings on disposable PostgreSQL; confirm the existing user/date indexes are used.
+- [ ] Record bounded recent-activity query plans and before/after serialized response payload sizes; end-to-end latency and production-like database measurements remain open before claiming a whole-application performance improvement.
 - [ ] Keep PR #83 Draft until the operational gates in `PRODUCTION_RELEASE_RUNBOOK.md` are independently satisfied. No production DB inspection, migration, merge, or deploy is implied by this document.
 
 
 ## Date-aware valuation aggregate benchmark — 2026-10-21
 
 - [x] Added `server/prisma/tests/benchmark-date-aware-valuation-aggregates.ts` and wired 1k/10k/50k rows-per-user runs into disposable PostgreSQL CI. Each run first checks SQL bucket sums against the legacy TypeScript mapper path, then records `EXPLAIN (ANALYZE, BUFFERS)` and compares query time with fetching and aggregating the same user's full history in Node.
-- [x] CI run [#1314](https://github.com/PurpleeHead/FlowMoney/actions/runs/39595538617) passed on `47f184bd7be6761f66200ad8ab42745b2a51054d`, including the date-aware fixture, all three benchmarks, the existing dashboard aggregate benchmarks, rollback tests, and wallet reconciliation checks.
-- [x] Synthetic disposable-PostgreSQL medians (5 measured rounds after warm-up): 1k rows/user per table — SQL 5.07 ms vs Node full-history 12.28 ms; 10k — 36.36 ms vs 131.51 ms; 50k — 120.23 ms vs 687.55 ms. At 50k this is about 5.7× lower median time for the aggregate query. These are same-host microbenchmarks, not production HTTP latency or a service-level guarantee.
-- [x] The query plans used `Exchange_userId_createdAt_idx` and `Expense_userId_date_idx` at all three date-aware benchmark sizes. No additional index was needed for this synthetic workload; revisit only if production-like query plans identify a real access-path bottleneck.
+- [x] Latest confirmed run [#1312](https://github.com/PurpleeHead/FlowMoney/actions/runs/39595652881) passed on `4c325f6943dd2c586bae2b3808803857604691df`, including the date-aware fixture, all three historical valuation benchmarks, dashboard aggregate benchmarks, rollback tests, and wallet reconciliation checks.
+- [x] Synthetic disposable-PostgreSQL medians (5 measured rounds after warm-up): 1k rows/user per table — SQL 4.78 ms vs Node full-history 14.40 ms; 10k — 38.98 ms vs 128.42 ms; 50k — 121.33 ms vs 652.59 ms. At 50k this is about 5.4× lower median query time. These are same-host microbenchmarks, not production HTTP latency or a service-level guarantee.
+- [x] The historical query plans used `Exchange_userId_createdAt_idx` and `Expense_userId_date_idx` at all three sizes. No additional index was needed for this synthetic workload; revisit only if production-like query plans identify a real access-path bottleneck.
 - [ ] End-to-end expense/receipt request timings and before/after serialized response payload sizes remain unmeasured. Do not claim a whole-application performance gain from aggregate microbenchmarks alone.
 - [ ] Production database identity, encrypted backup/restore, legacy wallet reconciliation, approved Render configuration, and target-environment smoke tests remain release blockers. No production database operation, deployment, merge, or live Render configuration change was performed.
 
@@ -120,19 +121,3 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - A dedicated PostgreSQL integration fixture also verifies trimming/case normalization (`' vNd '`), excludes stale RUB conversion fields, and rejects rows with non-finite VND or USDT amounts from the weighted card aggregate.
 - Weighted exchange observations now require a finite positive RUB cost basis and positive USDT/VND amounts, matching `mapActualVndUsdtExchanges` and the existing `money.ts` validity rules. Planning estimates require a positive RUB basis, USDT amount, and planning rate; an invalid cost-basis row cannot make the VND balance unknown or distort the effective rate.
 - The aggregate separately reports an unknown acquired amount versus a known USDT amount awaiting VND valuation. A malformed/missing USDT receipt cannot silently produce a zero VND balance; the Dashboard now returns an unknown balance when the quantity itself cannot be established.
-
-
-## Historical valuation query benchmark — 2026-10-21
-
-CI run [#1312](https://github.com/PurpleeHead/FlowMoney/actions/runs/39595652881) passed on `4c325f6943dd2c586bae2b3808803857604691df`. The new benchmark runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` on the exact date-aware aggregate query, verifies SQL results against the existing TypeScript mapping path, and measures five warmed rounds after two warm-up rounds on disposable PostgreSQL.
-
-| Rows per table for the measured user | PostgreSQL aggregate median / p95 | Fetch + TypeScript aggregation median / p95 | PostgreSQL execution time from EXPLAIN |
-| ---: | ---: | ---: | ---: |
-| 1,000 | 4.78 ms / 6.49 ms | 14.40 ms / 16.46 ms | 3.72 ms |
-| 10,000 | 38.98 ms / 45.47 ms | 128.42 ms / 133.02 ms | 36.09 ms |
-| 50,000 | 121.33 ms / 129.92 ms | 652.59 ms / 704.77 ms | 118.42 ms |
-
-- [x] Historical aggregate query plan and timing evidence recorded for 1k/10k/50k fixtures.
-- [x] SQL output matches the established TypeScript reference calculations within the fixture's decimal tolerance at each size.
-- [ ] End-to-end dashboard response payload and latency comparison remains outstanding; these microbenchmarks do not prove production latency or hosting-tier performance.
-- [ ] Repeat with representative production-like data distribution and target PostgreSQL configuration before making a production capacity claim.
