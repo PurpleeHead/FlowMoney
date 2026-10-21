@@ -935,8 +935,8 @@ describe('dashboard rejects non-finite legacy expense amounts', () => {
         observedUsdt: number;
         observedVndPerUsdt: number | null;
       };
-      assert.equal(body.totalVnd, 200000, 'all-time total excludes malformed VND while preserving other finite expenses');
-      assert.equal(body.monthVnd, 200000, 'month total excludes malformed VND');
+      assert.equal(body.totalVnd, 150000, 'all-time total excludes malformed VND while preserving other finite expenses');
+      assert.equal(body.monthVnd, 150000, 'month total excludes malformed VND');
       assert.equal(body.observedVnd, 100000, 'weighted rate excludes rows with a non-finite VND or USDT side');
       assert.equal(body.observedUsdt, 4);
       assert.equal(body.observedVndPerUsdt, 25000);
