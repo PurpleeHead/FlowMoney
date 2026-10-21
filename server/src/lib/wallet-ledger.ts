@@ -98,6 +98,10 @@ export function exchangeLedgerDrafts(exchange: ExchangeLedgerSource): LedgerMove
     return movements;
   }
 
+  // Only the documented indirect exchange mode has USDT/VND receipt legs.
+  // Unknown legacy modes must not be interpreted as RUB_USDT_VND.
+  if (exchange.mode !== 'RUB_USDT_VND') return movements;
+
   const usdt = amount(exchange.usdtReceived);
   if (usdt != null) movements.push({
     userId: exchange.userId, currency: 'USDT', amountDelta: usdt, kind: 'EXCHANGE',
