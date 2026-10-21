@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Prisma } from '@prisma/client';
 import { performance } from 'node:perf_hooks';
 import { prisma } from '../../src/services/prisma.js';
 import { explainDashboardExchangeAggregates, getDashboardExchangeAggregates } from '../../src/lib/dashboard-aggregates.js';
