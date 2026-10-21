@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { prisma } from '../../src/services/prisma.js';
-import { getDashboardExchangeAggregates } from '../../src/lib/dashboard-aggregates.js';
+import { getDashboardCardPurchaseAggregates, getDashboardExchangeAggregates } from '../../src/lib/dashboard-aggregates.js';
 import {
   calculateObservedVndPerRub,
   calculateObservedVndPerUsdt,
@@ -131,6 +131,27 @@ try {
     UPDATE "Exchange" SET "planningVndPerUsdt" = 'NaN'::numeric
     WHERE "id" = ${badPlanningRate.id}
   `;
+  await prisma.expense.createMany({
+    data: [
+      { id: suffix + '-purchase-vnd-a', userId: nonFiniteUser.id, title: 'Valid card A', category: 'Test', amount: 100_000, currency: 'VND', amountVnd: 100_000, usdtCharged: 4, date: new Date('2026-10-10T08:00:00Z') },
+      { id: suffix + '-purchase-vnd-b', userId: nonFiniteUser.id, title: 'Padded lowercase card', category: 'Test', amount: 50_000, currency: ' vNd ', amountVnd: 50_000, usdtCharged: 2, date: new Date('2026-10-11T08:00:00Z') },
+      { id: suffix + '-purchase-stale-rub', userId: nonFiniteUser.id, title: 'Stale RUB conversion', category: 'Test', amount: 100, currency: 'RUB', amountVnd: 9_000_000, usdtCharged: 1, date: new Date('2026-10-12T08:00:00Z') },
+      { id: suffix + '-purchase-nan-vnd', userId: nonFiniteUser.id, title: 'Malformed VND basis', category: 'Test', amount: 100, currency: 'VND', amountVnd: 1, usdtCharged: 2, date: new Date('2026-10-13T08:00:00Z') },
+      { id: suffix + '-purchase-nan-usdt', userId: nonFiniteUser.id, title: 'Malformed USDT debit', category: 'Test', amount: 100, currency: 'VND', amountVnd: 20_000, usdtCharged: 1, date: new Date('2026-10-14T08:00:00Z') },
+    ],
+  });
+  await prisma.$executeRaw`
+    UPDATE "Expense" SET "amountVnd" = 'NaN'::numeric
+    WHERE "id" = ${suffix + '-purchase-nan-vnd'}
+  `;
+  await prisma.$executeRaw`
+    UPDATE "Expense" SET "usdtCharged" = 'NaN'::numeric
+    WHERE "id" = ${suffix + '-purchase-nan-usdt'}
+  `;
+  const purchaseAggregate = await getDashboardCardPurchaseAggregates(nonFiniteUser.id);
+  near(purchaseAggregate.amountVnd, 150_000, 'dashboard card aggregate normalizes padded/case-insensitive VND and excludes stale or non-finite rows');
+  near(purchaseAggregate.usdtCharged, 6, 'dashboard card USDT aggregate uses only valid VND purchase evidence');
+
   const nonFiniteAggregate = await getDashboardExchangeAggregates(nonFiniteUser.id);
   assert.equal(nonFiniteAggregate.exchangeCount, 7);
   near(nonFiniteAggregate.rubUsdtRub, 200, 'non-finite direct USDT receipt is excluded while valid known USDT amounts remain in RUB/USDT numerator');
