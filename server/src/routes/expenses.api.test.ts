@@ -24,6 +24,7 @@ const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[])
 const receiptModel = prisma.receipt as unknown as { findFirst: (...args: any[]) => Promise<any> };
 const originalTransaction = client.$transaction;
 const originalQueryRaw = client.$queryRaw;
+const aggregateQueries: any[] = [];
 const originalExpenseFindFirst = expenseModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
 const originalExchangeFindMany = exchangeModel.findMany;
@@ -35,6 +36,7 @@ const previousSecret = process.env.JWT_SECRET;
  * date boundaries, and tenant isolation are covered by the PostgreSQL test.
  */
 const mockQueryRaw = async (query: any) => {
+  aggregateQueries.push(query);
   const values: unknown[] = Array.isArray(query?.values) ? query.values : [];
   const userId = String(values[0] ?? 'user-1');
   const valuationDate = values[1] instanceof Date ? values[1] : new Date(String(values[1] ?? Date.now()));
@@ -87,6 +89,7 @@ const mockQueryRaw = async (query: any) => {
 };
 
 beforeEach(() => {
+  aggregateQueries.length = 0;
   client.$queryRaw = mockQueryRaw;
 });
 
@@ -307,6 +310,11 @@ describe('expense API ledger synchronization', () => {
 
       assert.equal(response.status, 200);
       assert.equal(updateArgs.data.usdtCharged, 4, 'omitting usdtCharged must preserve the existing actual card debit');
+      assert.equal(aggregateQueries.length, 1, 'PATCH must use one historical aggregate query');
+      assert.ok(aggregateQueries[0].values.includes('expense-keep-card-debit'),
+        'PATCH aggregate must exclude the edited expense from its own historical evidence');
+      assert.ok(aggregateQueries[0].values.includes(existing.date),
+        'PATCH aggregate must use the effective expense date as its cutoff');
       assert.equal(updateArgs.data.amountRub, 332, 'RUB cost must use the preserved actual debit (4 USDT × 83 RUB/USDT), not the planning estimate');
       const movements = createdMovements[0].data as Array<{ currency: string; amountDelta: number }>;
       assert.deepEqual(movements.map(item => [item.currency, item.amountDelta]), [['USDT', -4]]);
@@ -778,6 +786,9 @@ describe('expense API ledger synchronization', () => {
     assert.ok(purchaseQuery.where.date.lte instanceof Date,
       'expense valuation must exclude card purchases dated after the expense date');
     assert.deepEqual(purchaseQuery.where.usdtCharged, { not: null });
+    assert.equal(aggregateQueries.length, 1, 'expense valuation must issue one aggregate query');
+    assert.ok(aggregateQueries[0].values.includes(effectiveDate),
+      'aggregate query must use the expense effective date as its historical cutoff');
   });
 
 });
