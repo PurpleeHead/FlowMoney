@@ -81,6 +81,12 @@ try {
         createdAt: new Date('2026-10-16T12:00:00.000Z'),
       },
       {
+        // A malformed negative RUB outflow cannot contribute to any exchange-derived rate.
+        userId, mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: -100,
+        usdtReceived: 5, vndReceived: 125_000,
+        createdAt: new Date('2026-10-14T12:30:00.000Z'),
+      },
+      {
         userId: otherUserId, mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1,
         usdtReceived: 1, vndReceived: 999_999,
         createdAt: new Date('2026-10-10T12:00:00.000Z'),
@@ -154,6 +160,7 @@ try {
   })));
   const actualRows = mapActualVndUsdtExchanges(exchanges.map(x => ({
     mode: x.mode,
+    rubSpent: Number(x.rubSpent),
     usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
     vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
   })));
@@ -188,7 +195,7 @@ try {
   near(aggregate.cardVnd, cardRows.reduce((sum, x) => sum + Number(x.amountVnd), 0), 'cutoff card VND');
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
-  assert.equal(exchanges.length, 8, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
+  assert.equal(exchanges.length, 9, 'the cutoff instant is inclusive; later exchanges and other users must be excluded');
   assert.equal(expenses.length, 6, 'the cutoff instant is inclusive; later expenses and other users are excluded while same-user legacy rows remain in the comparison set');
   near(aggregate.rubUsdtRub, 13_300, 'fixture RUB/USDT numerator');
   near(aggregate.rubUsdtUsdt, 149.7853, 'fixture RUB/USDT denominator');
