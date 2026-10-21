@@ -161,7 +161,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] CI run [#1278](https://github.com/PurpleeHead/FlowMoney/actions/runs/39532678556) passed on `5a9004e73314c86f19f071e30c79d3bebf04805f`; both `verify` and `verify-migrations` succeeded, including PostgreSQL aggregate-equivalence, 1k/10k/50k dashboard aggregate benchmarks, transaction rollback checks, and legacy wallet preflight fixture.
 - [x] Added a card-expense API regression test ensuring a direct RUB→VND observation cannot be used as a substitute for a missing USDT RUB acquisition cost basis. This protects the rule that a recorded USDT debit with unknown RUB cost must remain unpriced instead of receiving an unrelated confirmed valuation.
 - [ ] The new card-expense regression test requires its own CI run before it can be considered verified.
-- [ ] Historical expense/receipt route calculations still fetch date-bounded exchange and card-purchase rows into Node.js. They must be moved to date-aware PostgreSQL aggregates only after equivalent eligibility, date cutoffs, and weighted totals are covered by tests.
+- [ ] Date-aware PostgreSQL aggregate helpers and a disposable fixture now exist, but expense/receipt route callers still need to be migrated to consume them. Route-level equivalence is not complete until the callers use these helpers and tests verify eligibility, date cutoffs, and weighted totals.
 
 - [ ] Added a receipt API assertion that historical exchange and card-purchase queries remain scoped to the authenticated user and bounded by the receipt valuation time. Commit `848ab2e`; awaiting CI.
 
@@ -171,7 +171,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Corrected expense test syntax in commit `2568de4`; CI [#1285](https://github.com/PurpleeHead/FlowMoney/actions/runs/39533375920) passed. The intermediate commit `960d6a0` failed parsing and is superseded by the passing correction.
 - [x] Added direct RUB→USDT target normalization coverage, including trimmed/case-insensitive currency and exclusion of stale USDT fields on direct-VND legacy rows, in commit `e089aaf`; CI [#1286](https://github.com/PurpleeHead/FlowMoney/actions/runs/39533392231) passed.
 - [x] CI #1286 confirms repository verification and disposable-PostgreSQL migration checks for the direct-USDT normalization regression. It does not verify production data or deployment readiness.
-- [ ] Date-aware PostgreSQL aggregates for expense/receipt valuation remain unimplemented. Preserve per-operation date cutoffs, weighted numerator/denominator totals, and direct-target legacy precedence before replacing application-side history scans.
+- [ ] Date-aware PostgreSQL aggregate helpers and the disposable fixture exist, but expense/receipt route callers have not yet been migrated to consume them. Preserve per-operation date cutoffs, weighted numerator/denominator totals, and direct-target legacy precedence during that migration.
 - [ ] Production database identity, encrypted backup and isolated restore, legacy wallet reconciliation, approved Render configuration reconciliation, and target-environment smoke tests remain release blockers. PR #83 remains Draft/unmerged; no production database access, deployment, or live configuration changes were performed.
 
 
@@ -187,12 +187,19 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 - [x] CI #1292–#1296 passed on the money valuation overflow guards and VND target normalization, including both `verify` and `verify-migrations`: [#1292](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534159470), [#1293](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534168132), [#1294](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534182186), [#1295](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534189347), [#1296](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534208819).
 - [ ] Additional regression coverage now checks invalid direct VND/RUB observations, overflow in card-derived weighted totals, and underflow of a derived VND/USDT rate. CI for these newest commits is pending.
-- [ ] Historical date-aware SQL aggregates for expense/receipt valuations remain unimplemented. Preserve per-operation `createdAt <= expenseDate` / `date <= expenseDate`, user isolation, weighted totals, direct VND legacy fallback, and unknown RUB/USDT basis behavior before migrating route callers.
+- [ ] Date-aware SQL aggregate helpers and a PostgreSQL fixture are present, but expense/receipt route callers still need to adopt them. Preserve per-operation `createdAt <= expenseDate` / `date <= expenseDate`, user isolation, weighted totals, direct VND legacy fallback, and unknown RUB/USDT basis behavior during route migration.
 - [ ] Production DB identity, encrypted backup plus isolated restore, legacy wallet reconciliation, Render configuration approval, and production smoke tests remain blockers. No production database operation, deployment, or live Render configuration change was performed.
 
 
 ## Numeric boundary CI reconciliation — 2026-10-21 (verified)
 
 - [x] CI runs [#1297](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534615332), [#1298](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534627250), [#1299](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534635795), [#1300](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534647299), and [#1301](https://github.com/PurpleeHead/FlowMoney/actions/runs/39534668662) all completed successfully. This confirms invalid direct/card observations, overflow/underflow rate handling, and the follow-up documentation correction on the respective commits.
-- [ ] Date-aware PostgreSQL aggregates for expense create/edit and receipt save remain the next code milestone. They are not yet implemented; no claim of route-level SQL equivalence is made.
+- [ ] Date-aware PostgreSQL aggregate helpers and a disposable fixture are implemented, but expense create/edit and receipt-save callers still need to adopt them; no claim of route-level SQL equivalence is made.
 - [ ] Production DB identity, encrypted backup and isolated restore, legacy wallet reconciliation, Render configuration approval, and production smoke tests remain release blockers. No production database operation, deployment, or live Render configuration change was performed.
+## Dashboard non-finite expense total hardening — 2026-10-21
+
+- [x] Replaced Prisma aggregate filters that excluded only PostgreSQL numeric NaN with a single user-scoped SQL aggregate for all-time and current-month VND totals. The SQL excludes NaN, Infinity, and -Infinity before summing.
+- [x] Expanded dashboard API regression coverage with positive and negative infinity, and added PostgreSQL fixture coverage for infinite card VND/USDT amounts in both dashboard and date-aware card aggregates.
+- [ ] CI has not been confirmed for the current work-branch head; latest commit is `637b81777569a8b4a0f83044d34c85c084674164`. The GitHub status endpoint currently returns no status records, so this change must not be described as verified.
+- [ ] Date-aware aggregate helpers and PostgreSQL fixtures exist, but expense create/edit and receipt-save route callers still need to adopt the helper; route-level equivalence remains open.
+- [ ] Production database identity, encrypted backup plus isolated restore, legacy wallet reconciliation, owner-approved Render configuration, and target-environment smoke tests remain release blockers. No production database operation, deployment, merge, or live Render configuration change was performed.
