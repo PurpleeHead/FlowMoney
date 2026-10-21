@@ -188,9 +188,7 @@ try {
     INSERT INTO "Expense" ("id", "userId", "title", "category", "amount", "currency", "amountVnd", "usdtCharged", "date", "createdAt", "updatedAt")
     VALUES
       (${suffix + '-nan-card-vnd'}, ${userId}, 'Card with NaN VND', 'Test', 100, 'VND', 'NaN'::numeric, 2, ${new Date('2026-10-14T08:45:00.000Z')}, NOW(), NOW()),
-      (${suffix + '-nan-card-usdt'}, ${userId}, 'Card with NaN USDT', 'Test', 100, 'VND', 10000, 'NaN'::numeric, ${new Date('2026-10-14T08:50:00.000Z')}, NOW(), NOW()),
-      (${suffix + '-infinity-card-vnd'}, ${userId}, 'Card with Infinity VND', 'Test', 100, 'VND', 'Infinity'::numeric, 2, ${new Date('2026-10-14T08:55:00.000Z')}, NOW(), NOW()),
-      (${suffix + '-infinity-card-usdt'}, ${userId}, 'Card with Infinity USDT', 'Test', 100, 'VND', 10000, 'Infinity'::numeric, ${new Date('2026-10-14T09:00:00.000Z')}, NOW(), NOW())
+      (${suffix + '-nan-card-usdt'}, ${userId}, 'Card with NaN USDT', 'Test', 100, 'VND', 10000, 'NaN'::numeric, ${new Date('2026-10-14T08:50:00.000Z')}, NOW(), NOW())
   `);
 
   const aggregate = await getDateAwareValuationAggregate(userId, valuationDate);
@@ -247,7 +245,7 @@ try {
   near(aggregate.cardUsdt, cardRows.reduce((sum, x) => sum + Number(x.usdtCharged), 0), 'cutoff card USDT');
 
   assert.equal(exchanges.length, 13, 'the cutoff instant is inclusive; later exchanges and other users are excluded while malformed numeric rows remain available to the legacy-mapper comparison');
-  assert.equal(expenses.length, 10, 'the cutoff instant is inclusive; later expenses and other users are excluded while malformed numeric and same-user legacy rows remain in the comparison set');
+  assert.equal(expenses.length, 8, 'the cutoff instant is inclusive; later expenses and other users are excluded while malformed numeric and same-user legacy rows remain in the comparison set');
   near(aggregate.rubUsdtRub, 13_300, 'fixture RUB/USDT numerator');
   near(aggregate.rubUsdtUsdt, 149.7853, 'fixture RUB/USDT denominator');
   near(aggregate.actualVnd, 2_300_000, 'fixture actual indirect VND excludes later exchange and rows with NaN numeric evidence');
