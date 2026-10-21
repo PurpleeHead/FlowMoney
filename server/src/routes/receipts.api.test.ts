@@ -12,12 +12,8 @@ import receiptRoutes from './receipts.js';
 const receiptModel = prisma.receipt as unknown as {
   findMany: (...args: any[]) => Promise<any>;
 };
-const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
-const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any> };
 const client = prisma as unknown as { $transaction: (...args: any[]) => Promise<any>; $queryRaw: (...args: any[]) => Promise<any> };
 const originalFindMany = receiptModel.findMany;
-const originalExchangeFindMany = exchangeModel.findMany;
-const originalExpenseFindMany = expenseModel.findMany;
 const originalTransaction = client.$transaction;
 const originalQueryRaw = client.$queryRaw;
 const previousSecret = process.env.JWT_SECRET;
@@ -25,8 +21,6 @@ const previousSecret = process.env.JWT_SECRET;
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
   receiptModel.findMany = originalFindMany;
-  exchangeModel.findMany = originalExchangeFindMany;
-  expenseModel.findMany = originalExpenseFindMany;
   client.$transaction = originalTransaction;
   client.$queryRaw = originalQueryRaw;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
