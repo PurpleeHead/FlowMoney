@@ -297,7 +297,9 @@ describe('expense API ledger synchronization', () => {
     };
     expenseModel.findFirst = async () => existing;
     expenseModel.findMany = async () => [];
-    exchangeModel.findMany = async () => [{
+    exchangeModel.findMany = async (args: any) => {
+      exchangeQuery = args;
+      return [{
       mode: 'RUB_TARGET', rubSpent: 2000, usdtReceived: null, vndReceived: null,
       planningVndPerUsdt: null, targetCurrency: ' vNd ', targetReceived: 460000,
       targetVndEquivalent: null, // legacy row only has targetReceived and non-canonical currency casing
@@ -515,7 +517,8 @@ describe('expense API ledger synchronization', () => {
       targetCurrency: 'VND',
       targetReceived: null,
       targetVndEquivalent: null,
-    }];
+      }];
+    };
     let createdData: any;
     const tx = {
       expense: {
@@ -656,7 +659,12 @@ describe('expense API ledger synchronization', () => {
 
 
   it('does not price a card expense from direct VND/RUB when the USDT RUB cost basis is unknown', async () => {
-    expenseModel.findMany = async () => [];
+    let exchangeQuery: any;
+    let purchaseQuery: any;
+    expenseModel.findMany = async (args: any) => {
+      purchaseQuery = args;
+      return [];
+    };
     // A direct RUB → VND exchange provides an observed VND/RUB rate, but it
     // cannot establish the RUB acquisition cost of a separate USDT card debit.
     exchangeModel.findMany = async () => [{
@@ -694,6 +702,14 @@ describe('expense API ledger synchronization', () => {
       assert.equal(createdData.amountRub, null,
         'unknown USDT acquisition cost must remain unknown; direct VND/RUB must not fabricate a confirmed card cost');
     });
+
+    assert.deepEqual(exchangeQuery.where.userId, 'user-42');
+    assert.ok(exchangeQuery.where.createdAt.lte instanceof Date,
+      'expense valuation must exclude exchanges created after the expense date');
+    assert.deepEqual(purchaseQuery.where.userId, 'user-42');
+    assert.ok(purchaseQuery.where.date.lte instanceof Date,
+      'expense valuation must exclude card purchases dated after the expense date');
+    assert.deepEqual(purchaseQuery.where.usdtCharged, { not: null });
   });
 
 });
