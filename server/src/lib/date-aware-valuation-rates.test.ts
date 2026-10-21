@@ -28,6 +28,26 @@ describe('date-aware valuation rates', () => {
     });
   });
 
+  it('combines direct exchanges, indirect actual outcomes, and card debits by weighted RUB cost', () => {
+    const rates = calculateDateAwareValuationRates(aggregate({
+      rubUsdtRub: 8_300,
+      rubUsdtUsdt: 100,
+      actualVnd: 2_500_000,
+      actualUsdt: 100,
+      directRub: 1_000,
+      directVnd: 300_000,
+      actualRubForVnd: 166,
+      actualVndForRub: 50_000,
+      cardVnd: 500_000,
+      cardUsdt: 20,
+    }));
+
+    assert.equal(rates.rubPerUsdt, 83);
+    assert.equal(rates.vndPerUsdt, 25_000, 'the actual card purchase rate remains the preferred VND/USDT observation');
+    assert.equal(rates.vndPerRub, 850_000 / (1_000 + 166 + 20 * 83),
+      'VND/RUB must combine direct, indirect, and card evidence using the actual RUB cost basis');
+  });
+
   it('does not let a zero card denominator suppress a valid actual exchange rate', () => {
     const rates = calculateDateAwareValuationRates(aggregate({
       rubUsdtRub: 8300,
