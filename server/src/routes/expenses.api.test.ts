@@ -297,9 +297,7 @@ describe('expense API ledger synchronization', () => {
     };
     expenseModel.findFirst = async () => existing;
     expenseModel.findMany = async () => [];
-    exchangeModel.findMany = async (args: any) => {
-      exchangeQuery = args;
-      return [{
+    exchangeModel.findMany = async () => [{
       mode: 'RUB_TARGET', rubSpent: 2000, usdtReceived: null, vndReceived: null,
       planningVndPerUsdt: null, targetCurrency: ' vNd ', targetReceived: 460000,
       targetVndEquivalent: null, // legacy row only has targetReceived and non-canonical currency casing
@@ -667,11 +665,14 @@ describe('expense API ledger synchronization', () => {
     };
     // A direct RUB → VND exchange provides an observed VND/RUB rate, but it
     // cannot establish the RUB acquisition cost of a separate USDT card debit.
-    exchangeModel.findMany = async () => [{
-      mode: 'RUB_TARGET', rubSpent: 2000, usdtReceived: null, vndReceived: null,
-      planningVndPerUsdt: null, targetCurrency: 'VND', targetReceived: 500000,
-      targetVndEquivalent: null,
-    }];
+    exchangeModel.findMany = async (args: any) => {
+      exchangeQuery = args;
+      return [{
+        mode: 'RUB_TARGET', rubSpent: 2000, usdtReceived: null, vndReceived: null,
+        planningVndPerUsdt: null, targetCurrency: 'VND', targetReceived: 500000,
+        targetVndEquivalent: null,
+      }];
+    };
     let createdData: any;
     const tx = {
       expense: {
