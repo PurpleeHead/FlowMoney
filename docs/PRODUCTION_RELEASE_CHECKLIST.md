@@ -161,7 +161,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] CI run [#1278](https://github.com/PurpleeHead/FlowMoney/actions/runs/39532678556) passed on `5a9004e73314c86f19f071e30c79d3bebf04805f`; both `verify` and `verify-migrations` succeeded, including PostgreSQL aggregate-equivalence, 1k/10k/50k dashboard aggregate benchmarks, transaction rollback checks, and legacy wallet preflight fixture.
 - [x] Added a card-expense API regression test ensuring a direct RUB→VND observation cannot be used as a substitute for a missing USDT RUB acquisition cost basis. This protects the rule that a recorded USDT debit with unknown RUB cost must remain unpriced instead of receiving an unrelated confirmed valuation.
 - [ ] The new card-expense regression test requires its own CI run before it can be considered verified.
-- [ ] Date-aware PostgreSQL aggregate helpers and a disposable fixture now exist, but expense/receipt route callers still need to be migrated to consume them. Route-level equivalence is not complete until the callers use these helpers and tests verify eligibility, date cutoffs, and weighted totals.
+- [ ] Date-aware PostgreSQL aggregate helpers are used by expense create/edit and receipt-save routes. The disposable PostgreSQL fixture compares weighted aggregates and derived rates with legacy mapping; retain exact-head CI verification and production-like performance evidence as separate gates.
 
 - [ ] Added a receipt API assertion that historical exchange and card-purchase queries remain scoped to the authenticated user and bounded by the receipt valuation time. Commit `848ab2e`; awaiting CI.
 
@@ -171,7 +171,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Corrected expense test syntax in commit `2568de4`; CI [#1285](https://github.com/PurpleeHead/FlowMoney/actions/runs/39533375920) passed. The intermediate commit `960d6a0` failed parsing and is superseded by the passing correction.
 - [x] Added direct RUB→USDT target normalization coverage, including trimmed/case-insensitive currency and exclusion of stale USDT fields on direct-VND legacy rows, in commit `e089aaf`; CI [#1286](https://github.com/PurpleeHead/FlowMoney/actions/runs/39533392231) passed.
 - [x] CI #1286 confirms repository verification and disposable-PostgreSQL migration checks for the direct-USDT normalization regression. It does not verify production data or deployment readiness.
-- [ ] Date-aware PostgreSQL aggregate helpers and the disposable fixture exist, but expense/receipt route callers have not yet been migrated to consume them. Preserve per-operation date cutoffs, weighted numerator/denominator totals, and direct-target legacy precedence during that migration.
+- [ ] Expense create/edit and receipt-save routes now use the date-aware PostgreSQL aggregate helper. Preserve per-operation date cutoffs, weighted numerator/denominator totals, and direct-target legacy precedence in any future changes; exact-head CI evidence is tracked below.
 - [ ] Production database identity, encrypted backup and isolated restore, legacy wallet reconciliation, approved Render configuration reconciliation, and target-environment smoke tests remain release blockers. PR #83 remains Draft/unmerged; no production database access, deployment, or live configuration changes were performed.
 
 
@@ -270,3 +270,10 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Exchange-segment payload and query timing were measured in disposable CI; see the separate Dashboard HTTP response benchmark section above for the real route's response size and latency.
 - [ ] Realistic production data distribution and target-host measurements remain open.
 - [ ] Production release gates remain open: target database identity, encrypted backup and isolated restore drill, legacy wallet reconciliation against approved production snapshot, owner-approved Render configuration, and target-environment smoke tests. PR #83 remains Draft/unmerged; no production DB operation or live deployment was performed.
+
+## Checklist consistency pass — 2026-10-21
+
+- [x] Reconciled earlier checklist entries that incorrectly described expense/receipt route adoption as pending; current route code imports and calls `getDateAwareValuationAggregate` for expense create/edit and receipt save.
+- [x] Kept production release gates explicitly open: production DB identity, encrypted backup plus isolated restore, legacy wallet reconciliation, owner-approved Render configuration, and target-environment smoke tests.
+- [ ] Latest exact-head CI for the most recent fixture/docs changes must be confirmed before marking the branch release-ready. Earlier passing runs are recorded by exact commit in the sections above and do not automatically validate later commits.
+- [ ] PR #83 remains Draft/unmerged; no production deployment or live database operation was performed.
