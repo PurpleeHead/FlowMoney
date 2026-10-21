@@ -139,6 +139,30 @@ try {
   for (const [key, value] of Object.entries(nonFiniteAggregate)) {
     if (typeof value === 'number') assert.ok(Number.isFinite(value), `${key} must be finite`);
   }
+  const nonFiniteExchangeRows = await prisma.exchange.findMany({ where: { userId: nonFiniteUser.id } });
+  const legacyNonFiniteRate = calculateObservedVndPerRub({
+    directExchanges: mapDirectVndExchanges(nonFiniteExchangeRows.map(x => ({
+      mode: x.mode,
+      rubSpent: Number(x.rubSpent),
+      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+      targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+      targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+      targetCurrency: x.targetCurrency,
+    }))),
+    actualVndExchanges: mapActualVndExchanges(nonFiniteExchangeRows.map(x => ({
+      mode: x.mode,
+      rubSpent: Number(x.rubSpent),
+      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+      targetCurrency: x.targetCurrency,
+    }))),
+    cardPurchases: [],
+    rubPerUsdt: null,
+  });
+  near(
+    nonFiniteAggregate.rateExchangeVnd / nonFiniteAggregate.rateExchangeRub,
+    legacyNonFiniteRate,
+    'finite-safe PostgreSQL VND/RUB rate matches the existing TypeScript mapping on malformed legacy records',
+  );
 
 
   await prisma.expense.createMany({
