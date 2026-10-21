@@ -70,12 +70,12 @@ export async function getDateAwareValuationAggregate(
         COALESCE(SUM("rubSpent") FILTER (WHERE
           "rubSpent" > 0 AND "vndReceived" > 0
           AND "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) IN ('VND', 'USDT'))
         ), 0) AS "actualRubForVnd",
         COALESCE(SUM("vndReceived") FILTER (WHERE
           "rubSpent" > 0 AND "vndReceived" > 0
           AND "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) IN ('VND', 'USDT'))
         ), 0) AS "actualVndForRub"
       FROM "Exchange"
       WHERE "userId" = ${userId} AND "createdAt" <= ${valuationDate}
