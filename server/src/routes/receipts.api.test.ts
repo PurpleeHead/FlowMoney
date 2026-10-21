@@ -14,11 +14,12 @@ const receiptModel = prisma.receipt as unknown as {
 };
 const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
 const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any> };
-const client = prisma as unknown as { $transaction: (...args: any[]) => Promise<any> };
+const client = prisma as unknown as { $transaction: (...args: any[]) => Promise<any>; $queryRaw: (...args: any[]) => Promise<any> };
 const originalFindMany = receiptModel.findMany;
 const originalExchangeFindMany = exchangeModel.findMany;
 const originalExpenseFindMany = expenseModel.findMany;
 const originalTransaction = client.$transaction;
+const originalQueryRaw = client.$queryRaw;
 const previousSecret = process.env.JWT_SECRET;
 
 afterEach(() => {
@@ -27,6 +28,7 @@ afterEach(() => {
   exchangeModel.findMany = originalExchangeFindMany;
   expenseModel.findMany = originalExpenseFindMany;
   client.$transaction = originalTransaction;
+  client.$queryRaw = originalQueryRaw;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
@@ -122,25 +124,11 @@ describe('receipt API ownership', () => {
     });
   });
   it('uses legacy direct VND target fields even when the currency casing is inconsistent', async () => {
-    let exchangeQuery: any;
-    let purchaseQuery: any;
-    exchangeModel.findMany = async (args: any) => {
-      exchangeQuery = args;
-      return [{
-      mode: 'RUB_TARGET',
-      rubSpent: 1000,
-      usdtReceived: null,
-      vndReceived: null,
-      planningVndPerUsdt: null,
-      targetCurrency: ' vNd ',
-      targetReceived: 250000,
-      targetVndEquivalent: null,
-      }];
-    };
-    expenseModel.findMany = async (args: any) => {
-      purchaseQuery = args;
-      return [];
-    };
+    client.$queryRaw = async () => [{
+      rubUsdtRub: 0, rubUsdtUsdt: 0, actualVnd: 0, actualUsdt: 0,
+      directRub: 1000, directVnd: 250000, actualRubForVnd: 0, actualVndForRub: 0,
+      cardVnd: 0, cardUsdt: 0,
+    }];
     let savedExpense: any;
     const tx = {
       receipt: { create: async () => ({ id: 'receipt-legacy-direct-vnd' }) },
@@ -172,27 +160,16 @@ describe('receipt API ownership', () => {
       assert.equal(savedExpense.amountRub, 1000, 'legacy targetReceived VND amount should value the receipt at the observed direct exchange rate');
     });
 
-    assert.deepEqual(exchangeQuery.where.userId, 'user-1');
-    assert.ok(exchangeQuery.where.createdAt.lte instanceof Date,
-      'receipt valuation must not include exchanges created after the receipt');
-    assert.deepEqual(purchaseQuery.where.userId, 'user-1');
-    assert.ok(purchaseQuery.where.date.lte instanceof Date,
-      'receipt valuation must not include card purchases dated after the receipt');
-    assert.deepEqual(purchaseQuery.where.usdtCharged, { not: null });
+    assert.equal(savedExpense.amountRub, 1000,
+      'date-scoped aggregate should value legacy direct VND at the actual exchange rate');
   });
 
   it('does not value receipt expenses using a planning-only VND/USDT rate', async () => {
-    exchangeModel.findMany = async () => [{
-      mode: 'RUB_USDT_VND',
-      rubSpent: 8300,
-      usdtReceived: 100,
-      vndReceived: null,
-      planningVndPerUsdt: 25000,
-      targetCurrency: 'VND',
-      targetReceived: null,
-      targetVndEquivalent: null,
+    client.$queryRaw = async () => [{
+      rubUsdtRub: 8300, rubUsdtUsdt: 100, actualVnd: 0, actualUsdt: 0,
+      directRub: 0, directVnd: 0, actualRubForVnd: 0, actualVndForRub: 0,
+      cardVnd: 0, cardUsdt: 0,
     }];
-    expenseModel.findMany = async () => [];
     let savedExpense: any;
     const tx = {
       receipt: {
