@@ -169,8 +169,8 @@ jobs:
             card_delta numeric;
           BEGIN
             SELECT count(*) INTO movement_count FROM "WalletMovement" WHERE "userId" = 'backfill-test-user';
-            IF movement_count <> 14 THEN
-              RAISE EXCEPTION 'Expected 14 unique movements after two backfills, got %', movement_count;
+            IF movement_count <> 15 THEN
+              RAISE EXCEPTION 'Expected 15 unique movements after two backfills, got %', movement_count;
             END IF;
             SELECT count(*), min("amountDelta") INTO card_count, card_delta
               FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-card-expense:USDT';
@@ -187,6 +187,12 @@ jobs:
             END IF;
             IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" LIKE 'expense:backfill-invalid-card-vnd:%') <> 0 THEN
               RAISE EXCEPTION 'Invalid non-null VND card debit must not silently fall back to cash VND';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-card-invalid-vnd-basis:USDT' AND "amountDelta" = -1.5) <> 1 THEN
+              RAISE EXCEPTION 'A valid actual USDT debit must survive a malformed legacy VND basis';
+            END IF;
+            IF (SELECT count(*) FROM "WalletMovement" WHERE "sourceKey" = 'expense:backfill-card-invalid-vnd-basis:VND') <> 0 THEN
+              RAISE EXCEPTION 'Malformed card expense must not create a duplicate VND debit';
             END IF;
             SELECT count(*) INTO exchange_usdt_count FROM "WalletMovement" WHERE "sourceKey" = 'exchange:backfill-exchange:USDT' AND "amountDelta" = 93.7853;
             IF exchange_usdt_count <> 1 THEN RAISE EXCEPTION 'USDT exchange credit missing or duplicated'; END IF;
@@ -234,7 +240,7 @@ jobs:
             IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'RUB') <> -11300 THEN
               RAISE EXCEPTION 'RUB movement total does not reconcile';
             END IF;
-            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'USDT') <> 96.5953 THEN
+            IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'USDT') <> 98.0953 THEN
               RAISE EXCEPTION 'USDT movement total does not reconcile';
             END IF;
             IF (SELECT sum("amountDelta") FROM "WalletMovement" WHERE "userId" = 'backfill-test-user' AND "currency" = 'VND') <> 280000 THEN
