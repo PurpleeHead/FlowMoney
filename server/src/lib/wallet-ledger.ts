@@ -18,6 +18,7 @@ type ExchangeLedgerSource = {
   rubSpent: AmountLike;
   usdtReceived: AmountLike;
   vndReceived: AmountLike;
+  vndFee?: AmountLike;
   targetCurrency: string;
   targetReceived: AmountLike;
   createdAt: Date;
@@ -74,9 +75,14 @@ export function exchangeLedgerDrafts(exchange: ExchangeLedgerSource): LedgerMove
 
   if (exchange.mode === 'RUB_VND') {
     // Prefer the net VND outcome. Legacy targetReceived may contain the gross amount before fees.
+    // A gross legacy target amount is not a safe wallet credit if a fee was
+    // recorded but the net VND outcome is missing.
+    const fee = amount(exchange.vndFee) ?? 0;
     const vnd = exchange.vndReceived != null
       ? amount(exchange.vndReceived)
-      : amount(exchange.targetReceived);
+      : fee > 0
+        ? null
+        : amount(exchange.targetReceived);
     if (vnd != null) movements.push({
       userId: exchange.userId, currency: 'VND', amountDelta: vnd, kind: 'EXCHANGE',
       sourceKey: `exchange:${exchange.id}:VND`, occurredAt: exchange.createdAt,
