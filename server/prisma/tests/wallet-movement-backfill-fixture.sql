@@ -105,3 +105,12 @@ INSERT INTO "Exchange" (
   'backfill-fee-net-unknown', 'backfill-test-user', 'RUB_VND', 'VND',
   50000, 400, 1000, NULL, CURRENT_TIMESTAMP
 );
+
+-- A malformed direct USDT receipt must not create a USDT credit, but the
+-- independently known RUB outflow remains a valid ledger movement.
+INSERT INTO "Exchange" (
+  "id", "userId", "mode", "targetCurrency", "targetReceived", "rubSpent", "createdAt"
+) VALUES (
+  'backfill-nan-usdt-target', 'backfill-test-user', 'RUB_TARGET', 'USDT',
+  'NaN'::numeric, 250, CURRENT_TIMESTAMP
+);
