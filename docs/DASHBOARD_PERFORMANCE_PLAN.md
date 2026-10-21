@@ -95,7 +95,7 @@ Still open: benchmark old row-loading calculations against the aggregate impleme
 
 ## Reproducible disposable-DB microbenchmark
 
-A guarded benchmark is available at `server/prisma/tests/benchmark-dashboard-aggregates.ts`. It creates a temporary user and synthetic exchange rows, checks representative SQL aggregate values against a Node-side full-history reference, warms up both paths, and reports median/p95 timings for seven measured rounds. It refuses to write unless all safeguards pass:
+A guarded benchmark is available at `server/prisma/tests/benchmark-dashboard-aggregates.ts`. It creates temporary users and synthetic exchange rows, checks representative SQL aggregate values against a Node-side full-history reference, exercises the actual dashboard HTTP route, warms up measured paths, and reports median and maximum timings for seven measured rounds. It refuses to write unless all safeguards pass:
 
 - `FLOWMONEY_BENCHMARK_DATABASE=disposable` is explicitly set;
 - `DATABASE_URL` points to localhost/127.0.0.1 and a database name containing `test`, `bench`, or `disposable`;
@@ -184,7 +184,7 @@ Workflow [39531588634](https://github.com/PurpleeHead/FlowMoney/actions/runs/395
 
 All three runs verified the selected aggregate totals against the Node-side reference before timing. PostgreSQL used the existing `Exchange_userId_createdAt_idx` for the user filter at all sizes. At 50,000 rows for the target user, the exact aggregate statement took about 30.4 ms in the captured plan and touched 946 shared buffers, with zero shared reads.
 
-These results show the expected benefit of not transferring every historical exchange row to Node.js as user history grows. They remain CI microbenchmarks on one ephemeral PostgreSQL instance with synthetic, uniformly distributed user histories. They do not establish production response latency, cold-cache behavior, multi-tenant skew, or a service-level p95. The reported “p95” field is the maximum of seven samples and is retained only for trend visibility.
+These results show the expected benefit of not transferring every historical exchange row to Node.js as user history grows. They remain CI microbenchmarks on one ephemeral PostgreSQL instance with synthetic, uniformly distributed user histories. They do not establish production response latency, cold-cache behavior, multi-tenant skew, or a service-level p95. Earlier benchmark runs labeled the maximum of seven samples as “p95”; the current benchmark output uses the explicit `max` label to avoid implying a statistically stable percentile.
 
 ## Date-aware valuation aggregates — implementation contract (2026-10-21)
 
