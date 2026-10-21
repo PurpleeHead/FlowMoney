@@ -195,6 +195,8 @@ try {
   const [fullActivityRows, boundedActivityRows] = await Promise.all([
     fullActivityPayload(), boundedActivityPayload(),
   ]);
+  assert.equal(fullActivityRows.length, sampleSize,
+    'full-history activity baseline must include every exchange for the target user');
   const fullActivityBytes = Buffer.byteLength(JSON.stringify(toDashboardExchangePayload(fullActivityRows)));
   const boundedActivityBytes = Buffer.byteLength(JSON.stringify(toDashboardExchangePayload(boundedActivityRows)));
   assert.equal(boundedActivityRows.length, Math.min(sampleSize, 100),
@@ -248,8 +250,8 @@ try {
     };
     dashboardResponseBytes = Buffer.byteLength(responseText);
     dashboardFullHistoryProjectionBytes = Buffer.byteLength(JSON.stringify(projectedFullHistory));
-    assert.ok(dashboardResponseBytes <= dashboardFullHistoryProjectionBytes,
-      'current dashboard HTTP payload must not exceed the otherwise-identical full-history activity projection');
+    assert.ok(dashboardResponseBytes < dashboardFullHistoryProjectionBytes,
+      'current dashboard HTTP payload must be smaller than the otherwise-identical full-history activity projection');
     if (i >= 2) dashboardHttpSamples.push(elapsed);
   }
 
