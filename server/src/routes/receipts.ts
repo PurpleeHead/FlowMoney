@@ -9,6 +9,9 @@ import {
   calculateObservedVndPerRub,
   calculateObservedVndPerUsdt,
   calculateRubPerUsdt,
+  mapActualVndExchanges,
+  mapActualVndUsdtExchanges,
+  mapDirectVndExchanges,
   mapRubUsdtExchanges,
 } from '../lib/money.js';
 import { syncExpenseLedger } from '../lib/wallet-ledger.js';
@@ -66,19 +69,31 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
     );
-    const actualExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.usdtReceived != null && x.vndReceived != null);
-    const actualVnd = actualExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
-    const actualUsdt = actualExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const actualVndUsdtExchanges = mapActualVndUsdtExchanges(exchanges.map(x => ({
+      mode: x.mode,
+      usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+    })));
+    const actualVnd = actualVndUsdtExchanges.reduce((sum, x) => sum + x.vndReceived, 0);
+    const actualUsdt = actualVndUsdtExchanges.reduce((sum, x) => sum + x.usdtReceived, 0);
     // Planning rates are for previews only. Receipt expenses must not persist
     // estimated VND→RUB valuations as if they were based on actual exchange outcomes.
     const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : null);
     const vndPerRub = calculateObservedVndPerRub({
-      directExchanges: [
-        ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND' && x.targetVndEquivalent != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent) })),
-      ],
-      actualVndExchanges: exchanges.filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+        targetCurrency: x.targetCurrency,
+      }))),
+      actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetCurrency: x.targetCurrency,
+      }))),
       cardPurchases: previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) })),
       rubPerUsdt,
     });
