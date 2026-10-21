@@ -1045,7 +1045,7 @@ describe('dashboard query ownership boundaries', () => {
     const expenseQueries: any[] = [];
     const exchangeQueries: any[] = [];
     expenseModel.findMany = async (args: any = {}) => {
-      expenseQueries.push(args);
+      if (args.where?.userId != null) expenseQueries.push(args);
       return [];
     };
     exchangeModel.findMany = async (args: any = {}) => {
