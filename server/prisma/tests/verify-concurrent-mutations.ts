@@ -148,7 +148,7 @@ async function raceExpensePatchPatch(user: { id: string }, iteration: number) {
   });
 }
 
-async function raceExchangePatchPatch(user: { id: string }, iteration: number) {
+async function raceExchangePatchPatch(user: { id: string }) {
   const exchange = await prisma.exchange.create({
     data: {
       userId: user.id, mode: 'RUB_USDT_VND', targetCurrency: 'VND',
@@ -207,7 +207,7 @@ try {
     await raceExpense(user, iteration);
     await raceExchange(user, iteration);
     await raceExpensePatchPatch(user, iteration);
-    await raceExchangePatchPatch(user, iteration);
+    await raceExchangePatchPatch(user);
   }
 
   console.log('Concurrent PostgreSQL mutations verified: PATCH/DELETE leaves no orphaned movements; concurrent PATCH/PATCH keeps expense and exchange ledger rows consistent with the final committed source records.');
