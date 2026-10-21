@@ -43,90 +43,101 @@ type DashboardExchangeAggregateRow = {
 
 function dashboardExchangeAggregateQuery(userId: string) {
   return Prisma.sql`
+    WITH "scopedExchange" AS (
+      SELECT
+        "Exchange".*,
+        CASE WHEN "rubSpent"::text NOT IN ('NaN', 'Infinity', '-Infinity') THEN "rubSpent" END AS "safeRubSpent",
+        CASE WHEN "usdtReceived" IS NOT NULL AND "usdtReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity') THEN "usdtReceived" END AS "safeUsdtReceived",
+        CASE WHEN "targetReceived" IS NOT NULL AND "targetReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity') THEN "targetReceived" END AS "safeTargetReceived",
+        CASE WHEN "vndReceived" IS NOT NULL AND "vndReceived"::text NOT IN ('NaN', 'Infinity', '-Infinity') THEN "vndReceived" END AS "safeVndReceived",
+        CASE WHEN "targetVndEquivalent" IS NOT NULL AND "targetVndEquivalent"::text NOT IN ('NaN', 'Infinity', '-Infinity') THEN "targetVndEquivalent" END AS "safeTargetVndEquivalent",
+        CASE WHEN "planningVndPerUsdt" IS NOT NULL AND "planningVndPerUsdt"::text NOT IN ('NaN', 'Infinity', '-Infinity') THEN "planningVndPerUsdt" END AS "safePlanningVndPerUsdt"
+      FROM "Exchange"
+      WHERE "userId" = ${userId}
+    )
     SELECT
       COUNT(*)::int AS "exchangeCount",
       COALESCE(SUM(CASE
-        WHEN "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 THEN "rubSpent"
-        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' AND "rubSpent" > 0 AND "targetReceived" > 0 THEN "rubSpent"
+        WHEN "mode" = 'RUB_USDT_VND' AND "safeRubSpent" > 0 AND "safeUsdtReceived" > 0 THEN "safeRubSpent"
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' AND "safeRubSpent" > 0 AND "safeTargetReceived" > 0 THEN "safeRubSpent"
         ELSE 0
       END), 0) AS "rubUsdtRub",
       COALESCE(SUM(CASE
-        WHEN "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 THEN "usdtReceived"
-        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' AND "rubSpent" > 0 AND "targetReceived" > 0 THEN "targetReceived"
+        WHEN "mode" = 'RUB_USDT_VND' AND "safeRubSpent" > 0 AND "safeUsdtReceived" > 0 THEN "safeUsdtReceived"
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT' AND "safeRubSpent" > 0 AND "safeTargetReceived" > 0 THEN "safeTargetReceived"
         ELSE 0
       END), 0) AS "rubUsdtUsdt",
-      COALESCE(SUM("vndReceived") FILTER (
-        WHERE "mode" = 'RUB_USDT_VND' AND "usdtReceived" > 0 AND "vndReceived" > 0
+      COALESCE(SUM("safeVndReceived") FILTER (
+        WHERE "mode" = 'RUB_USDT_VND' AND "safeUsdtReceived" > 0 AND "safeVndReceived" > 0
       ), 0) AS "actualVnd",
-      COALESCE(SUM("usdtReceived") FILTER (
-        WHERE "mode" = 'RUB_USDT_VND' AND "usdtReceived" > 0 AND "vndReceived" > 0
+      COALESCE(SUM("safeUsdtReceived") FILTER (
+        WHERE "mode" = 'RUB_USDT_VND' AND "safeUsdtReceived" > 0 AND "safeVndReceived" > 0
       ), 0) AS "actualUsdt",
-      COALESCE(SUM("usdtReceived" * "planningVndPerUsdt") FILTER (
+      COALESCE(SUM("safeUsdtReceived" * "safePlanningVndPerUsdt") FILTER (
         WHERE "mode" = 'RUB_USDT_VND'
-          AND "vndReceived" IS NULL
-          AND "usdtReceived" IS NOT NULL
-          AND "planningVndPerUsdt" IS NOT NULL
+          AND "safeVndReceived" IS NULL
+          AND "safeUsdtReceived" IS NOT NULL
+          AND "safePlanningVndPerUsdt" IS NOT NULL
       ), 0) AS "plannedWeightedVnd",
-      COALESCE(SUM("usdtReceived") FILTER (
+      COALESCE(SUM("safeUsdtReceived") FILTER (
         WHERE "mode" = 'RUB_USDT_VND'
-          AND "vndReceived" IS NULL
-          AND "usdtReceived" IS NOT NULL
-          AND "planningVndPerUsdt" IS NOT NULL
+          AND "safeVndReceived" IS NULL
+          AND "safeUsdtReceived" IS NOT NULL
+          AND "safePlanningVndPerUsdt" IS NOT NULL
       ), 0) AS "plannedUsdt",
       -- Only documented modes are VND evidence; other modes may retain stale legacy vndReceived.
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
-          THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
-        WHEN "mode" IN ('RUB_VND', 'RUB_USDT_VND') THEN "vndReceived"
+          THEN COALESCE("safeTargetVndEquivalent", "safeTargetReceived", "safeVndReceived")
+        WHEN "mode" IN ('RUB_VND', 'RUB_USDT_VND') THEN "safeVndReceived"
         ELSE 0
       END), 0) AS "confirmedVnd",
-      COALESCE(SUM("targetVndEquivalent") FILTER (
+      COALESCE(SUM("safeTargetVndEquivalent") FILTER (
         WHERE "mode" = 'RUB_TARGET'
           AND upper(trim("targetCurrency")) NOT IN ('VND', 'RUB')
-          AND "targetVndEquivalent" IS NOT NULL
+          AND "safeTargetVndEquivalent" IS NOT NULL
       ), 0) AS "estimatedTargetVnd",
       -- A direct USDT receipt remains unpriced even if vndReceived contains a stale legacy value.
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
-          AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL
-          THEN "targetReceived"
-        WHEN "mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL
-          AND "usdtReceived" IS NOT NULL
-          THEN "usdtReceived"
+          AND "safeTargetReceived" IS NOT NULL AND "safeTargetVndEquivalent" IS NULL
+          THEN "safeTargetReceived"
+        WHEN "mode" = 'RUB_USDT_VND' AND "safeVndReceived" IS NULL
+          AND "safeUsdtReceived" IS NOT NULL
+          THEN "safeUsdtReceived"
         ELSE 0
       END), 0) AS "estimatedUsdt",
       COALESCE(BOOL_OR(
-        ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
+        ("mode" = 'RUB_USDT_VND' AND "safeVndReceived" IS NULL AND "safeUsdtReceived" IS NOT NULL)
         OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
-          AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+          AND "safeTargetReceived" IS NOT NULL AND "safeTargetVndEquivalent" IS NULL)
       ), false) AS "hasUnpricedUsdtTopUp",
       COALESCE(BOOL_OR(
         "mode" = 'RUB_TARGET'
           AND upper(trim("targetCurrency")) NOT IN ('VND', 'RUB')
-          AND "targetVndEquivalent" IS NOT NULL
+          AND "safeTargetVndEquivalent" IS NOT NULL
       ), false) AS "hasEstimatedTarget",
-      COALESCE(SUM("rubSpent") FILTER (WHERE
-        "rubSpent" > 0 AND (
-          ("mode" = 'RUB_VND' AND "vndReceived" > 0)
+      COALESCE(SUM("safeRubSpent") FILTER (WHERE
+        "safeRubSpent" > 0 AND (
+          ("mode" = 'RUB_VND' AND "safeVndReceived" > 0)
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
-            AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
-          OR ("mode" = 'RUB_USDT_VND' AND "vndReceived" > 0)
+            AND COALESCE("safeTargetVndEquivalent", "safeTargetReceived", "safeVndReceived") > 0)
+          OR ("mode" = 'RUB_USDT_VND' AND "safeVndReceived" > 0)
         )
       ), 0) AS "rateExchangeRub",
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
-          THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
-        ELSE "vndReceived"
+          THEN COALESCE("safeTargetVndEquivalent", "safeTargetReceived", "safeVndReceived")
+        ELSE "safeVndReceived"
       END) FILTER (WHERE
-        "rubSpent" > 0 AND (
-          ("mode" = 'RUB_VND' AND "vndReceived" > 0)
+        "safeRubSpent" > 0 AND (
+          ("mode" = 'RUB_VND' AND "safeVndReceived" > 0)
           OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
-            AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0)
-          OR ("mode" = 'RUB_USDT_VND' AND "vndReceived" > 0)
+            AND COALESCE("safeTargetVndEquivalent", "safeTargetReceived", "safeVndReceived") > 0)
+          OR ("mode" = 'RUB_USDT_VND' AND "safeVndReceived" > 0)
         )
       ), 0) AS "rateExchangeVnd"
-    FROM "Exchange"
-    WHERE "userId" = ${userId}
+    FROM "scopedExchange"
   `;
 }
 
