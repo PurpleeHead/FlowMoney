@@ -521,6 +521,43 @@ describe('exchange API ledger synchronization', () => {
     });
   });
 
+
+  it('returns an error when deleting an exchange cannot remove its ledger movements', async () => {
+    let transactionCompleted = false;
+    const tx = {
+      exchange: {
+        deleteMany: async (args: any) => {
+          assert.deepEqual(args.where, { id: 'exchange-delete-rollback', userId: 'user-42' });
+          return { count: 1 };
+        },
+      },
+      walletMovement: {
+        deleteMany: async (args: any) => {
+          assert.deepEqual(args.where, {
+            userId: 'user-42', sourceKey: { startsWith: 'exchange:exchange-delete-rollback:' },
+          });
+          throw new Error('simulated ledger deletion failure');
+        },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+      try {
+        return await callback(tx);
+      } finally {
+        transactionCompleted = true;
+      }
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/exchange-delete-rollback`, {
+        method: 'DELETE',
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 500);
+      assert.equal(transactionCompleted, true);
+    });
+  });
+
   it('returns 404 and leaves ledger rows untouched when the exchange is absent or owned by someone else', async () => {
     const movementDeleteArgs: any[] = [];
     const tx = {
