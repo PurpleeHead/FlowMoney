@@ -16,6 +16,7 @@ const suffix = `date-aware-valuation-${Date.now()}`;
 const valuationDate = new Date('2026-10-15T00:00:00.000Z');
 let userId: string | undefined;
 let otherUserId: string | undefined;
+let emptyUserId: string | undefined;
 
 function near(actual: unknown, expected: number, label: string) {
   const value = Number(actual);
@@ -24,12 +25,24 @@ function near(actual: unknown, expected: number, label: string) {
 }
 
 try {
-  const [user, other] = await Promise.all([
+  const [user, other, empty] = await Promise.all([
     prisma.user.create({ data: { email: `${suffix}@example.invalid`, passwordHash: 'test-only' } }),
     prisma.user.create({ data: { email: `${suffix}-other@example.invalid`, passwordHash: 'test-only' } }),
+    prisma.user.create({ data: { email: `${suffix}-empty@example.invalid`, passwordHash: 'test-only' } }),
   ]);
   userId = user.id;
   otherUserId = other.id;
+  emptyUserId = empty.id;
+
+  const emptyAggregate = await getDateAwareValuationAggregate(empty.id, valuationDate);
+  for (const [field, value] of Object.entries(emptyAggregate)) {
+    near(value, 0, `empty-history aggregate ${field}`);
+  }
+  assert.deepEqual(calculateDateAwareValuationRates(emptyAggregate), {
+    rubPerUsdt: null,
+    vndPerUsdt: null,
+    vndPerRub: null,
+  }, 'an account with no historical observations must produce null rates rather than failing or inventing rates');
 
   await prisma.exchange.createMany({
     data: [
@@ -310,5 +323,6 @@ try {
 } finally {
   if (userId) await prisma.user.deleteMany({ where: { id: userId } });
   if (otherUserId) await prisma.user.deleteMany({ where: { id: otherUserId } });
+  if (emptyUserId) await prisma.user.deleteMany({ where: { id: emptyUserId } });
   await prisma.$disconnect();
 }
