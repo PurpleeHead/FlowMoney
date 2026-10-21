@@ -130,7 +130,68 @@ try {
     'Indirect-to-direct edit must remove stale USDT and credit only net VND after fee',
   );
 
-  console.log('PostgreSQL ledger sync verified: repeated syncs are idempotent; same-currency amount edits replace existing deltas; currency/mode edits remove stale legs and preserve stable source keys.');
+  // Direct-target currency changes must remove the previous target movement.
+  const directUsdtExchange = await prisma.exchange.update({
+    where: { id: exchange.id },
+    data: {
+      mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 9000,
+      usdtReceived: null, vndReceived: null, vndFee: 0,
+      targetReceived: 101.25, targetToVndRate: null, targetVndEquivalent: null,
+      vndPerUsdt: null, planningVndPerUsdt: null,
+      effectiveVndPerRub: null, effectiveRubPerUsdt: null,
+    },
+  });
+  await prisma.$transaction(tx => syncExchangeLedger(tx, directUsdtExchange));
+  let targetMovements = await movements(user.id, `exchange:${exchange.id}:`);
+  assert.deepEqual(
+    targetMovements.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
+    [
+      ['RUB', -9000, `exchange:${exchange.id}:RUB`],
+      ['USDT', 101.25, `exchange:${exchange.id}:USDT`],
+    ],
+    'Direct RUB→USDT mode transition must retain only the actual USDT receipt',
+  );
+
+  const directVndExchange = await prisma.exchange.update({
+    where: { id: exchange.id },
+    data: {
+      mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 9000,
+      usdtReceived: null, vndReceived: null, vndFee: 0,
+      targetReceived: 2_700_000, targetToVndRate: 1, targetVndEquivalent: 2_700_000,
+      vndPerUsdt: null, planningVndPerUsdt: null,
+      effectiveVndPerRub: 300, effectiveRubPerUsdt: null,
+    },
+  });
+  await prisma.$transaction(tx => syncExchangeLedger(tx, directVndExchange));
+  targetMovements = await movements(user.id, `exchange:${exchange.id}:`);
+  assert.deepEqual(
+    targetMovements.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
+    [
+      ['RUB', -9000, `exchange:${exchange.id}:RUB`],
+      ['VND', 2_700_000, `exchange:${exchange.id}:VND`],
+    ],
+    'Direct RUB→VND transition must remove the prior USDT credit and credit only actual VND',
+  );
+
+  const foreignTargetExchange = await prisma.exchange.update({
+    where: { id: exchange.id },
+    data: {
+      mode: 'RUB_TARGET', targetCurrency: 'EUR', rubSpent: 9000,
+      usdtReceived: null, vndReceived: null, vndFee: 0,
+      targetReceived: 30, targetToVndRate: 27_000, targetVndEquivalent: 810_000,
+      vndPerUsdt: null, planningVndPerUsdt: null,
+      effectiveVndPerRub: 90, effectiveRubPerUsdt: null,
+    },
+  });
+  await prisma.$transaction(tx => syncExchangeLedger(tx, foreignTargetExchange));
+  targetMovements = await movements(user.id, `exchange:${exchange.id}:`);
+  assert.deepEqual(
+    targetMovements.map(row => [row.currency, Number(row.amountDelta), row.sourceKey]),
+    [['RUB', -9000, `exchange:${exchange.id}:RUB`]],
+    'An EUR target must not retain stale USDT/VND wallet credits from earlier edits',
+  );
+
+  console.log('PostgreSQL ledger sync verified: repeated syncs are idempotent; same-currency amount edits replace existing deltas; currency/mode/target edits remove stale legs and preserve stable source keys.');
 } finally {
   if (expenseId) await prisma.expense.deleteMany({ where: { id: expenseId } });
   if (exchangeId) await prisma.exchange.deleteMany({ where: { id: exchangeId } });
