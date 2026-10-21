@@ -508,6 +508,43 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+
+  it('returns an error when deleting an expense cannot remove its ledger movement', async () => {
+    let transactionCompleted = false;
+    const tx = {
+      expense: {
+        deleteMany: async (args: any) => {
+          assert.deepEqual(args.where, { id: 'expense-delete-rollback', userId: 'user-42' });
+          return { count: 1 };
+        },
+      },
+      walletMovement: {
+        deleteMany: async (args: any) => {
+          assert.deepEqual(args.where, {
+            userId: 'user-42', sourceKey: { startsWith: 'expense:expense-delete-rollback:' },
+          });
+          throw new Error('simulated ledger deletion failure');
+        },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+      try {
+        return await callback(tx);
+      } finally {
+        transactionCompleted = true;
+      }
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses/expense-delete-rollback`, {
+        method: 'DELETE',
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 500);
+      assert.equal(transactionCompleted, true);
+    });
+  });
+
   it('returns 404 and leaves ledger rows untouched when the owner-scoped expense is absent', async () => {
     const movementDeleteArgs: any[] = [];
     const tx = {
