@@ -201,3 +201,10 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] This is a repository configuration guard only. It does not inspect or change the existing Render service's live Dashboard settings; the previously documented live-vs-blueprint mismatch still requires owner verification and approval.
 - [x] CI passed on head `84dc2bfd088d2e1863849318d99e2efa76da0a91`: [run #39730015972](https://github.com/PurpleeHead/FlowMoney/actions/runs/39730015972). Both application verification/build and disposable PostgreSQL migration/equivalence/benchmark checks succeeded.
 - [ ] Production database identity, encrypted backup and successful isolated restore, legacy wallet reconciliation, live Render configuration approval, production-like hosted performance, final financial review, and release-window smoke tests remain open. PR #96 remains Draft and unmerged.
+
+## Read-only Render release-gate recheck — 2026-10-22
+
+- [x] Re-read the live `flowmoney-app` service configuration. It still has auto-deploy enabled (`autoDeploy=yes`, trigger `commit`), branch `review/pr-3-fix`, and health check `/api/health`. This differs from the checked-in blueprint's manual deploy setting and database-aware `/api/ready`.
+- [x] Re-listed PostgreSQL instances in the Render workspace. The only listed database is `flowmoney-test-db` / `flowmoney_test_db`, Free plan, scheduled to expire 2026-11-15. No permanent production database target is identified by this inventory.
+- [x] This was a read-only audit. No Render settings, deploys, environment variables, databases, or migrations were changed.
+- [ ] Hard blocker remains: owner must identify/approve the intended permanent production database and explicitly approve the service branch, manual deploy mode, readiness health check, and release window. Do not deploy the current draft branch or treat the expiring test database as production.
