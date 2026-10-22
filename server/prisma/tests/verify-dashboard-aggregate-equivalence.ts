@@ -32,7 +32,7 @@ try {
 
   const rows = [
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 2_300_000 },
-    { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 5000, targetReceived: 56 },
+    { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 5000, targetReceived: 56, planningVndPerUsdt: 26_000 },
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
     // Canonical VND must win over a stale legacy vndReceived value.
     { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999 },
@@ -184,18 +184,30 @@ try {
         WHEN "mode" <> 'RUB_VND'
           AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
           AND "vndReceived" IS NULL
-          AND "usdtReceived" IS NOT NULL
+          AND (
+            ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+              AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+            OR (NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT')
+              AND "usdtReceived" IS NOT NULL)
+          )
           AND "planningVndPerUsdt" IS NOT NULL
-          THEN "usdtReceived"
+          THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+            THEN "targetReceived" ELSE "usdtReceived" END
         ELSE 0
       END), 0) AS "plannedUsdt",
       COALESCE(SUM(CASE
         WHEN "mode" <> 'RUB_VND'
           AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
           AND "vndReceived" IS NULL
-          AND "usdtReceived" IS NOT NULL
+          AND (
+            ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+              AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+            OR (NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT')
+              AND "usdtReceived" IS NOT NULL)
+          )
           AND "planningVndPerUsdt" IS NOT NULL
-          THEN "usdtReceived" * "planningVndPerUsdt"
+          THEN (CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+            THEN "targetReceived" ELSE "usdtReceived" END) * "planningVndPerUsdt"
         ELSE 0
       END), 0) AS "plannedWeightedVnd"
     FROM "Exchange"
@@ -205,17 +217,24 @@ try {
     'confirmed VND aggregate must count direct targets once, preserve explicit zero outcomes, and include only recorded non-direct outcomes');
   assert.equal(Number(budgetAggregate.estimatedTargetVnd), 920_000,
     'estimated non-VND target value must stay separate from confirmed VND');
-  assert.equal(Number(budgetAggregate.plannedUsdt), 10,
+  assert.equal(Number(budgetAggregate.plannedUsdt), 66,
     'planning-rate denominator must include only eligible unpriced USDT top-ups');
-  assert.equal(Number(budgetAggregate.plannedWeightedVnd), 250_000,
+  assert.equal(Number(budgetAggregate.plannedWeightedVnd), 1_706_000,
     'planning-rate numerator must be USDT-weighted and must not mix into factual observed rates');
   const helperPlanned = exchangeRows
     .filter(x => x.mode !== 'RUB_VND' &&
       !(x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') &&
-      x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
-  const helperPlannedUsdt = helperPlanned.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+      x.vndReceived == null &&
+      (x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'USDT'
+        ? x.targetReceived != null && x.targetVndEquivalent == null
+        : x.usdtReceived != null) &&
+      x.planningVndPerUsdt != null);
+  const helperPlannedAmount = (x: typeof helperPlanned[number]) =>
+    Number(x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'USDT'
+      ? x.targetReceived : x.usdtReceived);
+  const helperPlannedUsdt = helperPlanned.reduce((sum, x) => sum + helperPlannedAmount(x), 0);
   const helperPlannedWeightedVnd = helperPlanned.reduce((sum, x) =>
-    sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0);
+    sum + helperPlannedAmount(x) * Number(x.planningVndPerUsdt), 0);
   near(Number(budgetAggregate.plannedUsdt), helperPlannedUsdt, 'PostgreSQL planning-rate denominator matches existing dashboard eligibility');
   near(Number(budgetAggregate.plannedWeightedVnd), helperPlannedWeightedVnd, 'PostgreSQL planning-rate numerator matches existing dashboard eligibility');
   near(Number(budgetAggregate.plannedWeightedVnd) / Number(budgetAggregate.plannedUsdt), 25_000,
