@@ -69,11 +69,12 @@ describe('health endpoints', () => {
     await withApi(async baseUrl => {
       const response = await fetch(`${baseUrl}/api/ready`);
       assert.equal(response.status, 503);
-      assert.deepEqual(await response.json(), {
+      const payload = await response.text();
+      assert.deepEqual(JSON.parse(payload), {
         status: 'not_ready',
         service: 'flowmoney-api',
       });
-      assert.doesNotMatch(await response.clone().text(), /sensitive database connection detail/);
+      assert.doesNotMatch(payload, /sensitive database connection detail/);
     });
   });
 });
