@@ -33,6 +33,8 @@ try {
   const rows = [
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 8300, usdtReceived: 93.7853, vndReceived: 2_300_000 },
     { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 5000, targetReceived: 56, planningVndPerUsdt: 26_000 },
+    // A valued direct USDT target may retain a stale legacy usdtReceived value; don't count both buckets.
+    { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 0, targetReceived: 10, targetToVndRate: 50_000, targetVndEquivalent: 500_000, usdtReceived: 10 },
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
     // Canonical VND must win over a stale legacy vndReceived value.
     { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999, usdtReceived: 10 },
@@ -218,7 +220,8 @@ try {
           AND (
             ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
               AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
-            OR "usdtReceived" IS NOT NULL
+            OR (NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT')
+              AND "usdtReceived" IS NOT NULL)
           )
           THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
             THEN COALESCE("targetReceived", 0) ELSE "usdtReceived" END
@@ -229,7 +232,7 @@ try {
   `;
   assert.equal(Number(budgetAggregate.confirmedVnd), 3_135_000,
     'confirmed VND aggregate must count direct targets once, preserve explicit zero outcomes, and include only recorded non-direct outcomes');
-  assert.equal(Number(budgetAggregate.estimatedTargetVnd), 920_000,
+  assert.equal(Number(budgetAggregate.estimatedTargetVnd), 1_420_000,
     'estimated non-VND target value must stay separate from confirmed VND');
   assert.equal(Number(budgetAggregate.plannedUsdt), 66,
     'planning-rate denominator must include only eligible unpriced USDT top-ups');
