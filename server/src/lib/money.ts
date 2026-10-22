@@ -82,6 +82,7 @@ export function mapDirectVndExchanges(exchanges: Array<{
   rubSpent: number;
   vndReceived?: number | null;
   targetVndEquivalent?: number | null;
+  targetReceived?: number | null;
   targetCurrency?: string | null;
 }>): DirectVndObservation[] {
   return exchanges.flatMap((exchange) => {
@@ -91,7 +92,7 @@ export function mapDirectVndExchanges(exchanges: Array<{
     if (exchange.mode === 'RUB_TARGET' && exchange.targetCurrency?.trim().toUpperCase() === 'VND') {
       // The actual net outcome is authoritative, including an explicit zero.
       // Fall back to the legacy equivalent only when no actual outcome was stored.
-      const vndReceived = exchange.vndReceived ?? exchange.targetVndEquivalent;
+      const vndReceived = exchange.vndReceived ?? exchange.targetReceived ?? exchange.targetVndEquivalent;
       if (vndReceived != null) return [{ rubSpent: exchange.rubSpent, vndReceived }];
     }
     return [];
