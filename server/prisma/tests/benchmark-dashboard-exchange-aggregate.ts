@@ -123,6 +123,7 @@ try {
   assert.ok(Math.abs(dashboardBody.observedVndPerUsdt - EXPECTED_EXPENSE_VND / EXPECTED_CARD_USDT) < 0.000001, 'observed VND/USDT rate is weighted by the full expense history');
   assert.equal(dashboardBody.expenses.length, EXPENSES_PER_USER, 'real dashboard response includes the chart expense window');
   const dashboardResponsePayloadBytes = Buffer.byteLength(apiPayload, 'utf8');
+  assert.ok(dashboardResponsePayloadBytes < 350_000, `full dashboard response exceeds 350 KB regression budget: ${dashboardResponsePayloadBytes} bytes`);
 
   // Small concurrency smoke benchmark catches connection-pool or tenant-scope
   // regressions that a single request cannot reveal.
@@ -134,11 +135,13 @@ try {
     });
     const payload = await response.text();
     assert.equal(response.status, 200, `concurrent dashboard request failed: ${payload}`);
+    assert.ok(Buffer.byteLength(payload, 'utf8') < 350_000, 'concurrent full dashboard response remains within the 350 KB regression budget');
     const body = JSON.parse(payload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; monthVnd: number; observedUsdt: number; observedVndPerUsdt: number; expenses: unknown[]; exchanges: unknown[] };
     assert.equal(body.totalExchangeCount, EXCHANGES_PER_USER, 'concurrent dashboard response keeps lifetime count scoped');
     assert.equal(body.exchanges.length, 100, 'concurrent dashboard response keeps history bounded');
     assert.equal(body.totalExpenseCount, EXPENSES_PER_USER, 'concurrent dashboard response keeps lifetime expense count scoped');
     assert.equal(body.totalVnd, EXPECTED_EXPENSE_VND, 'concurrent dashboard totals stay tenant-scoped');
+    assert.equal(body.observedVnd, EXPECTED_EXPENSE_VND, 'concurrent weighted card numerator stays tenant-scoped');
     assert.equal(body.monthVnd, EXPECTED_MONTH_EXPENSE_VND, 'concurrent dashboard month totals stay consistent');
     assert.ok(Math.abs(body.observedUsdt - EXPECTED_CARD_USDT) < 0.000001, 'concurrent weighted card denominator stays tenant-scoped');
     assert.ok(Math.abs(body.observedVndPerUsdt - EXPECTED_EXPENSE_VND / EXPECTED_CARD_USDT) < 0.000001, 'concurrent weighted card rate remains stable');
