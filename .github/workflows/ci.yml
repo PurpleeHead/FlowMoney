@@ -212,7 +212,8 @@ jobs:
           identity="$work_dir/age-identity.txt"
           age-keygen -o "$identity" 2>/dev/null
           recipient="$(age-keygen -y "$identity")"
-          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-acl --file="$work_dir/flowmoney.dump"
+          pg_url="$(bash scripts/normalize-backup-db-url.sh)"
+          pg_dump "$pg_url" --format=custom --no-owner --no-acl --file="$work_dir/flowmoney.dump"
           test -s "$work_dir/flowmoney.dump"
           age --recipient "$recipient" --output "$work_dir/flowmoney.dump.age" "$work_dir/flowmoney.dump"
           test -s "$work_dir/flowmoney.dump.age"
