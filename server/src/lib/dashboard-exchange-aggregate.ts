@@ -82,9 +82,8 @@ export function dashboardExchangeAggregateQuery(userId: string): Prisma.Sql {
 }
 
 /** Aggregate all dashboard exchange financial inputs in PostgreSQL without loading full history. */
-export async function aggregateDashboardExchanges(userId: string  const rows = await prisma.$queryRaw<DashboardExchangeAggregate[]>(dashboardExchangeAggregateQuery(userId));    WHERE "userId" = ${userId}
-      
-  `;
+export async function aggregateDashboardExchanges(userId: string): Promise<DashboardExchangeAggregate> {
+  const rows = await prisma.$queryRaw<DashboardExchangeAggregate[]>(dashboardExchangeAggregateQuery(userId));
   if (!rows[0]) throw new Error('Dashboard exchange aggregate query returned no row.');
   return rows[0];
 }
