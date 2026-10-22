@@ -82,14 +82,18 @@ export function mapDirectVndExchanges(exchanges: Array<{
   rubSpent: number;
   vndReceived?: number | null;
   targetVndEquivalent?: number | null;
+  targetReceived?: number | null;
   targetCurrency?: string | null;
 }>): DirectVndObservation[] {
   return exchanges.flatMap((exchange) => {
     if (exchange.mode === 'RUB_VND' && exchange.vndReceived != null) {
       return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
     }
-    if (exchange.mode === 'RUB_TARGET' && exchange.targetCurrency?.trim().toUpperCase() === 'VND' && exchange.targetVndEquivalent != null) {
-      return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.targetVndEquivalent }];
+    if (exchange.mode === 'RUB_TARGET' && exchange.targetCurrency?.trim().toUpperCase() === 'VND') {
+      // The actual net outcome is authoritative, including an explicit zero.
+      // Prefer the actual target-currency receipt for legacy rows; use the VND equivalent only as a last resort.
+      const vndReceived = exchange.vndReceived ?? exchange.targetReceived ?? exchange.targetVndEquivalent;
+      if (vndReceived != null) return [{ rubSpent: exchange.rubSpent, vndReceived }];
     }
     return [];
   });

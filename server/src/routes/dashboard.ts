@@ -2,7 +2,7 @@ import {Router} from 'express';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
-import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapRubUsdtExchanges } from '../lib/money.js';
+import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
 
 const router=Router();
 router.use(auth);
@@ -49,12 +49,18 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       : null;
     const balanceRateVndPerUsdt=effectiveVndPerUsdt??planningVndPerUsdt;
     const effectiveVndPerRub = calculateObservedVndPerRub({
-      directExchanges: [
-        ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND' && x.targetVndEquivalent != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent) })),
-      ],
+      directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
+        targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+        targetCurrency: x.targetCurrency,
+      }))),
       actualVndExchanges: exchanges
-        .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
+        .filter(x => x.mode !== 'RUB_VND' &&
+          !(x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') &&
+          x.vndReceived != null)
         .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
       cardPurchases: purchases.map(x => ({
         amountVnd: Number(x.amountVnd),
@@ -67,9 +73,14 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
     // USDT-only top-ups are converted using the observed VND/USDT rate when available.
     // Only actual VND outcomes are confirmed. A non-VND target's VND equivalent
     // is a valuation estimate based on a manually supplied conversion rate.
-    const confirmedExchangeVnd = exchanges.reduce((sum, x) =>
-      sum + (x.vndReceived != null ? Number(x.vndReceived) : 0) +
-      (x.targetCurrency === 'VND' && x.targetVndEquivalent != null ? Number(x.targetVndEquivalent) : 0), 0);
+    const confirmedExchangeVnd = exchanges.reduce((sum, x) => {
+      if (x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') {
+        // Prefer the recorded net outcome (including an explicit zero) over legacy
+        // target equivalents/gross target amounts, and count each exchange only once.
+        return sum + Number(x.vndReceived ?? x.targetReceived ?? x.targetVndEquivalent ?? 0);
+      }
+      return sum + (x.vndReceived != null ? Number(x.vndReceived) : 0);
+    }, 0);
     const isUnpricedUsdtTopUp = (x: typeof exchanges[number]) =>
       (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
       (x.mode === 'RUB_TARGET' && x.targetCurrency === 'USDT' && x.targetReceived != null && x.targetVndEquivalent == null);
