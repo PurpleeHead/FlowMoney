@@ -91,6 +91,23 @@ try {
   assert.equal(dashboardBody.exchanges.length, 100, 'real dashboard response returns only bounded exchange history');
   const dashboardResponsePayloadBytes = Buffer.byteLength(apiPayload, 'utf8');
 
+  // Small concurrency smoke benchmark catches connection-pool or tenant-scope
+  // regressions that a single request cannot reveal.
+  const concurrentRequestCount = 10;
+  const concurrentApiTimings = await Promise.all(Array.from({ length: concurrentRequestCount }, async () => {
+    const started = performance.now();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/dashboard`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const payload = await response.text();
+    assert.equal(response.status, 200, `concurrent dashboard request failed: ${payload}`);
+    const body = JSON.parse(payload) as { totalExchangeCount: number; exchanges: unknown[] };
+    assert.equal(body.totalExchangeCount, EXCHANGES_PER_USER, 'concurrent dashboard response keeps lifetime count scoped');
+    assert.equal(body.exchanges.length, 100, 'concurrent dashboard response keeps history bounded');
+    return Number((performance.now() - started).toFixed(3));
+  }));
+  const sortedConcurrentApiTimings = [...concurrentApiTimings].sort((a, b) => a - b);
+
   const runtimePlans = await prisma.$queryRaw<Array<{ 'QUERY PLAN': Array<Record<string, unknown>> }>>(
     Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${dashboardExchangeAggregateQuery(targetUserId)}`,
   );
@@ -127,6 +144,10 @@ try {
     dashboardApiResponsePayloadBytes: dashboardResponsePayloadBytes,
     dashboardApiReturnedExchanges: dashboardBody.exchanges.length,
     dashboardApiTotalExchangeCount: dashboardBody.totalExchangeCount,
+    concurrentDashboardRequests: concurrentRequestCount,
+    concurrentDashboardLatencyMs: concurrentApiTimings,
+    concurrentDashboardLatencyP50Ms: sortedConcurrentApiTimings[Math.floor((sortedConcurrentApiTimings.length - 1) * 0.5)],
+    concurrentDashboardLatencyP95Ms: sortedConcurrentApiTimings[Math.ceil((sortedConcurrentApiTimings.length - 1) * 0.95)],
     runtimeAggregateExplainAnalyze: runtimePlan,
     selectiveTenantExplainAnalyze: scopedPlan,
   }, null, 2));
