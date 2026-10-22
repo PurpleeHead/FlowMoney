@@ -47,10 +47,10 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
           COALESCE(SUM("vndReceived") FILTER (WHERE "mode" = 'RUB_USDT_VND' AND "vndReceived" > 0 AND "usdtReceived" > 0), 0)::float8 AS "actualVndUsdtVnd",
           COALESCE(SUM("usdtReceived") FILTER (WHERE "mode" = 'RUB_USDT_VND' AND "vndReceived" > 0 AND "usdtReceived" > 0), 0)::float8 AS "actualVndUsdtUsdt",
           COALESCE(SUM("usdtReceived") FILTER (WHERE "mode" <> 'RUB_VND'
-            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
             AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL AND "planningVndPerUsdt" IS NOT NULL), 0)::float8 AS "planningUsdt",
           COALESCE(SUM("usdtReceived" * "planningVndPerUsdt") FILTER (WHERE "mode" <> 'RUB_VND'
-            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
             AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL AND "planningVndPerUsdt" IS NOT NULL), 0)::float8 AS "planningWeightedVnd",
           COALESCE(SUM("rubSpent") FILTER (WHERE "rubSpent" > 0 AND (
             ("mode" = 'RUB_VND' AND "vndReceived" > 0) OR
@@ -64,10 +64,10 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
               THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
             ELSE 0 END), 0)::float8 AS "directVnd",
           COALESCE(SUM("rubSpent") FILTER (WHERE "mode" <> 'RUB_VND'
-            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
             AND "rubSpent" > 0 AND "vndReceived" > 0), 0)::float8 AS "indirectRub",
           COALESCE(SUM("vndReceived") FILTER (WHERE "mode" <> 'RUB_VND'
-            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+            AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
             AND "rubSpent" > 0 AND "vndReceived" > 0), 0)::float8 AS "indirectVnd",
           COALESCE(SUM(CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
             THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
@@ -76,7 +76,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
             AND upper(trim(COALESCE("targetCurrency", ''))) <> 'VND' AND "targetVndEquivalent" IS NOT NULL), 0)::float8 AS "estimatedTargetVnd",
           COALESCE(SUM(CASE
             WHEN "mode" <> 'RUB_VND'
-              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
               AND "vndReceived" IS NULL AND (
                 ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
                   AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
