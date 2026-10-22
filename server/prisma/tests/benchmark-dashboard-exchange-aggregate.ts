@@ -160,7 +160,7 @@ try {
     const payload = await response.text();
     assert.equal(response.status, 200, `concurrent dashboard request failed: ${payload}`);
     assert.ok(Buffer.byteLength(payload, 'utf8') < 350_000, 'concurrent full dashboard response remains within the 350 KB regression budget');
-    const body = JSON.parse(payload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; monthVnd: number; observedUsdt: number; observedVndPerUsdt: number; expenses: unknown[]; exchanges: unknown[] };
+    const body = JSON.parse(payload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; monthVnd: number; observedUsdt: number; observedVndPerUsdt: number; effectiveRubPerUsdt: number; expenses: unknown[]; exchanges: unknown[] };
     assert.equal(body.totalExchangeCount, EXCHANGES_PER_USER, 'concurrent dashboard response keeps lifetime count scoped');
     assert.ok(Math.abs(body.effectiveRubPerUsdt - expectedRubPerUsdtForTenant(tenant)) < 0.000001, 'concurrent exchange-derived RUB/USDT rate stays isolated to the authenticated tenant');
     assert.equal(body.exchanges.length, 100, 'concurrent dashboard response keeps history bounded');
