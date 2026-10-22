@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import {prisma} from '../services/prisma.js';
 
 type DashboardExchangeAggregate = {
@@ -9,9 +10,9 @@ type DashboardExchangeAggregate = {
   hasEstimatedTargetVnd: boolean; hasUnpricedUsdtTopUps: boolean;
 };
 
-/** Aggregate all dashboard exchange financial inputs in PostgreSQL without loading full history. */
-export async function aggregateDashboardExchanges(userId: string): Promise<DashboardExchangeAggregate> {
-  const rows = await prisma.$queryRaw<DashboardExchangeAggregate[]>`
+/** Shared SQL definition so runtime and EXPLAIN benchmark always measure the same query. */
+export function dashboardExchangeAggregateQuery(userId: string): Prisma.Sql {
+  return Prisma.sql`
 
         SELECT
           COALESCE(SUM(CASE
@@ -76,6 +77,12 @@ export async function aggregateDashboardExchanges(userId: string): Promise<Dashb
           ), false) AS "hasUnpricedUsdtTopUps"
         FROM "Exchange"
         WHERE "userId" = ${userId}
+      
+  `;
+}
+
+/** Aggregate all dashboard exchange financial inputs in PostgreSQL without loading full history. */
+export async function aggregateDashboardExchanges(userId: string  const rows = await prisma.$queryRaw<DashboardExchangeAggregate[]>(dashboardExchangeAggregateQuery(userId));    WHERE "userId" = ${userId}
       
   `;
   if (!rows[0]) throw new Error('Dashboard exchange aggregate query returned no row.');
