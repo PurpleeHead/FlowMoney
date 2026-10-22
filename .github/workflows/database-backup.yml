@@ -85,7 +85,7 @@ jobs:
           export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           stamp="$(date -u +'%Y/%m/%d/%H%M%S')"
-          key="flowmoney/database/${stamp}-${GITHUB_SHA}.dump.age"
+          key="flowmoney/database/${stamp}-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.dump.age"
           aws --endpoint-url "$endpoint" s3 cp \
             "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump.age" \
             "s3://${R2_BUCKET}/${key}" \
