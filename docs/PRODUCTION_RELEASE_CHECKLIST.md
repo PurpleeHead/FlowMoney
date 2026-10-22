@@ -175,3 +175,13 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Security [#269](https://github.com/PurpleeHead/FlowMoney/actions/runs/39719515278) passed on the same head, including tests, production build, dependency audit and review-artifact upload.
 - [ ] Representative-volume performance evidence (`EXPLAIN (ANALYZE, BUFFERS)`, timings, row counts and serialized payload sizes) remains open.
 - [ ] Production release hard stops remain: identify/approve the actual production DB, encrypted backup plus successful isolated restore, read-only legacy wallet preflight/reconciliation, reconcile live Render configuration, explicit release approval and post-release smoke tests. No production DB query/mutation, Render setting change, merge or deployment was performed; PR #83 remains Draft.
+
+
+## Latest verification — 2026-10-22 (dashboard tenant-isolation regression)
+
+- [x] Dashboard aggregate test double now applies the authenticated `userId` predicate when simulating PostgreSQL aggregation, instead of merely asserting the predicate exists.
+- [x] Added a foreign-user purchase with deliberately large VND/USDT values to the historical-rate fixture; it must not affect this user's weighted purchase rate or returned expense list.
+- [x] CI [#1892](https://github.com/PurpleeHead/FlowMoney/actions/runs/39719861978) passed on code head `01e1eb0311205f123b04bac54b7df1c89590aed5`; `verify` and `verify-migrations` both succeeded.
+- [x] Security [#273](https://github.com/PurpleeHead/FlowMoney/actions/runs/39719862178) passed on the same head, including tests, production build, dependency audit and review-artifact upload.
+- [ ] Representative-volume query plans/timings/payload measurements remain open; the available CI fixture is for correctness, not a production-scale performance benchmark.
+- [ ] Release hard stops remain: confirm/approve actual production DB, encrypted backup and successful isolated restore, read-only legacy wallet preflight/reconciliation, reconcile live Render config, owner-approved release window and post-release smoke tests. No production DB query/mutation, Render setting change, merge or deployment was performed; PR #83 remains Draft.
