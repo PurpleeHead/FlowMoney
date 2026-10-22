@@ -29,13 +29,23 @@ try {
         rubSpent: 0,
         vndReceived: 777_000,
       },
+      {
+        // A direct-target legacy row with no RUB cost basis must be excluded too.
+        userId,
+        mode: 'RUB_TARGET',
+        targetCurrency: 'VND',
+        rubSpent: 0,
+        targetReceived: 999_000,
+        targetVndEquivalent: 999_000,
+        vndReceived: 888_000,
+      },
     ],
   });
 
   const aggregate = await aggregateDashboardExchanges(userId);
   assert.equal(aggregate.directRub, 1_000, 'only exchanges with positive RUB cost contribute to direct RUB cost basis');
   assert.equal(aggregate.directVnd, 250_000, 'direct VND numerator must use the same eligibility predicate as its RUB denominator');
-  assert.equal(aggregate.confirmedVnd, 1_027_000, 'this regression is limited to effective-rate cost basis; preserve the existing confirmed-balance policy');
+  assert.equal(aggregate.confirmedVnd, 2_026_000, 'this regression is limited to effective-rate cost basis; preserve the existing confirmed-balance policy for legacy zero-cost rows');
 
   console.log('Dashboard cost-basis edge-case fixture passed: zero-cost direct VND rows do not distort effective-rate numerator.');
 } finally {
