@@ -71,3 +71,13 @@ After the pre-deploy gate is complete and deployment is explicitly approved:
 ## 6. Release evidence
 
 Record privately: approved database resource ID (never credentials), release commit SHA, migration status, backup checksum and restore result, preflight outcome, smoke-test outcomes, deployment ID, and approver/time. Update the repository checklist with non-sensitive results only.
+
+
+## Configuration safety update — 2026-10-22
+
+- The proposed Render Blueprint now starts the web process with `npm start` only. It no longer runs `prisma migrate deploy` as an application startup side effect.
+- This repository change does **not** change the currently configured live Render service. The live service must be inspected and reconciled separately; do not assume the Blueprint has been applied.
+- Because the currently configured service uses the Free plan, do not assume Render pre-deploy commands are available. Run production migrations only as a separately approved, operator-controlled release step from a trusted environment after the target database identity, encrypted backup, isolated restore drill, and legacy wallet preflight are signed off.
+- Use the exact reviewed commit and approved database connection from a protected secret source. Never paste connection strings into chat, source code, CI logs, or shell history. Verify the migration result before manually deploying the matching application commit.
+- CI and dependency-remediation workflows for commit `94e77840d1f420ae9577afa8ed31f33da68566f4` were still running at the time of this note; no green result is claimed here. The PostgreSQL migration/equivalence job had completed successfully, while the main test/build and dependency-install jobs were still in progress.
+- No live Render settings, production database, or deployment were changed by this update.
