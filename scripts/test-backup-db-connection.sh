@@ -8,6 +8,10 @@ trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/docker" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${MOCK_DOCKER_FAIL:-0}" == "1" ]]; then
+  echo "mock database connection failure" >&2
+  exit 42
+fi
 command_text=''
 for arg in "$@"; do
   case "$arg" in
@@ -57,3 +61,17 @@ if output="$(MOCK_SERVER_VERSION_NUM=unknown run_check bash "$repo_root/scripts/
 fi
 [[ "$output" == *"Could not determine PostgreSQL server version"* ]] || { echo "Unexpected malformed-version rejection: $output" >&2; exit 1; }
 echo "PASS: malformed PostgreSQL version is rejected"
+
+if output="$(env -u DATABASE_URL PATH="$tmp:$PATH" bash "$repo_root/scripts/verify-backup-db-connection.sh" 2>&1)"; then
+  echo "Expected a missing DATABASE_URL to be rejected" >&2
+  exit 1
+fi
+[[ "$output" == *"DATABASE_URL must be configured"* ]] || { echo "Unexpected missing-URL rejection: $output" >&2; exit 1; }
+echo "PASS: missing database URL is rejected"
+
+if output="$(MOCK_DOCKER_FAIL=1 run_check bash "$repo_root/scripts/verify-backup-db-connection.sh" 2>&1)"; then
+  echo "Expected a failed database connection probe to be rejected" >&2
+  exit 1
+fi
+[[ "$output" == *"mock database connection failure"* ]] || { echo "Unexpected database-probe failure: $output" >&2; exit 1; }
+echo "PASS: database connection failures stop the backup gate"
