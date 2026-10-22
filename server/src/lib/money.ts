@@ -91,7 +91,7 @@ export function mapDirectVndExchanges(exchanges: Array<{
     }
     if (exchange.mode === 'RUB_TARGET' && exchange.targetCurrency?.trim().toUpperCase() === 'VND') {
       // The actual net outcome is authoritative, including an explicit zero.
-      // Fall back to the legacy equivalent only when no actual outcome was stored.
+      // Prefer the actual target-currency receipt for legacy rows; use the VND equivalent only as a last resort.
       const vndReceived = exchange.vndReceived ?? exchange.targetReceived ?? exchange.targetVndEquivalent;
       if (vndReceived != null) return [{ rubSpent: exchange.rubSpent, vndReceived }];
     }
