@@ -305,7 +305,7 @@ describe('dashboard history window', () => {
       const body = await response.json() as {
         totalExchangeCount: number;
         balanceVnd: number | null;
-        exchanges: Exchange[];
+        exchanges: Array<{ id: string }>;
       };
       assert.equal(body.totalExchangeCount, 105, 'all-history exchange count must include records outside the recent activity window');
       assert.equal(body.exchanges.length, 100, 'dashboard activity rows must remain bounded');
