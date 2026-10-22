@@ -31,7 +31,10 @@ if [[ "$url" == *\?* ]]; then
 
   url="$base"
   if (( ${#kept[@]} > 0 )); then
-    joined="$(IFS='&'; printf '%s' "${kept[*]}")"
+    local_ifs="$IFS"
+    IFS='&'
+    joined="${kept[*]}"
+    IFS="$local_ifs"
     url+="?$joined"
   fi
   url+="$fragment"
