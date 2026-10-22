@@ -8,7 +8,8 @@ services:
     # encrypted backup, restore test, and migration gate.
     autoDeployTrigger: "off"
     buildCommand: npm ci && npm run db:generate && npm run build
-    startCommand: npx prisma migrate deploy --schema server/prisma/schema.prisma && npm start
+    # Production migrations are an explicit release step, never a web-service startup side effect.
+    startCommand: npm start
     healthCheckPath: /api/ready
     envVars:
       - key: NODE_ENV
