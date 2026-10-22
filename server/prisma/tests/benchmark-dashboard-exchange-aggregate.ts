@@ -43,6 +43,23 @@ try {
     assert.ok(Number.isFinite(result.rubUsdtRub), 'runtime aggregate returns finite tenant-scoped totals');
   }
 
+  const historyStarted = performance.now();
+  const history = await prisma.exchange.findMany({
+    where: { userId: targetUserId },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    select: {
+      id: true, mode: true, targetCurrency: true, targetReceived: true,
+      targetToVndRate: true, targetVndEquivalent: true, rubSpent: true,
+      usdtReceived: true, vndPerUsdt: true, planningVndPerUsdt: true,
+      vndReceived: true, effectiveVndPerRub: true, effectiveRubPerUsdt: true,
+      createdAt: true,
+    },
+  });
+  const historyQueryMs = Number((performance.now() - historyStarted).toFixed(3));
+  const historyPayloadBytes = Buffer.byteLength(JSON.stringify(history), 'utf8');
+  assert.equal(history.length, 100, 'dashboard history response must remain capped at 100 exchanges');
+
   const plans = await prisma.$queryRaw<Array<{ 'QUERY PLAN': Array<Record<string, unknown>> }>>`
     EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
     SELECT COALESCE(SUM("rubSpent"), 0)
@@ -63,6 +80,9 @@ try {
     rowsPerTenant: EXCHANGES_PER_USER,
     aggregateHelperLatencyMs: timingsMs,
     aggregateLatencyMedianMs: [...timingsMs].sort((a, b) => a - b)[Math.floor(timingsMs.length / 2)],
+    recentHistoryRows: history.length,
+    recentHistoryQueryMs: historyQueryMs,
+    recentHistoryPayloadBytes: historyPayloadBytes,
     tenantScopedExplainAnalyze: plan,
   }, null, 2));
 } finally {
