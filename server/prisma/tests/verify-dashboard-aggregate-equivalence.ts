@@ -175,7 +175,8 @@ try {
         ELSE "vndReceived"
       END), 0) AS "confirmedVnd",
       COALESCE(SUM(CASE
-        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) <> 'VND'
+        WHEN "mode" = 'RUB_TARGET'
+          AND ("targetCurrency" IS NULL OR upper(trim("targetCurrency")) <> 'VND')
           THEN "targetVndEquivalent"
         ELSE 0
       END), 0) AS "estimatedTargetVnd",
