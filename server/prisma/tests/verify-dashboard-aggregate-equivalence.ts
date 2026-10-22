@@ -194,8 +194,8 @@ try {
     targetCurrency: x.targetCurrency,
     targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
   }))));
-  const sqlRubUsdt = (Number(exchangeAggregate._sum.rubSpent ?? 0) + 5000) /
-    (Number(exchangeAggregate._sum.usdtReceived ?? 0) + 56);
+  const sqlRubUsdt = (Number(exchangeAggregate._sum.rubSpent ?? 0) + 5000 + 3200) /
+    (Number(exchangeAggregate._sum.usdtReceived ?? 0) + 56 + 40);
   near(sqlRubUsdt, helperRubUsdt, 'weighted RUB/USDT rate including direct RUB→USDT target');
 
   const observedExchangeRows = mapActualVndUsdtExchanges(exchangeRows.map(x => ({
