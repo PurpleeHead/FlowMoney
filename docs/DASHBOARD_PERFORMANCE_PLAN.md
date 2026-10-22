@@ -198,3 +198,12 @@ Latest repeat with 35,000 seeded rows (10 tenants, 2,500 exchanges + 1,000 expen
 - Exact runtime aggregate EXPLAIN ANALYZE: 2.634 ms; selective tenant-only query: 0.332 ms.
 
 Compared with the prior run, this is a lower latency sample, but the difference should not be interpreted as a guaranteed improvement: ephemeral CI timings vary with runner/cache/connection state. Continue to use repeated hosted measurements before setting production latency expectations. This benchmark remains synthetic and disposable; it does not alter production data. PR #96 remains Draft, unmerged and undeployed.
+
+
+## Concurrent financial-summary regression — 2026-10-22 (head 06d4d78c)
+
+The concurrent dashboard smoke test now checks not just status/count/payload bounds, but also the all-time expense sum, current-month total, USDT denominator and weighted observed VND/USDT rate on each of the ten simultaneous responses. This makes tenant leakage or summary instability under concurrent reads fail the disposable PostgreSQL benchmark. The test-only benchmark comment was also updated to describe the combined 35,000-row fixture.
+
+Both required CI workflows passed on head `06d4d78c1352d975bbf58fa873437ffaad48444e`: [application verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39705800156) and [PostgreSQL/migration/benchmark verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39705800156). In this workflow run the two jobs `verify` and `verify-migrations` both passed.
+
+Latest benchmark repeat (35,000 seeded rows): full dashboard API 65.851 ms and 248,835-byte response; 10-request concurrency p50 181.587 ms / p95 188.038 ms; exchange aggregate helper median 4.851 ms; 100-row history query 3.699 ms / 34,879 bytes; exact aggregate EXPLAIN ANALYZE 4.157 ms and selective tenant query 0.503 ms. The variance across warm CI samples reinforces that these are regression baselines, not production SLOs. Hosted performance, final financial review, and operational release gates remain open; PR #96 remains Draft, not merged or deployed.
