@@ -45,7 +45,8 @@ try {
     { mode: 'RUB_TARGET', targetCurrency: ' vnd ', rubSpent: 900, targetReceived: 125_000, targetVndEquivalent: null, vndReceived: 777_777 },
     // Non-VND target estimates are not factual VND outcomes.
     // A different target's stale USDT field must not contaminate the RUB/USDT weighted rate.
-    { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000, usdtReceived: 888 },
+    // Legacy VND fields on non-VND target rows are stale, not confirmed proceeds.
+    { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000, usdtReceived: 888, vndReceived: 999_999 },
     // Planning rate is not an observed VND outcome.
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1000, usdtReceived: 10, vndReceived: null, planningVndPerUsdt: 25_000 },
     // A legacy target with a missing currency still contributes its explicit VND estimate.
@@ -137,6 +138,7 @@ try {
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
           THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
+        WHEN "mode" = 'RUB_TARGET' THEN 0
         ELSE "vndReceived"
       END), 0) AS "confirmedVnd",
       COALESCE(SUM(CASE
