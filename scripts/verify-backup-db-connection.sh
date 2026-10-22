@@ -2,12 +2,13 @@
 set -euo pipefail
 
 : "${DATABASE_URL:?DATABASE_URL must be configured}"
+pg_url="$(bash "$(dirname "${BASH_SOURCE[0]}")/normalize-backup-db-url.sh")"
 
 tls_status="$(docker run --rm \
-  -e DATABASE_URL="$DATABASE_URL" \
+  -e DATABASE_URL="$pg_url" \
   postgres:18 \
   psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 \
-    "$DATABASE_URL" --command='SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()')"
+    "$pg_url" --command='SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()')"
 if [[ "$tls_status" != "t" ]]; then
   echo "::error::Backup database connection is not using TLS; refusing to export data." >&2
   exit 1
