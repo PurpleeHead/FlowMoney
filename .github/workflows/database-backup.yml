@@ -51,6 +51,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/flowmoney-backup"
+          # Enforce TLS at the connection level rather than trusting URL parameters.
+          tls_status="$(docker run --rm \
+            -e DATABASE_URL="$DATABASE_URL" \
+            postgres:18 \
+            psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 \
+              "$DATABASE_URL" --command='SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()')"
+          if [[ "$tls_status" != "t" ]]; then
+            echo "::error::Backup database connection is not using TLS; refusing to export data."
+            exit 1
+          fi
           # Probe the server major version, then use matching pg_dump/pg_restore
           # clients. A newer client's custom archive may not restore with an older
           # client, so do not hard-code the backup client to a different major.
