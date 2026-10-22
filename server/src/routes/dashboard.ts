@@ -73,7 +73,10 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
               THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
             ELSE "vndReceived" END), 0) AS "confirmedExchangeVnd",
           COALESCE(SUM(CASE
-            WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) <> 'VND'
+            WHEN "mode" = 'RUB_TARGET'
+              AND upper(trim(COALESCE("targetCurrency", ''))) <> 'VND'
+              AND "vndReceived" IS NULL
+              AND "targetVndEquivalent" > 0
               THEN "targetVndEquivalent" ELSE 0 END), 0) AS "estimatedTargetCurrencyVnd",
           COALESCE(SUM(CASE
             WHEN "mode" <> 'RUB_VND'
@@ -115,6 +118,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
           BOOL_OR(
             ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
             OR ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+                AND "vndReceived" IS NULL
                 AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
           ) AS "hasUnpricedUsdtTopUps",
           COALESCE(SUM(CASE
@@ -194,7 +198,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
 
     res.json({
       totalVnd,monthVnd,totalExpenseCount,totalExchangeCount,balanceVnd,confirmedExchangeVnd,estimatedUnconvertedVnd,planningVndPerUsdt,
-      balanceIsEstimated: estimatedUnconvertedVnd > 0 || exchanges.some(x => x.mode === 'RUB_TARGET' && !isDirectVndTarget(x) && x.targetVndEquivalent != null),
+      balanceIsEstimated: estimatedUnconvertedVnd > 0 || exchanges.some(x => x.mode === 'RUB_TARGET' && !isDirectVndTarget(x) && x.vndReceived == null && x.targetVndEquivalent != null && x.targetVndEquivalent > 0),
       observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerUsdt,effectiveVndPerRub,
       expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:x.amountVnd==null?null:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
       exchanges:exchanges.slice(0,100).map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),planningVndPerUsdt:x.planningVndPerUsdt==null?null:Number(x.planningVndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),targetReceived:x.targetReceived==null?null:Number(x.targetReceived),targetToVndRate:x.targetToVndRate==null?null:Number(x.targetToVndRate),targetVndEquivalent:x.targetVndEquivalent==null?null:Number(x.targetVndEquivalent),targetCurrency:x.targetCurrency,effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:x.effectiveRubPerUsdt==null?null:Number(x.effectiveRubPerUsdt)}))
