@@ -237,8 +237,8 @@ try {
     sum + helperPlannedAmount(x) * Number(x.planningVndPerUsdt), 0);
   near(Number(budgetAggregate.plannedUsdt), helperPlannedUsdt, 'PostgreSQL planning-rate denominator matches existing dashboard eligibility');
   near(Number(budgetAggregate.plannedWeightedVnd), helperPlannedWeightedVnd, 'PostgreSQL planning-rate numerator matches existing dashboard eligibility');
-  near(Number(budgetAggregate.plannedWeightedVnd) / Number(budgetAggregate.plannedUsdt), 25_000,
-    'weighted planning rate is kept distinct from the observed VND/USDT rate');
+  near(Number(budgetAggregate.plannedWeightedVnd) / Number(budgetAggregate.plannedUsdt), 1_706_000 / 66,
+    'weighted planning rate includes direct USDT targets and stays distinct from the observed VND/USDT rate');
 
   console.log('Dashboard aggregate fixture passed against disposable PostgreSQL: user scoping, weighted rates, confirmed/estimated/planned budget buckets, direct VND legacy fallback, card totals, and cross-user exclusion.');
 } finally {
