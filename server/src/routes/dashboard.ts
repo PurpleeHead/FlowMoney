@@ -2,7 +2,7 @@ import {Router} from 'express';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
-import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapRubUsdtExchanges } from '../lib/money.js';
+import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
 
 const router=Router();
 router.use(auth);
@@ -49,10 +49,13 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       : null;
     const balanceRateVndPerUsdt=effectiveVndPerUsdt??planningVndPerUsdt;
     const effectiveVndPerRub = calculateObservedVndPerRub({
-      directExchanges: [
-        ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-        ...exchanges.filter(x => x.mode === 'RUB_TARGET' && x.targetCurrency === 'VND' && x.targetVndEquivalent != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent) })),
-      ],
+      directExchanges: mapDirectVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+        targetCurrency: x.targetCurrency,
+      }))),
       actualVndExchanges: exchanges
         .filter(x => x.mode !== 'RUB_VND' &&
           !(x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') &&
