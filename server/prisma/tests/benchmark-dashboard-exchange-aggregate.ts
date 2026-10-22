@@ -16,6 +16,8 @@ let apiServer: ReturnType<typeof createServer> | undefined;
 const EXCHANGES_PER_USER = 2_500;
 const EXPENSES_PER_USER = 1_000;
 const TENANT_COUNT = 10;
+const EXPECTED_EXPENSE_VND = Array.from({ length: EXPENSES_PER_USER }, (_, i) => 20_000 + (i % 37) * 1_000)
+  .reduce((total, amount) => total + amount, 0);
 
 try {
   // Disposable CI database only: model a multi-tenant table with 25k exchange rows.
@@ -100,10 +102,12 @@ try {
   const apiPayload = await apiResponse.text();
   const dashboardApiMs = Number((performance.now() - apiStarted).toFixed(3));
   assert.equal(apiResponse.status, 200, `dashboard API benchmark failed: ${apiPayload}`);
-  const dashboardBody = JSON.parse(apiPayload) as { totalExchangeCount: number; totalExpenseCount: number; expenses: unknown[]; exchanges: unknown[] };
+  const dashboardBody = JSON.parse(apiPayload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; observedVnd: number; expenses: unknown[]; exchanges: unknown[] };
   assert.equal(dashboardBody.totalExchangeCount, EXCHANGES_PER_USER, 'real dashboard response counts full tenant history');
   assert.equal(dashboardBody.exchanges.length, 100, 'real dashboard response returns only bounded exchange history');
   assert.equal(dashboardBody.totalExpenseCount, EXPENSES_PER_USER, 'real dashboard response counts full tenant expense history');
+  assert.equal(dashboardBody.totalVnd, EXPECTED_EXPENSE_VND, 'real dashboard response sums all and only this tenant\'s expenses');
+  assert.equal(dashboardBody.observedVnd, EXPECTED_EXPENSE_VND, 'weighted card-purchase rate uses all eligible priced expenses');
   assert.equal(dashboardBody.expenses.length, EXPENSES_PER_USER, 'real dashboard response includes the chart expense window');
   const dashboardResponsePayloadBytes = Buffer.byteLength(apiPayload, 'utf8');
 
@@ -117,10 +121,11 @@ try {
     });
     const payload = await response.text();
     assert.equal(response.status, 200, `concurrent dashboard request failed: ${payload}`);
-    const body = JSON.parse(payload) as { totalExchangeCount: number; totalExpenseCount: number; expenses: unknown[]; exchanges: unknown[] };
+    const body = JSON.parse(payload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; expenses: unknown[]; exchanges: unknown[] };
     assert.equal(body.totalExchangeCount, EXCHANGES_PER_USER, 'concurrent dashboard response keeps lifetime count scoped');
     assert.equal(body.exchanges.length, 100, 'concurrent dashboard response keeps history bounded');
     assert.equal(body.totalExpenseCount, EXPENSES_PER_USER, 'concurrent dashboard response keeps lifetime expense count scoped');
+    assert.equal(body.totalVnd, EXPECTED_EXPENSE_VND, 'concurrent dashboard totals stay tenant-scoped');
     assert.equal(body.expenses.length, EXPENSES_PER_USER, 'concurrent dashboard response keeps the chart expense window');
     return Number((performance.now() - started).toFixed(3));
   }));
