@@ -75,6 +75,13 @@ describe('printed receipt total detection', () => {
     });
   });
 
+  it('uses the last payable total when a receipt repeats payable labels', () => {
+    expect(parseReceiptPrintedTotal('Tổng thanh toán 120.000\nDiscount 12.000\nPhải trả 108.000 ₫')).toEqual({
+      amount: 108000,
+      line: 'Phải trả 108.000 ₫',
+    });
+  });
+
   it('does not mistake subtotal, cash tendered, or change for the payable total', () => {
     expect(parseReceiptPrintedTotal('Subtotal 40.000\nCash 50.000\nChange 10.000')).toBeNull();
   });
