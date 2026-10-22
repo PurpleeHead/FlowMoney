@@ -172,4 +172,62 @@ describe('journal API integration', () => {
       });
     });
   });
+
+  it('continues after the last entry without repeating equal-timestamp records', async () => {
+    const timestamp = new Date('2026-10-18T08:00:00.000Z');
+    const expenseRows = ['a', 'b'].map(id => ({
+      id: `expense-${id}`, title: id, category: 'Other', amount: 1, currency: 'RUB',
+      amountVnd: null, amountRub: 1, usdtCharged: null, date: timestamp, createdAt: timestamp,
+    }));
+    const exchangeRow = {
+      id: 'exchange-a', mode: 'RUB_TARGET', rubSpent: 1000, usdtReceived: null,
+      vndReceived: 100000, targetCurrency: 'VND', targetReceived: 100000,
+      targetVndEquivalent: 100000, createdAt: timestamp,
+    };
+    let expenseCalls = 0;
+    let exchangeCalls = 0;
+    expenseModel.findMany = async () => {
+      expenseCalls++;
+      return expenseCalls === 1 ? expenseRows : [];
+    };
+    exchangeModel.findMany = async () => {
+      exchangeCalls++;
+      return exchangeCalls === 1 ? [exchangeRow] : [exchangeRow];
+    };
+    movementModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const first = await fetch(`${baseUrl}/api/journal?limit=2`, {
+        headers: { authorization: bearer() },
+      });
+      assert.equal(first.status, 200);
+      const firstBody = await first.json() as {
+        entries: Array<{ id: string }>;
+        hasMore: boolean;
+        nextCursor: string | null;
+      };
+      assert.deepEqual(firstBody.entries.map(entry => entry.id), ['expense:expense-a', 'expense:expense-b']);
+      assert.equal(firstBody.hasMore, true);
+      assert.ok(firstBody.nextCursor);
+      const decoded = JSON.parse(Buffer.from(firstBody.nextCursor!, 'base64url').toString('utf8'));
+      assert.deepEqual(decoded, {
+        occurredAt: timestamp.toISOString(),
+        id: 'expense:expense-b',
+        type: 'expense',
+      });
+
+      const second = await fetch(`${baseUrl}/api/journal?limit=2&cursor=${encodeURIComponent(firstBody.nextCursor!)}`, {
+        headers: { authorization: bearer() },
+      });
+      assert.equal(second.status, 200);
+      const secondBody = await second.json() as {
+        entries: Array<{ id: string }>;
+        hasMore: boolean;
+        nextCursor: string | null;
+      };
+      assert.deepEqual(secondBody.entries.map(entry => entry.id), ['exchange:exchange-a']);
+      assert.equal(secondBody.hasMore, false);
+      assert.equal(secondBody.nextCursor, null);
+    });
+  });
 });
