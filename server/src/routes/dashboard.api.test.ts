@@ -54,7 +54,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   expenseModel.count = async (args: any) => {
     dashboardExpenseCountArgs.push(args);
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time expense count must be scoped to the authenticated user');
-    return (await expenseModel.findMany({})).length;
+    return (await expenseModel.findMany({ where: { userId: args.where.userId } })).length;
   };
   (prisma as any).$queryRaw = async (queryParts: TemplateStringsArray | { sql?: string; text?: string; values?: unknown[] }, ...queryValues: any[]) => {
     // Prisma.Sql is passed directly by the runtime helper; retain support for
@@ -111,8 +111,8 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   };
   expenseModel.aggregate = async (args: any) => {
     dashboardAggregateArgs.push(args);
-    const rows = await expenseModel.findMany({});
     const where = args.where ?? {};
+    const rows = await expenseModel.findMany({ where: { userId: where.userId } });
     const filtered = rows.filter((row: any) => {
       if (where.date?.gte && new Date(row.date) < where.date.gte) return false;
       if (where.amountVnd?.gt != null && !(row.amountVnd != null && Number(row.amountVnd) > where.amountVnd.gt)) return false;
@@ -338,6 +338,55 @@ describe('dashboard query shape', () => {
       'targetToVndRate', 'targetVndEquivalent', 'usdtReceived', 'vndPerUsdt',
       'vndReceived',
     ].sort());
+  });
+});
+
+
+describe('dashboard expense aggregates enforce tenant isolation in the test double', () => {
+  it('excludes another user\'s expense from counts, totals, and weighted purchase rates', async () => {
+    const ownExpense = {
+      id: 'owned-expense', userId: 'dashboard-user', title: 'Owned', category: 'Food',
+      amount: 1000, currency: 'VND', amountVnd: 1000, amountRub: 3, usdtCharged: 2,
+      date: new Date(),
+    };
+    const foreignExpense = {
+      id: 'foreign-expense', userId: 'another-user', title: 'Foreign', category: 'Other',
+      amount: 999999, currency: 'VND', amountVnd: 999999, amountRub: 1, usdtCharged: 1,
+      date: new Date(),
+    };
+    expenseModel.findMany = async (args: any = {}) => {
+      const rows = [ownExpense, foreignExpense].filter(row =>
+        args.where?.userId == null || row.userId === args.where.userId);
+      return args.where?.date?.gte
+        ? rows.filter(row => row.date >= args.where.date.gte)
+        : rows;
+    };
+    exchangeModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalExpenseCount: number;
+        totalVnd: number;
+        observedVnd: number;
+        observedUsdt: number;
+        expenses: Array<{ id: string }>;
+      };
+      assert.equal(body.totalExpenseCount, 1);
+      assert.equal(body.totalVnd, 1000);
+      assert.equal(body.observedVnd, 1000);
+      assert.equal(body.observedUsdt, 2);
+      assert.deepEqual(body.expenses.map(row => row.id), ['owned-expense']);
+      assert.deepEqual(dashboardExpenseCountArgs[0].where, { userId: 'dashboard-user' });
+      assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
+    });
   });
 });
 
