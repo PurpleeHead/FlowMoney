@@ -73,7 +73,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
             THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
             ELSE "vndReceived" END), 0)::float8 AS "confirmedVnd",
           COALESCE(SUM("targetVndEquivalent") FILTER (WHERE "mode" = 'RUB_TARGET'
-            AND NOT upper(trim("targetCurrency")) = 'VND' AND "targetVndEquivalent" IS NOT NULL), 0)::float8 AS "estimatedTargetVnd",
+            AND upper(trim(COALESCE("targetCurrency", ''))) <> 'VND' AND "targetVndEquivalent" IS NOT NULL), 0)::float8 AS "estimatedTargetVnd",
           COALESCE(SUM(CASE
             WHEN "mode" <> 'RUB_VND'
               AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
