@@ -2,7 +2,7 @@ import {Router} from 'express';
 import {prisma} from '../services/prisma.js';
 import {auth} from '../middleware/auth.js';
 import type {AuthedRequest} from '../types.js';
-import { calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapActualVndUsdtExchanges, mapRubUsdtExchanges } from '../lib/money.js';
+import { calculateObservedVndPerUsdt } from '../lib/money.js';
 
 const router=Router();
 router.use(auth);
