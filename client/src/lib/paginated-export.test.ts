@@ -31,6 +31,21 @@ describe('fetchAllCursorPages', () => {
     }))).rejects.toThrow('repeated continuation cursor');
   });
 
+  it('fails closed when the API returns an invalid page shape', async () => {
+    await expect(fetchAllCursorPages(async () => ({
+      items: 'not-an-array',
+      hasMore: false,
+      nextCursor: null,
+    } as unknown as { items: number[]; hasMore: boolean; nextCursor: string | null })))
+      .rejects.toThrow('invalid page response');
+  });
+
+  it('rejects a continuation cursor on a page marked final', async () => {
+    await expect(fetchAllCursorPages(async () => ({
+      items: [1], hasMore: false, nextCursor: 'unexpected',
+    }))).rejects.toThrow('cursor for the final page');
+  });
+
   it('enforces a maximum page count against broken pagination loops', async () => {
     const fetchPage = vi.fn(async (cursor: string | null) => ({
       items: [cursor ?? 'first'], hasMore: true, nextCursor: cursor === null ? 'next' : `next-${cursor}`,
