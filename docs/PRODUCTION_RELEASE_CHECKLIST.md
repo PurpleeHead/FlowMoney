@@ -212,3 +212,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] CI [#1910](https://github.com/PurpleeHead/FlowMoney/actions/runs/39721441434) passed on exact code head `0d49bb5bf3d61906b2886289dc0c46c4e291aa16`; both `verify` and `verify-migrations` succeeded.
 - [x] Security [#282](https://github.com/PurpleeHead/FlowMoney/actions/runs/39721441479) passed on the same code head, including lockfile refresh workflow completion.
 - [ ] Representative-volume performance benchmark results and production release hard stops remain open. No production DB access/mutation, Render setting change, merge, or deployment was performed; PR #83 remains Draft.
+
+## Latest verification — 2026-10-22 (dashboard count-query scope assertions)
+
+- [x] Removed a placeholder assertion from the dashboard query-shape regression and now require exactly one all-history expense count and one all-history exchange count, each scoped to the authenticated `userId`.
+- [x] CI [#1914](https://github.com/PurpleeHead/FlowMoney/actions/runs/39722012001) passed on exact code head `86cd7ebe833a7616d7eb59eabd6424894849db1d`: `verify` and `verify-migrations` succeeded, including server tests, production build, dependency audits, dashboard aggregate equivalence on disposable PostgreSQL, transaction rollback/concurrency checks, wallet preflight fixture, and migration idempotency.
+- [x] Security dependency-remediation [#284](https://github.com/PurpleeHead/FlowMoney/actions/runs/39722011992) passed on the same exact head, including tests, production build, dependency audit, and review-artifact upload.
+- [ ] The representative-volume dashboard benchmark has not been run; no latency, p95, payload-size, or query-plan performance claims are made.
+- [ ] Production release gates remain: identify and approve the actual production database, encrypted backup and successful isolated restore, read-only legacy wallet preflight/reconciliation against that approved target, reconcile live Render configuration, obtain explicit release-window approval, and prepare/run production smoke tests. The live Render service currently appears to connect to the test database; do not treat it as confirmed production.
+- [ ] No production database access or mutation, Render setting change, merge, or deployment was performed. PR #83 remains Draft and unmerged.
