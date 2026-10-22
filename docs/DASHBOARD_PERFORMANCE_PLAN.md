@@ -119,9 +119,10 @@ Still open: run and record `EXPLAIN (ANALYZE, BUFFERS)` and response-size/timing
 
 The CI workflow now runs `server/prisma/tests/benchmark-dashboard-exchange-aggregate.ts` after migrations and financial equivalence checks. It creates 25,000 exchange rows across 10 test tenants in the disposable PostgreSQL service, measures five executions of the exact `aggregateDashboardExchanges(userId)` runtime helper after warm-up, records a tenant-scoped `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` plan, and removes the test users in a `finally` block.
 
-Latest successful CI run: [#39703735011](https://github.com/PurpleeHead/FlowMoney/actions/runs/39703735011). Results on GitHub's ephemeral runner:
-- Runtime helper latency (five warm runs): 5.426, 5.315, 5.257, 5.324, 5.172 ms; median 5.315 ms.
-- The representative tenant-scoped aggregate plan used `Exchange_userId_createdAt_idx` via Bitmap Index Scan + Bitmap Heap Scan; 2,500 matching rows, 47 shared buffer hits, 0 shared reads, 0 temp blocks, 0.508 ms execution time for that EXPLAIN query.
+Latest successful CI run including bounded history payload measurement: [#39703902249](https://github.com/PurpleeHead/FlowMoney/actions/runs/39703902249). Results on GitHub's ephemeral runner:
+- Runtime helper latency (five warm runs): 5.372, 5.260, 5.158, 5.259, 5.296 ms; median 5.260 ms (latest rerun).
+- The representative tenant-scoped aggregate plan used `Exchange_userId_createdAt_idx` via Bitmap Index Scan + Bitmap Heap Scan; 2,500 matching rows, 47 shared buffer hits, 0 shared reads, 0 temp blocks, 0.546 ms execution time in the latest rerun for that EXPLAIN query.
+- The bounded recent-history query returned exactly 100 rows in 3.495 ms and serialized to 34,879 bytes (JSON for the exchange-history rows only, not the full dashboard response).
 - Full mixed-mode runtime aggregate parity and tenant-isolation fixture passed in the same run.
 
 These figures are specific to a warm, local, synthetic CI database. They do not predict cold-cache, network, production-size, concurrent-load, or hosted PostgreSQL latency, and the EXPLAIN query is a representative tenant-scoped aggregate rather than a claim that every dashboard aggregate has an identical plan. Remaining before release: production-like query/response-size measurements, final review/stabilization, and operational backup/restore + Render + smoke-test gates. No merge or deployment is authorized by this work.
