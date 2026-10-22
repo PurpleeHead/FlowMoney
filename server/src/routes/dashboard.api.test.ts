@@ -585,12 +585,26 @@ describe('dashboard historical purchase-rate observations', () => {
       usdtCharged: 20,
       date: new Date(),
     };
-    const allExpenses = [oldPurchase, recentPurchase];
+    const foreignPurchase = {
+      id: 'purchase-foreign-user',
+      userId: 'another-user',
+      title: 'Must not leak into this dashboard',
+      category: 'food',
+      amount: 99_000_000,
+      currency: 'VND',
+      amountVnd: 99_000_000,
+      amountRub: null,
+      usdtCharged: 1,
+      date: new Date(),
+    };
+    const allExpenses = [oldPurchase, recentPurchase, foreignPurchase];
     const expenseReadArgs: any[] = [];
     expenseModel.findMany = async (args: any = {}) => {
       expenseReadArgs.push(args);
       const lowerBound = args.where?.date?.gte;
-      return allExpenses.filter(row => lowerBound == null || row.date >= lowerBound);
+      return allExpenses.filter(row =>
+        (args.where?.userId == null || row.userId === args.where.userId) &&
+        (lowerBound == null || row.date >= lowerBound));
     };
     exchangeModel.findMany = async () => [];
 
