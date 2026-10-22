@@ -50,7 +50,9 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time expense count must be scoped to the authenticated user');
     return (await expenseModel.findMany({})).length;
   };
-  (prisma as any).$queryRaw = async () => {
+  (prisma as any).$queryRaw = async (queryParts: TemplateStringsArray, ...queryValues: any[]) => {
+    assert.ok(queryParts.join('?').includes('WHERE "userId" = ?'), 'dashboard aggregate SQL must scope rows by user ID');
+    assert.deepEqual(queryValues, ['dashboard-user'], 'dashboard SQL aggregate must bind the authenticated user ID');
     const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
     const n = (value: any): number => value == null ? 0 : Number(value);
     const isTarget = (x: any, currency: string) => x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === currency;
