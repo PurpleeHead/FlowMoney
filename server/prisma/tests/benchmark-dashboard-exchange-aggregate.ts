@@ -233,8 +233,8 @@ try {
     dashboardApiTotalExpenseCount: dashboardBody.totalExpenseCount,
     concurrentDashboardRequests: concurrentRequestCount,
     concurrentDashboardLatencyMs: concurrentApiTimings,
-    concurrentDashboardLatencyP50Ms: percentile(sortedConcurrentApiTimings, 0.5),
-    concurrentDashboardLatencyP95Ms: percentile(sortedConcurrentApiTimings, 0.95),
+    concurrentDashboardLatencyP50Ms: percentile(concurrentApiTimings, 0.5),
+    concurrentDashboardLatencyP95Ms: percentile(concurrentApiTimings, 0.95),
     runtimeAggregateExplainAnalyze: runtimePlan,
     selectiveTenantExplainAnalyze: scopedPlan,
   }, null, 2));
