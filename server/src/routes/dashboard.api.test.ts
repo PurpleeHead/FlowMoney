@@ -63,9 +63,14 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
       x.mode === 'RUB_TARGET' && !directVnd(x) && x.targetVndEquivalent != null),
       (x: any) => Number(x.targetVndEquivalent));
     const plannedRows = rows.filter((x: any) => x.mode !== 'RUB_VND' && !directVnd(x) &&
-      x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
-    const plannedUsdt = sum(plannedRows, (x: any) => Number(x.usdtReceived));
-    const plannedWeightedVnd = sum(plannedRows, (x: any) => Number(x.usdtReceived) * Number(x.planningVndPerUsdt));
+      x.vndReceived == null &&
+      (directUsdt(x)
+        ? amount(x, 'targetReceived') != null && amount(x, 'targetVndEquivalent') == null
+        : amount(x, 'usdtReceived') != null) &&
+      x.planningVndPerUsdt != null);
+    const plannedAmount = (x: any) => Number(directUsdt(x) ? x.targetReceived : x.usdtReceived);
+    const plannedUsdt = sum(plannedRows, plannedAmount);
+    const plannedWeightedVnd = sum(plannedRows, (x: any) => plannedAmount(x) * Number(x.planningVndPerUsdt));
     const estimateRows = rows.filter((x: any) => x.mode !== 'RUB_VND' && !directVnd(x) && x.vndReceived == null &&
       ((directUsdt(x) && x.targetReceived != null && x.targetVndEquivalent == null) || x.usdtReceived != null));
     const estimatedUnpricedUsdt = sum(estimateRows, (x: any) => directUsdt(x) ? Number(x.targetReceived ?? 0) : Number(x.usdtReceived));
@@ -768,6 +773,44 @@ describe('dashboard planning rates stay separate from factual rates', () => {
   });
 });
 
+
+describe('dashboard planning rate for direct USDT targets', () => {
+  it('uses a direct USDT target planning rate when no observed rate or target VND valuation exists', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      mode: 'RUB_TARGET',
+      targetCurrency: 'USDT',
+      targetReceived: 50,
+      targetVndEquivalent: null,
+      targetToVndRate: null,
+      usdtReceived: null,
+      vndReceived: null,
+      planningVndPerUsdt: 26000,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        planningVndPerUsdt: number | null;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.planningVndPerUsdt, 26000);
+      assert.equal(body.estimatedUnconvertedVnd, 1300000);
+      assert.equal(body.balanceVnd, 1300000);
+      assert.equal(body.balanceIsEstimated, true);
+    });
+  });
+});
 
 describe('dashboard legacy direct VND target records', () => {
   it('does not treat a legacy direct VND target as an unconverted USDT top-up', async () => {
