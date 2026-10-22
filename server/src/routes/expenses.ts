@@ -110,7 +110,9 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         targetCurrency: x.targetCurrency,
       }))),
       actualVndExchanges: exchanges
-        .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
+        .filter(x => x.mode !== 'RUB_VND' &&
+          !(x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') &&
+          x.vndReceived != null)
         .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
       cardPurchases: previousPurchases.map(x => ({
         amountVnd: Number(x.amountVnd),
