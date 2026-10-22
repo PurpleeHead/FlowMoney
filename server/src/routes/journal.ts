@@ -51,7 +51,7 @@ function sourceAfterCursor(
   if (!cursor) return {};
   const cursorTime = new Date(cursor.occurredAt);
   // Keep in sync with buildJournal's lexical ID tie-breaker and type prefixes.
-  const priority: Record<Cursor['type'], number> = { expense: 0, exchange: 1, wallet_movement: 2 };
+  const priority: Record<Cursor['type'], number> = { exchange: 0, expense: 1, wallet_movement: 2 };
   const sourcePriority = priority[sourceType];
   const cursorPriority = priority[cursor.type];
   const id = cursor.id.slice(cursor.id.indexOf(':') + 1);
