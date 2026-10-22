@@ -156,3 +156,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Added route regressions for actual VND with both a stale positive estimate and no estimate; extended the disposable PostgreSQL fixture to verify confirmed/estimated buckets remain disjoint.
 - [ ] Dashboard performance evidence remains open: realistic small/medium/large data measurements, `EXPLAIN (ANALYZE, BUFFERS)`, and response payload comparison are not yet recorded. Expense chart/category rows still cover the last 12 calendar months and may be large for high-volume accounts.
 - [ ] Production release gates remain open: identify and approve the true production DB, encrypted backup + successful isolated restore, read-only legacy wallet preflight and reconciliation, align live Render settings, owner-approved release window, and production smoke tests. No production DB query/mutation, Render setting change, merge, or deployment was performed; PR #83 remains Draft.
+
+
+## Latest verification — 2026-10-22 (bounded dashboard history regression)
+
+- [x] CI [#1878](https://github.com/PurpleeHead/FlowMoney/actions/runs/39718949872) passed on exact head `1b3a402ba2166e4a66906f60b64e903891a8177d`; both `verify` and `verify-migrations` succeeded.
+- [x] Security [#266](https://github.com/PurpleeHead/FlowMoney/actions/runs/39718949855) passed on the same head, including test suites, production build, audit and review-artifact upload.
+- [x] Added a route regression with 105 historical exchange rows: the dashboard returns no more than 100 activity rows while preserving the all-history exchange count and the balance aggregated across all 105.
+- [ ] Performance evidence for representative history volumes, explicit local-month/effective-timestamp tests, and review of the 12-month expense payload remain open.
+- [ ] Production DB identity, encrypted backup + isolated restore, legacy wallet preflight/reconciliation, live Render configuration reconciliation, explicit release approval and production smoke tests remain hard-stop gates. No production DB query/mutation, Render setting change, merge or deployment was performed; PR #83 remains Draft.
