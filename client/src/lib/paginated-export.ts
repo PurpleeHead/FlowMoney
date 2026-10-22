@@ -44,12 +44,12 @@ export async function fetchAllCursorPages<T>(
     if (!validPage.nextCursor) {
       throw new Error('Export stopped because the API did not return a continuation cursor.');
     }
-    if (seenCursors.has(page.nextCursor) || page.nextCursor === cursor) {
+    if (seenCursors.has(validPage.nextCursor) || validPage.nextCursor === cursor) {
       throw new Error('Export stopped because the API returned a repeated continuation cursor.');
     }
 
-    seenCursors.add(page.nextCursor);
-    cursor = page.nextCursor;
+    seenCursors.add(validPage.nextCursor);
+    cursor = validPage.nextCursor;
   }
 
   throw new Error(`Export stopped after reaching the safety limit of ${maxPages} pages.`);
