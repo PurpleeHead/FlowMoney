@@ -265,6 +265,55 @@ describe('dashboard confirmed and estimated VND totals', () => {
   });
 });
 
+describe('dashboard history window', () => {
+  it('bounds recent exchange rows without truncating all-history counts or balances', async () => {
+    expenseModel.findMany = async () => [];
+    const history = Array.from({ length: 105 }, (_, index) => ({
+      id: `legacy-direct-vnd-${index}`,
+      userId: 'dashboard-user',
+      mode: 'RUB_VND',
+      targetCurrency: 'VND',
+      rubSpent: 1000,
+      usdtReceived: null,
+      vndReceived: 100000,
+      targetReceived: null,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+      planningVndPerUsdt: null,
+      vndPerUsdt: null,
+      effectiveVndPerRub: null,
+      effectiveRubPerUsdt: null,
+      createdAt: new Date(Date.UTC(2026, 9, 22, 0, index)),
+    }));
+    exchangeModel.findMany = async (args: any) => {
+      if (args.take === 100) {
+        assert.deepEqual(args.where, { userId: 'dashboard-user' });
+        assert.equal(args.take, 100);
+      }
+      return history;
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalExchangeCount: number;
+        balanceVnd: number | null;
+        exchanges: Exchange[];
+      };
+      assert.equal(body.totalExchangeCount, 105, 'all-history exchange count must include records outside the recent activity window');
+      assert.equal(body.exchanges.length, 100, 'dashboard activity rows must remain bounded');
+      assert.equal(body.balanceVnd, 10_500_000, 'balance must aggregate all 105 exchanges, not only the latest 100');
+    });
+  });
+});
+
 describe('dashboard exchange rates', () => {
   it('includes direct RUB-to-USDT target exchanges in the effective RUB/USDT rate', async () => {
     expenseModel.findMany = async () => [];
