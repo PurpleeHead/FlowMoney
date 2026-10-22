@@ -185,3 +185,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Security [#273](https://github.com/PurpleeHead/FlowMoney/actions/runs/39719862178) passed on the same head, including tests, production build, dependency audit and review-artifact upload.
 - [ ] Representative-volume query plans/timings/payload measurements remain open; the available CI fixture is for correctness, not a production-scale performance benchmark.
 - [ ] Release hard stops remain: confirm/approve actual production DB, encrypted backup and successful isolated restore, read-only legacy wallet preflight/reconciliation, reconcile live Render config, owner-approved release window and post-release smoke tests. No production DB query/mutation, Render setting change, merge or deployment was performed; PR #83 remains Draft.
+
+
+## Latest verification — 2026-10-22 (expense count tenant isolation)
+
+- [x] Extended the dashboard test double so all-time expense counts exclude fixture rows with a different `userId`, rather than counting every row returned by a loose mock.
+- [x] The adversarial cross-user purchase regression now asserts the all-history expense count remains 2 for the authenticated user despite the foreign user's additional row.
+- [x] CI [#1896](https://github.com/PurpleeHead/FlowMoney/actions/runs/39720043206) passed on code head `84b779c4ea501a610c11cd237118882db4c905b8`; both `verify` and `verify-migrations` succeeded.
+- [x] Security [#275](https://github.com/PurpleeHead/FlowMoney/actions/runs/39720043125) passed on the same code head.
+- [ ] Representative-volume query plans/timings/payload measurements and production infrastructure gates listed above remain open. PR #83 remains Draft; no production access/mutation, Render change, merge or deployment.
