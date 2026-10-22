@@ -71,6 +71,7 @@ try {
   const planText = JSON.stringify(plan);
   assert.match(planText, /Execution Time/, 'query plan includes measured execution time');
   assert.match(planText, /Plan/, 'query plan includes execution details');
+  assert.match(planText, /Exchange_userId_createdAt_idx/, 'tenant-scoped aggregate plan should use the existing user/time index');
 
   console.log(JSON.stringify({
     benchmark: 'dashboard-exchange-aggregate',
