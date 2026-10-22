@@ -253,3 +253,14 @@ Both required CI jobs passed on head `5f19805341598d0e3b61895a1a452ca2b8986228`:
 - Exact runtime aggregate EXPLAIN ANALYZE: 4.734 ms; selective tenant-only query: 0.522 ms.
 
 These are a single warm, disposable CI sample and not production SLOs. Hosted network/database performance, cold-cache and sustained-load tests, final review, and operational backup/restore/Render/smoke-test gates remain outstanding. PR #96 remains Draft, open, unmerged and undeployed.
+
+
+## Legacy target-field isolation — 2026-10-22 (head e473858f)
+
+Expanded the disposable PostgreSQL parity fixture with deliberately stale fields on nonmatching exchange modes. A `RUB_TARGET → GEL` row carrying a legacy `vndReceived` must not be treated as actual indirect RUB/VND proceeds; another non-USDT target carrying stale `usdtReceived` and `planningVndPerUsdt` must not contaminate USDT planning or unconverted-USDT estimates. A direct `RUB_TARGET → VND` row carrying a stale `usdtReceived` must not affect the weighted RUB/USDT acquisition rate.
+
+The regression initially failed in CI and exposed that the old indirect VND mapper and SQL predicates classified any non-direct-target row with a VND field as an indirect outcome. Fixed the runtime aggregate to scope actual indirect VND cost basis to `RUB_USDT_VND`, excluded non-VND `RUB_TARGET` records from confirmed VND, scoped planning-only sums to the indirect mode, limited unconverted-USDT estimates to the indirect mode or explicit USDT target, and aligned `mapActualVndExchanges` with the mode contract. Added a unit regression for stale VND fields and updated the PostgreSQL equivalence test to use the mode-aware mapper and independently assert the corrected buckets.
+
+Both CI jobs passed on head `e473858f4372662588d823fee4840a88a02b62a9`: [push verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39708867521) and [pull-request verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39708873026). The PostgreSQL fixture again seeded 25,000 exchange rows and 10,000 expense rows across ten tenants (35,000 total). Latest sample: aggregate helper median 4.729 ms; bounded 100-row history query 3.403 ms / 34,879 bytes; full dashboard API 69.108 ms / 248,835 bytes; ten concurrent dashboard requests p50 233.027 ms / p95 238.340 ms; exact runtime aggregate EXPLAIN ANALYZE 4.138 ms; selective tenant query 0.537 ms.
+
+Measurements remain warm, synthetic CI observations, not production SLOs. Hosted app-to-database latency/cold-cache/sustained-load tests, final financial review, and operational backup/restore/Render/smoke-test gates remain open. PR #96 remains Draft and must not be merged or deployed without explicit authorization.
