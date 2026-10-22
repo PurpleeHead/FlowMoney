@@ -52,7 +52,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   };
   (prisma as any).$queryRaw = async () => {
     const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
-    const n = (value: any) => value == null ? null : Number(value);
+    const n = (value: any): number => value == null ? 0 : Number(value);
     const isTarget = (x: any, currency: string) => x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === currency;
     const isDirectVnd = (x: any) => isTarget(x, 'VND');
     const eligibleRubUsdt = rows.filter((x: any) =>
