@@ -105,6 +105,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
             WHEN "mode" <> 'RUB_VND'
               AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
               AND "vndReceived" IS NULL
+              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
               AND (( "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
                     AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
                 OR "usdtReceived" IS NOT NULL)
