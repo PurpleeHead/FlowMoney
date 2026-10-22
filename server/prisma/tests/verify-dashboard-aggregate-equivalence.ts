@@ -47,6 +47,8 @@ try {
     // A different target's stale USDT field must not contaminate the RUB/USDT weighted rate.
     // Legacy VND fields on non-VND target rows are stale, not confirmed proceeds.
     { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000, vndReceived: 999_999 },
+    // A non-USDT target with no actual VND outcome must not leak stale USDT/planning fields into estimates.
+    { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1000, targetReceived: 5, targetToVndRate: 9200, targetVndEquivalent: null, usdtReceived: 888, planningVndPerUsdt: 999 },
     // Planning rate is not an observed VND outcome.
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1000, usdtReceived: 10, vndReceived: null, planningVndPerUsdt: 25_000 },
     // A legacy target with a missing currency still contributes its explicit VND estimate.
@@ -147,30 +149,23 @@ try {
         ELSE 0
       END), 0) AS "estimatedTargetVnd",
       COALESCE(SUM(CASE
-        WHEN "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+        WHEN "mode" = 'RUB_USDT_VND'
           AND "vndReceived" IS NULL
           AND "usdtReceived" IS NOT NULL
           AND "planningVndPerUsdt" IS NOT NULL
           THEN "usdtReceived" ELSE 0
       END), 0) AS "plannedUsdt",
       COALESCE(SUM(CASE
-        WHEN "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+        WHEN "mode" = 'RUB_USDT_VND'
           AND "vndReceived" IS NULL
           AND "usdtReceived" IS NOT NULL
           AND "planningVndPerUsdt" IS NOT NULL
           THEN "usdtReceived" * "planningVndPerUsdt" ELSE 0
       END), 0) AS "plannedWeightedVnd",
       COALESCE(SUM(CASE
-        WHEN "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
-          AND "vndReceived" IS NULL
-          AND (
-            ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
-              AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
-            OR "usdtReceived" IS NOT NULL
-          )
+        WHEN ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
+          OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
+            AND "vndReceived" IS NULL AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
           THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
             THEN "targetReceived" ELSE "usdtReceived" END
         ELSE 0
