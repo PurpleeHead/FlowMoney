@@ -37,13 +37,15 @@ try {
     { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 5000, targetReceived: 56 },
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
     // Canonical VND must win over a stale legacy vndReceived value.
-    { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999 },
+    // Stale USDT values on direct VND targets must not be counted as USDT acquisitions.
+    { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999, usdtReceived: 999 },
     // An explicit zero net outcome must not fall back to the positive gross target.
     { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 1800, targetReceived: 350_000, targetVndEquivalent: 0, vndReceived: 345_000 },
     // Legacy/corrupt casing and whitespace must still classify as a direct VND target.
     { mode: 'RUB_TARGET', targetCurrency: ' vnd ', rubSpent: 900, targetReceived: 125_000, targetVndEquivalent: null, vndReceived: 777_777 },
     // Non-VND target estimates are not factual VND outcomes.
-    { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000 },
+    // A different target's stale USDT field must not contaminate the RUB/USDT weighted rate.
+    { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000, usdtReceived: 888 },
     // Planning rate is not an observed VND outcome.
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1000, usdtReceived: 10, vndReceived: null, planningVndPerUsdt: 25_000 },
     // A legacy target with a missing currency still contributes its explicit VND estimate.
