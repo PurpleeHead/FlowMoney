@@ -60,7 +60,8 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
       return value == null ? 0 : Number(value);
     });
     const estimatedTargetCurrencyVnd = sum(rows.filter((x: any) =>
-      x.mode === 'RUB_TARGET' && !directVnd(x) && x.targetVndEquivalent != null),
+      x.mode === 'RUB_TARGET' && !directVnd(x) && x.vndReceived == null &&
+      x.targetVndEquivalent != null && Number(x.targetVndEquivalent) > 0),
       (x: any) => Number(x.targetVndEquivalent));
     const plannedRows = rows.filter((x: any) => x.mode !== 'RUB_VND' && !directVnd(x) &&
       x.vndReceived == null &&
@@ -76,7 +77,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
     const estimatedUnpricedUsdt = sum(estimateRows, (x: any) => directUsdt(x) ? Number(x.targetReceived ?? 0) : Number(x.usdtReceived));
     const hasUnpricedUsdtTopUps = rows.some((x: any) =>
       (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
-      (directUsdt(x) && x.targetReceived != null && x.targetVndEquivalent == null));
+      (directUsdt(x) && x.vndReceived == null && x.targetReceived != null && x.targetVndEquivalent == null));
     const directRows = rows.filter((x: any) => x.mode === 'RUB_VND' || directVnd(x)).map((x: any) => ({
       rub: Number(x.rubSpent),
       vnd: Number(directVnd(x) ? (x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) : x.vndReceived),
@@ -200,6 +201,66 @@ describe('dashboard confirmed and estimated VND totals', () => {
       assert.equal(body.confirmedExchangeVnd, 0);
       assert.equal(body.estimatedUnconvertedVnd, 2382146.62);
       assert.equal(body.balanceIsEstimated, true);
+    });
+  });
+});
+
+describe('dashboard confirmed and estimated VND totals', () => {
+  it('prefers actual VND received over a stale non-VND target valuation', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      rubSpent: 1000,
+      targetReceived: 10,
+      targetVndEquivalent: 500000,
+      vndReceived: 510000,
+      usdtReceived: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        balanceVnd: number | null;
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.confirmedExchangeVnd, 510000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 510000);
+      assert.equal(body.balanceIsEstimated, false);
+    });
+  });
+
+  it('does not mark an actual VND outcome as unpriced USDT when the estimate is absent', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      rubSpent: 1000,
+      targetReceived: 10,
+      targetVndEquivalent: null,
+      vndReceived: 510000,
+      usdtReceived: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { balanceVnd: number | null };
+      assert.equal(body.balanceVnd, 510000);
     });
   });
 });
