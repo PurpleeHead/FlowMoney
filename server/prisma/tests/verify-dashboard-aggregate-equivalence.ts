@@ -174,7 +174,7 @@ try {
       COUNT(*) FILTER (WHERE
         ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
         OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
-          AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+          AND "vndReceived" IS NULL AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
       ) AS "unpricedUsdtCount"
     FROM "Exchange"
     WHERE "userId" = ${mainUserId}
