@@ -1,10 +1,13 @@
 # Dashboard exchange-summary aggregation — implementation gate
 
-Status: PostgreSQL fixture implemented for the first equivalence slice. `server/prisma/tests/verify-dashboard-aggregate-equivalence.ts` now seeds disposable PostgreSQL and checks user-scoped reads, weighted RUB/USDT, actual-vs-planned VND observations, direct-VND legacy fallback behavior, weighted card-purchase rates, and cross-user exclusion. CI runs it after migrations. This does not change runtime dashboard accounting or authorize a deployment.
+Status: runtime PostgreSQL aggregates and bounded recent exchange rows are implemented on PR #83. `server/prisma/tests/verify-dashboard-aggregate-equivalence.ts` seeds disposable PostgreSQL and checks user-scoped reads, weighted RUB/USDT, actual-vs-planned VND observations, direct-VND legacy fallback behavior, confirmed/estimated/planned balance buckets, weighted card-purchase rates, and cross-user exclusion. The CI workflow runs this fixture after migrations. Production release remains blocked by operational gates; this document does not authorize a deployment.
 
-## Why the dashboard still has an unbounded exchange query
+## Current query responsibilities
 
-The dashboard currently fetches all exchange rows because the same rows feed both recent-activity UI and all-history financial calculations. The expenses query is already bounded to the last 12 calendar months, while all-time expense totals and card-purchase weighted rates use PostgreSQL aggregates. Replacing the exchange query with a simple `take` or date window would silently change balances and weighted rates for long-lived accounts.
+- Exchange accounting summaries are computed from a user-scoped PostgreSQL aggregate across the full exchange history.
+- The dashboard's exchange activity list is limited to the latest 100 records; complete history is loaded through cursor-paginated exchange/journal endpoints. Summary totals and rates must never be derived from this bounded list.
+- Expense rows returned for dashboard charts/category insights are limited to the last 12 calendar months, while all-time totals, current-month totals, and card-purchase weighted-rate inputs use database aggregates. The 12-month expense window can still be large for high-volume accounts and remains part of the payload/query-plan measurement gate.
+- Dashboard expense rows preserve stored `amountRub` snapshots; reads must not revalue historical expenses using current rates.
 
 ## Safe split of query responsibilities
 
@@ -57,14 +60,13 @@ On the same disposable PostgreSQL dataset, capture:
 
 Do not claim a performance improvement without recorded before/after evidence. Avoid redundant indexes without a query-plan reason.
 
-## Rollout order
+## Remaining implementation/performance gates
 
-1. Add the fixture and equivalence tests first.
-2. Implement summary aggregates while leaving the existing full exchange query in place.
-3. Run CI, migration verification, and security workflow.
-4. Compare all response summary fields against the old implementation on the fixture.
-5. Only then bound the exchange activity query and rerun the full test matrix.
-6. Keep PR #83 Draft until the operational gates in `PRODUCTION_RELEASE_RUNBOOK.md` are independently satisfied. No production DB inspection, migration, merge, or deploy is implied by this plan.
+1. Keep the disposable-PostgreSQL equivalence fixture authoritative for mixed exchange modes, estimates, planning rates, and cross-user isolation.
+2. Extend boundary coverage for timezone/local-month chart behavior and the effective timestamp of expense purchase observations.
+3. Capture `EXPLAIN (ANALYZE, BUFFERS)`, timings, row counts, and serialized response sizes on representative small/medium/large histories. Do not claim measured speedups before this evidence exists.
+4. Review the 12-calendar-month expense-row query for high-volume users; any response contract change must provide equivalent chart/category data rather than silently truncating history.
+5. Keep PR #83 Draft until both code review/performance gates and the operational gates in `PRODUCTION_RELEASE_RUNBOOK.md` are independently satisfied. No production DB inspection, migration, merge, or deploy is implied by this plan.
 
 
 ## Fixture implementation update — 2026-10-20
@@ -74,3 +76,12 @@ Do not claim a performance improvement without recorded before/after evidence. A
 - [x] CI run [#1223](https://github.com/PurpleeHead/FlowMoney/actions/runs/39429935414) passed on `6daa9115a8166ee446fa2de3aee334656c3ab8e7`; its disposable-PostgreSQL fixture, migration/rollback/idempotency checks, test suite, production build, and dependency audits passed. Security workflow [#208](https://github.com/PurpleeHead/FlowMoney/actions/runs/39429935408) also passed.
 - [ ] This is the first equivalence slice, not the complete release gate. Extend database-side aggregate comparisons to canonical direct-target VND totals, confirmed/estimated budget components, and planning-rate aggregates before changing `dashboard.ts` summary calculations or bounding its exchange query.
 - [ ] Capture realistic `EXPLAIN (ANALYZE, BUFFERS)`, query timings, and response payload sizes before claiming a performance improvement.
+
+
+## Regression follow-up — 2026-10-22 (actual VND outcome vs stale estimate)
+
+- [x] Runtime budget aggregation now includes a non-VND target's stored VND estimate only while `vndReceived IS NULL` and the estimate is positive. An actual VND outcome wins over a stale estimate and is not counted twice.
+- [x] The `hasUnpricedUsdtTopUps` flag now excludes direct RUB→USDT targets that already have an actual `vndReceived` outcome; otherwise the API could incorrectly return an unknown (`null`) balance despite a recorded VND result.
+- [x] `balanceIsEstimated` no longer labels an actual VND outcome as estimated solely because a stale target estimate remains on the record.
+- [x] Added route-level regressions for both stale positive estimates and absent estimates when actual VND has been recorded; extended the disposable PostgreSQL fixture to assert actual/estimated buckets remain disjoint.
+- [ ] New code commit `200f27ad28fdf59cd45417dbafb2bf8bc28ed34c` awaits CI and Security confirmation. Performance evidence and operational production gates remain outstanding.
