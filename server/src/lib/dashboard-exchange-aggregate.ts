@@ -52,9 +52,12 @@ export function dashboardExchangeAggregateQuery(userId: string): Prisma.Sql {
           COALESCE(SUM("vndReceived") FILTER (WHERE "mode" <> 'RUB_VND'
             AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
             AND "rubSpent" > 0 AND "vndReceived" > 0), 0)::float8 AS "indirectVnd",
-          COALESCE(SUM(CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
-            THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
-            ELSE "vndReceived" END), 0)::float8 AS "confirmedVnd",
+          COALESCE(SUM(CASE
+            WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+              THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
+            WHEN "mode" = 'RUB_TARGET' THEN 0
+            ELSE "vndReceived"
+          END), 0)::float8 AS "confirmedVnd",
           COALESCE(SUM("targetVndEquivalent") FILTER (WHERE "mode" = 'RUB_TARGET'
             AND upper(trim(COALESCE("targetCurrency", ''))) <> 'VND' AND "targetVndEquivalent" IS NOT NULL), 0)::float8 AS "estimatedTargetVnd",
           COALESCE(SUM(CASE
