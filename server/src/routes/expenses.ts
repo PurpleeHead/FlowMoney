@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { parseListPageQuery, encodeListCursor, listAfterCursor } from '../lib/list-pagination.js';
 import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
@@ -170,12 +171,36 @@ router.post('/', async (req: AuthedRequest, res, next) => {
 
 router.get('/', async (req: AuthedRequest, res, next) => {
   try {
+    const page = parseListPageQuery(req.query as Record<string, unknown>);
+    if (page.error) {
+      res.status(400).json({ message: 'Invalid pagination parameters.' });
+      return;
+    }
+
+    const userId = req.user!.id;
+    const where = { userId, ...listAfterCursor('date', page.cursor) };
     const records = await prisma.expense.findMany({
-      where: { userId: req.user!.id },
-      orderBy: { date: 'desc' },
-      take: 500,
+      where: page.requested ? where : { userId },
+      orderBy: page.requested ? [{ date: 'desc' }, { id: 'asc' }] : { date: 'desc' },
+      take: page.requested ? page.limit + 1 : 500,
     });
-    res.json(records);
+
+    // Keep the original array response for existing clients. Explicit pagination
+    // opts into the page envelope used by full-history exports.
+    if (!page.requested) {
+      res.json(records);
+      return;
+    }
+
+    const hasMore = records.length > page.limit;
+    const items = hasMore ? records.slice(0, page.limit) : records;
+    const last = items.at(-1);
+    res.json({
+      items,
+      limit: page.limit,
+      hasMore,
+      nextCursor: hasMore && last ? encodeListCursor(last.date, last.id) : null,
+    });
   } catch (e) {
     next(e);
   }
