@@ -194,3 +194,10 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Added a cross-tenant API regression with a high-value foreign user's expense. It verifies that total expense count, lifetime VND total, weighted card VND/USDT inputs, and returned expense history include only the authenticated user's row.
 - [x] CI passed on head `ede8bd0bcfa171236f1ad356528dd84bad7a1109`: [run #39729712699](https://github.com/PurpleeHead/FlowMoney/actions/runs/39729712699). Both application verification/build and PostgreSQL migration/equivalence/benchmark checks succeeded.
 - [ ] Remaining production gates are unchanged: production-like hosted latency/load, final financial review, approved production database identity, encrypted backup and isolated restore drill, legacy wallet reconciliation, approved Render settings, and release-window smoke tests. PR #96 remains Draft/unmerged; no deployment or live database mutation was performed.
+
+## Render blueprint safety regression — 2026-10-22
+
+- [x] Added `server/src/config/deployment.test.ts` to guard the repository's Render blueprint: automatic deploys remain disabled, health checks use database-aware `/api/ready`, `DATABASE_URL` must be supplied explicitly, `JWT_SECRET` is generated, and Prisma migrations run before the app starts.
+- [x] This is a repository configuration guard only. It does not inspect or change the existing Render service's live Dashboard settings; the previously documented live-vs-blueprint mismatch still requires owner verification and approval.
+- [x] CI passed on head `84dc2bfd088d2e1863849318d99e2efa76da0a91`: [run #39730015972](https://github.com/PurpleeHead/FlowMoney/actions/runs/39730015972). Both application verification/build and disposable PostgreSQL migration/equivalence/benchmark checks succeeded.
+- [ ] Production database identity, encrypted backup and successful isolated restore, legacy wallet reconciliation, live Render configuration approval, production-like hosted performance, final financial review, and release-window smoke tests remain open. PR #96 remains Draft and unmerged.
