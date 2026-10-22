@@ -13,11 +13,17 @@ if [[ "${MOCK_DOCKER_FAIL:-0}" == "1" ]]; then
   exit 42
 fi
 command_text=''
+connection_url=''
 for arg in "$@"; do
   case "$arg" in
     --command=*) command_text="${arg#--command=}" ;;
+    postgresql://*) connection_url="$arg" ;;
   esac
 done
+if [[ "$connection_url" == *schema=* ]]; then
+  echo "Prisma-only schema parameter reached libpq" >&2
+  exit 96
+fi
 case "$command_text" in
   'SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()')
     printf '%s\n' "${MOCK_TLS:-t}"
@@ -34,12 +40,15 @@ MOCK
 chmod +x "$tmp/docker"
 
 run_check() {
-  PATH="$tmp:$PATH" DATABASE_URL='postgresql://example.invalid/db?sslmode=require' "$@"
+  PATH="$tmp:$PATH" DATABASE_URL='postgresql://example.invalid/db?sslmode=require&schema=public&connection_limit=5&application_name=flowmoney' "$@"
 }
 
 actual="$(run_check bash "$repo_root/scripts/verify-backup-db-connection.sh")"
 [[ "$actual" == "16" ]] || { echo "Expected PostgreSQL major 16, got '$actual'" >&2; exit 1; }
 echo "PASS: TLS connection and PostgreSQL 16 are accepted"
+normalized_url="$(run_check bash "$repo_root/scripts/normalize-backup-db-url.sh")"
+[[ "$normalized_url" == "postgresql://example.invalid/db?sslmode=require&application_name=flowmoney" ]] || { echo "Unexpected normalized URL: $normalized_url" >&2; exit 1; }
+echo "PASS: Prisma-only URL parameters are removed while libpq options are preserved"
 
 if output="$(MOCK_TLS=f run_check bash "$repo_root/scripts/verify-backup-db-connection.sh" 2>&1)"; then
   echo "Expected a non-TLS connection to be rejected" >&2
