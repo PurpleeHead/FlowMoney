@@ -59,7 +59,7 @@ Create a private R2 bucket and a dedicated bucket-scoped access key. Do not reus
 
 - GitHub Actions backup workflow is only scheduled after the workflow is merged to `main`; it cannot access production secrets from an unmerged draft PR.
 - Cloudflare R2 credentials and the database backup URL must be configured by the account owner; these credentials are not currently available to this workflow.
-- The workflow validates the dump and uploaded object, but the first successful backup still requires a separate manual restore drill.
+- The workflow verifies TLS on the actual database connection, detects the server major version, and uses matching PostgreSQL 14+ backup clients. CI regression-tests the gate with TLS enabled/disabled, malformed version output, and PostgreSQL 13. The workflow validates the dump and uploaded object, but the first successful backup still requires a separate manual restore drill.
 - The proposed Render Blueprint now uses `/api/ready` for health checks. `/api/health` remains a liveness endpoint; readiness returns HTTP 503 when the database probe fails and does not expose connection details. Applying a Blueprint is a live configuration change and still requires explicit owner approval.
 - Free tiers are not an SLA. Keep usage under the published quota and review provider policies periodically.
 - Do not switch the live service to `main`, trigger a production deploy, or run production migrations until the required checks and backup/restore gate are complete.
