@@ -30,7 +30,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
         orderBy:{date:'desc'},
         select:{id:true,title:true,category:true,amount:true,currency:true,amountVnd:true,amountRub:true,usdtCharged:true,date:true},
       }),
-      prisma.$queryRaw<DashboardExchangeAggregate[]>\`
+      prisma.$queryRaw<DashboardExchangeAggregate[]>`
         SELECT
           COALESCE(SUM(CASE
             WHEN ("mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0)
@@ -93,8 +93,8 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
               AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
           ), false) AS "hasUnpricedUsdtTopUps"
         FROM "Exchange"
-        WHERE "userId" = \${req.user!.id}
-      \`,
+        WHERE "userId" = ${req.user!.id}
+      `,
       prisma.expense.aggregate({where:{userId:req.user!.id},_sum:{amountVnd:true}}),
       prisma.expense.aggregate({where:{userId:req.user!.id,date:{gte:start}},_sum:{amountVnd:true}}),
       prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{gt:0},usdtCharged:{gt:0}},_sum:{amountVnd:true,usdtCharged:true}}),
