@@ -36,7 +36,7 @@ try {
     // A valued direct USDT target may retain a stale legacy usdtReceived value; don't count both buckets.
     { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 0, targetReceived: 10, targetToVndRate: 50_000, targetVndEquivalent: 500_000, usdtReceived: 10 },
     // If actual VND was later recorded, don't add a stale target valuation on top.
-    { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 1000, targetReceived: 10, targetVndEquivalent: 500_000, vndReceived: 510_000 },
+    { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 0, targetReceived: 10, targetVndEquivalent: 500_000, vndReceived: 510_000 },
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
     // Canonical VND must win over a stale legacy vndReceived value.
     { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999, usdtReceived: 10 },
