@@ -51,17 +51,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/flowmoney-backup"
-          # Use a client newer than the PostgreSQL versions commonly offered by
-          # managed hosts; do not print connection strings or dump contents.
+          # Refuse unencrypted connections and unsupported server versions before dumping data.
+          # The gate is covered by mocked-docker regression tests in CI.
+          pg_major="$(bash scripts/verify-backup-db-connection.sh)"
+          # Use matching pg_dump/pg_restore clients for custom-format compatibility.
+          postgres_image="postgres:${pg_major}"
+          echo "Using PostgreSQL $pg_major client for the backup archive."
           docker run --rm \
             -e DATABASE_URL="$DATABASE_URL" \
             -v "$RUNNER_TEMP/flowmoney-backup:/backup" \
-            postgres:18 \
+            "$postgres_image" \
             sh -euc 'pg_dump "$DATABASE_URL" --format=custom --no-owner --no-acl --file=/backup/flowmoney.dump'
           test -s "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump"
           docker run --rm \
             -v "$RUNNER_TEMP/flowmoney-backup:/backup:ro" \
-            postgres:18 \
+            "$postgres_image" \
             pg_restore --list /backup/flowmoney.dump > "$RUNNER_TEMP/flowmoney-backup/restore-list.txt"
           test -s "$RUNNER_TEMP/flowmoney-backup/restore-list.txt"
       - name: Encrypt backup before upload
