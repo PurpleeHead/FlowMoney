@@ -6,6 +6,7 @@ import {
   calculateObservedVndPerRub,
   calculateRubPerUsdt,
   mapDirectVndExchanges,
+  mapActualVndExchanges,
   mapRubUsdtExchanges,
   mapActualVndUsdtExchanges,
 } from '../../src/lib/money.js';
@@ -271,11 +272,12 @@ try {
     .map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }));
   const helperVndRub = calculateObservedVndPerRub({
     directExchanges: directRows,
-    actualVndExchanges: exchangeRows
-      .filter(x => x.mode !== 'RUB_VND' &&
-        !(x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') &&
-        x.vndReceived != null)
-      .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+    actualVndExchanges: mapActualVndExchanges(exchangeRows.map(x => ({
+      mode: x.mode,
+      rubSpent: Number(x.rubSpent),
+      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+      targetCurrency: x.targetCurrency,
+    }))),
     cardPurchases: cardRows,
     rubPerUsdt: helperRubUsdt,
   });
