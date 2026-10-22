@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import express from 'express';
+import jwt from 'jsonwebtoken';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../src/services/prisma.js';
 import { aggregateDashboardExchanges, dashboardExchangeAggregateQuery } from '../../src/lib/dashboard-exchange-aggregate.js';
+import dashboardRoutes from '../../src/routes/dashboard.js';
 
 const suffix = `dashboard-aggregate-benchmark-${Date.now()}`;
 const users: string[] = [];
+let apiServer: ReturnType<typeof createServer> | undefined;
 const EXCHANGES_PER_USER = 2_500;
 const TENANT_COUNT = 10;
 
@@ -61,6 +68,29 @@ try {
   const historyPayloadBytes = Buffer.byteLength(JSON.stringify(history), 'utf8');
   assert.equal(history.length, 100, 'dashboard history response must remain capped at 100 exchanges');
 
+  // Exercise the real dashboard route against this disposable database so the
+  // benchmark captures end-to-end API latency and the complete JSON response size.
+  const secret = `${suffix}-jwt-secret-long-enough-for-dashboard-benchmark`;
+  process.env.JWT_SECRET = secret;
+  const app = express();
+  app.use('/api/dashboard', dashboardRoutes);
+  apiServer = createServer(app);
+  apiServer.listen(0, '127.0.0.1');
+  await once(apiServer, 'listening');
+  const address = apiServer.address() as AddressInfo;
+  const token = jwt.sign({ id: targetUserId, email: `${suffix}-0@example.invalid`, tokenVersion: 0 }, secret);
+  const apiStarted = performance.now();
+  const apiResponse = await fetch(`http://127.0.0.1:${address.port}/api/dashboard`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const apiPayload = await apiResponse.text();
+  const dashboardApiMs = Number((performance.now() - apiStarted).toFixed(3));
+  assert.equal(apiResponse.status, 200, `dashboard API benchmark failed: ${apiPayload}`);
+  const dashboardBody = JSON.parse(apiPayload) as { totalExchangeCount: number; exchanges: unknown[] };
+  assert.equal(dashboardBody.totalExchangeCount, EXCHANGES_PER_USER, 'real dashboard response counts full tenant history');
+  assert.equal(dashboardBody.exchanges.length, 100, 'real dashboard response returns only bounded exchange history');
+  const dashboardResponsePayloadBytes = Buffer.byteLength(apiPayload, 'utf8');
+
   const runtimePlans = await prisma.$queryRaw<Array<{ 'QUERY PLAN': Array<Record<string, unknown>> }>>(
     Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${dashboardExchangeAggregateQuery(targetUserId)}`,
   );
@@ -93,10 +123,17 @@ try {
     recentHistoryRows: history.length,
     recentHistoryQueryMs: historyQueryMs,
     recentHistoryPayloadBytes: historyPayloadBytes,
+    dashboardApiLatencyMs: dashboardApiMs,
+    dashboardApiResponsePayloadBytes: dashboardResponsePayloadBytes,
+    dashboardApiReturnedExchanges: dashboardBody.exchanges.length,
+    dashboardApiTotalExchangeCount: dashboardBody.totalExchangeCount,
     runtimeAggregateExplainAnalyze: runtimePlan,
     selectiveTenantExplainAnalyze: scopedPlan,
   }, null, 2));
 } finally {
+  if (apiServer?.listening) {
+    await new Promise<void>((resolve, reject) => apiServer!.close(error => error ? reject(error) : resolve()));
+  }
   if (users.length) await prisma.user.deleteMany({ where: { id: { in: users } } });
   await prisma.$disconnect();
 }
