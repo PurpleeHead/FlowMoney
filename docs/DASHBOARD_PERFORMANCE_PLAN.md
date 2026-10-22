@@ -94,3 +94,16 @@ The receipt-save valuation path now reuses the same direct-VND and actual-VND ex
 Regression coverage includes a legacy 500 RUB → 125,000 VND operation and verifies that a 50,000 VND receipt item stores a 200 RUB valuation. A separate receipt API test asserts that exchange and card-purchase observations are user-scoped and bounded to the receipt-save timestamp, and that planning-only rates remain excluded from factual saved RUB valuations.
 
 CI and PostgreSQL migration verification passed on head `f49562b10ab96523d85769c61c913d4371e126d2` (runs [#39614851150](https://github.com/PurpleeHead/FlowMoney/actions/runs/39614851150) and [#39614859415](https://github.com/PurpleeHead/FlowMoney/actions/runs/39614859415)). This closes the receipt-vs-expense direct-VND mapping discrepancy; it does not close the separate dashboard exchange-aggregate refactor or production query-plan / operational release gates.
+
+## Runtime aggregate implementation — 2026-10-22 (draft PR #96)
+
+A draft runtime change now replaces the unbounded exchange-history read used for dashboard calculations with a single user-scoped PostgreSQL aggregate query. The API separately fetches only the newest 100 exchange rows for display; lifetime counts and summary calculations are not derived from that bounded list.
+
+The SQL aggregate covers:
+- actual RUB/USDT acquisitions, including normalized direct RUB_TARGET → USDT rows;
+- actual indirect VND/USDT outcomes, separate from planning-only rates;
+- planning weighted numerator and denominator;
+- direct and indirect actual VND/RUB cost bases, including legacy direct-VND fallback precedence;
+- confirmed VND, non-VND target estimates, unconverted USDT estimate input, and unpriced-top-up detection.
+
+The first CI pass exposed a template-literal syntax error and, after that was fixed, two API tests correctly caught that the test double did not enforce Prisma's take: 100 behavior. Both were corrected in the branch. These fixes are not considered validated until the latest CI run succeeds. PostgreSQL-backed execution of the same runtime SQL, old-vs-new parity on the full mixed-mode fixture, realistic EXPLAIN (ANALYZE, BUFFERS) and response-size measurements are still required before this optimization can be considered production-ready. Do not merge or deploy this draft PR.
