@@ -166,3 +166,19 @@ Latest synthetic sample:
 - The 100-row standalone history query took 4.042 ms and serialized to 34,879 bytes.
 
 The SQL-plan sample was captured after the concurrent requests, so its execution time may reflect the test's local contention and is not directly comparable to a separately warmed single-query sample. These are single-run synthetic baselines on an ephemeral runner, not an SLO or production estimate; real hosted PostgreSQL, cold cache, production row distributions, and longer concurrency/load profiles remain release gates. The benchmark is read-only against production: it only creates and deletes synthetic records in the disposable CI database.
+
+
+## Expense-inclusive dashboard load baseline — 2026-10-22 (head 0b2297c4)
+
+The disposable PostgreSQL benchmark now seeds both exchange and expense history for each of 10 tenants: 2,500 exchanges and 1,000 expenses per user (35,000 rows total). Expense dates span the last 300 days, so the real dashboard route serializes a populated 12-month expense chart/history window rather than a near-empty expense list. The script runs `ANALYZE` on both `Exchange` and `Expense`, and checks the complete API response for tenant-scoped lifetime expense totals, weighted card-purchase VND/USDT numerator and denominator, weighted observed rate, lifetime exchange count, and bounded 100-row exchange history. Ten concurrent requests also verify the full expense count and totals for every response.
+
+Both CI workflows passed on head `0b2297c4f492bfe52c8d9d1d0c7af30c84003137`: [application tests/build](https://github.com/PurpleeHead/FlowMoney/actions/runs/39705356237) and [PostgreSQL/migration/benchmark](https://github.com/PurpleeHead/FlowMoney/actions/runs/39705360380).
+
+Latest synthetic CI sample (35,000 seeded rows):
+- Full `GET /api/dashboard`: 73.381 ms; complete JSON response 248,835 bytes, including 1,000 expense rows and 100 exchange rows.
+- Ten concurrent full dashboard requests: p50 226.671 ms; p95 231.009 ms.
+- Exact exchange aggregate helper median: 5.303 ms across five warm calls.
+- Bounded 100-row exchange-history query: 3.437 ms; history-only JSON 34,879 bytes.
+- Exact runtime aggregate `EXPLAIN ANALYZE`: 5.011 ms; selective tenant-only query: 0.478 ms.
+
+This is a synthetic, single-run, warm ephemeral CI baseline. It does not include a hosted app-to-database network hop, cold-cache measurements, realistic expense distributions or long-duration concurrency. The benchmark is confined to the disposable CI PostgreSQL service and deletes its synthetic users in cleanup. Hosted performance/load testing, final financial review/stabilization, and operational backup/restore/Render/smoke-test gates remain outstanding. PR #96 remains Draft and must not be merged or deployed without explicit authorization.
