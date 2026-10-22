@@ -49,6 +49,11 @@ echo "PASS: TLS connection and PostgreSQL 16 are accepted"
 normalized_url="$(run_check bash "$repo_root/scripts/normalize-backup-db-url.sh")"
 [[ "$normalized_url" == "postgresql://example.invalid/db?sslmode=require&application_name=flowmoney" ]] || { echo "Unexpected normalized URL: $normalized_url" >&2; exit 1; }
 echo "PASS: Prisma-only URL parameters are removed while libpq options are preserved"
+plain_url="$(env DATABASE_URL='postgresql://example.invalid/db' bash "$repo_root/scripts/normalize-backup-db-url.sh")"
+[[ "$plain_url" == "postgresql://example.invalid/db" ]] || { echo "Unexpected plain URL normalization: $plain_url" >&2; exit 1; }
+prisma_only_url="$(env DATABASE_URL='postgresql://example.invalid/db?schema=public&connection_limit=5' bash "$repo_root/scripts/normalize-backup-db-url.sh")"
+[[ "$prisma_only_url" == "postgresql://example.invalid/db" ]] || { echo "Unexpected Prisma-only URL normalization: $prisma_only_url" >&2; exit 1; }
+echo "PASS: plain URLs and Prisma-only query parameters normalize correctly"
 
 if output="$(MOCK_TLS=f run_check bash "$repo_root/scripts/verify-backup-db-connection.sh" 2>&1)"; then
   echo "Expected a non-TLS connection to be rejected" >&2
