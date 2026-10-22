@@ -106,7 +106,7 @@ The SQL aggregate covers:
 - direct and indirect actual VND/RUB cost bases, including legacy direct-VND fallback precedence;
 - confirmed VND, non-VND target estimates, unconverted USDT estimate input, and unpriced-top-up detection.
 
-The first CI pass exposed a template-literal syntax error and, after that was fixed, two API tests correctly caught that the test double did not enforce Prisma's take: 100 behavior. Both were corrected in the branch. These fixes are not considered validated until the latest CI run succeeds. PostgreSQL-backed execution of the same runtime SQL, old-vs-new parity on the full mixed-mode fixture, realistic EXPLAIN (ANALYZE, BUFFERS) and response-size measurements are still required before this optimization can be considered production-ready. Do not merge or deploy this draft PR.
+The first CI pass exposed a template-literal syntax error and, after that was fixed, two API tests correctly caught that the test double did not enforce Prisma's take: 100 behavior. Both were corrected and the latest CI runs pass. PostgreSQL-backed execution of the exact runtime helper and old-vs-new parity on the full mixed-mode fixture are covered. A disposable CI benchmark also measures the full helper on 25,000 rows across 10 tenants and records a tenant-scoped EXPLAIN (ANALYZE, BUFFERS) plan. This synthetic measurement is a regression baseline, not a substitute for production-like Render/database measurements or response-size measurement. Do not merge or deploy this draft PR.
 ## Runtime SQL parity follow-up — 2026-10-22
 
 The runtime aggregate query has been extracted into `server/src/lib/dashboard-exchange-aggregate.ts` and is now called by the dashboard route. The disposable PostgreSQL equivalence fixture invokes this exact helper (not a separately re-created query) and compares its weighted RUB/USDT, actual VND/USDT, planning inputs, direct/indirect VND/RUB cost basis, confirmed VND, target estimates, unconverted USDT, and flags against the existing TypeScript formulas. The fixture also contains a legacy target with an empty currency string and a second user's high-value exchange to protect normalization and tenant isolation.
@@ -114,3 +114,14 @@ The runtime aggregate query has been extracted into `server/src/lib/dashboard-ex
 Both CI workflows passed on head `a78e2c338672f70db3f8b09c6d480d4a53e55454`: [application verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39702792501) and [PostgreSQL migration/equivalence verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39702786051). A follow-up API test additionally asserts that the runtime SQL binds the authenticated user ID and the response query uses `take: 100`; that latest CI run is still required before treating the newest head as validated.
 
 Still open: run and record `EXPLAIN (ANALYZE, BUFFERS)` and response-size/timing measurements against representative history sizes, inspect the resulting plan, finish review/stabilization, and complete backup/restore/Render/smoke-test release gates. No merge or deployment is authorized by this work.
+
+## Disposable PostgreSQL performance baseline — 2026-10-22
+
+The CI workflow now runs `server/prisma/tests/benchmark-dashboard-exchange-aggregate.ts` after migrations and financial equivalence checks. It creates 25,000 exchange rows across 10 test tenants in the disposable PostgreSQL service, measures five executions of the exact `aggregateDashboardExchanges(userId)` runtime helper after warm-up, records a tenant-scoped `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` plan, and removes the test users in a `finally` block.
+
+Latest successful CI run: [#39703735011](https://github.com/PurpleeHead/FlowMoney/actions/runs/39703735011). Results on GitHub's ephemeral runner:
+- Runtime helper latency (five warm runs): 5.426, 5.315, 5.257, 5.324, 5.172 ms; median 5.315 ms.
+- The representative tenant-scoped aggregate plan used `Exchange_userId_createdAt_idx` via Bitmap Index Scan + Bitmap Heap Scan; 2,500 matching rows, 47 shared buffer hits, 0 shared reads, 0 temp blocks, 0.508 ms execution time for that EXPLAIN query.
+- Full mixed-mode runtime aggregate parity and tenant-isolation fixture passed in the same run.
+
+These figures are specific to a warm, local, synthetic CI database. They do not predict cold-cache, network, production-size, concurrent-load, or hosted PostgreSQL latency, and the EXPLAIN query is a representative tenant-scoped aggregate rather than a claim that every dashboard aggregate has an identical plan. Remaining before release: production-like query/response-size measurements, final review/stabilization, and operational backup/restore + Render + smoke-test gates. No merge or deployment is authorized by this work.
