@@ -74,18 +74,19 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
       (x.mode === 'RUB_USDT_VND' && n(x.rubSpent) > 0 && n(x.usdtReceived) > 0) ||
       (isTarget(x, 'USDT') && n(x.rubSpent) > 0 && n(x.targetReceived) > 0));
     const actual = rows.filter((x: any) => x.mode === 'RUB_USDT_VND' && n(x.vndReceived) > 0 && n(x.usdtReceived) > 0);
-    const planning = rows.filter((x: any) => x.mode !== 'RUB_VND' && !isDirectVnd(x) &&
+    const planning = rows.filter((x: any) => x.mode === 'RUB_USDT_VND' &&
       x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
     const direct = rows.filter((x: any) => {
       const vnd = x.mode === 'RUB_VND' ? n(x.vndReceived) : isDirectVnd(x) ? n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) : null;
       return n(x.rubSpent) > 0 && vnd != null && vnd > 0 &&
         (x.mode === 'RUB_VND' || isDirectVnd(x));
     });
-    const indirect = rows.filter((x: any) => x.mode !== 'RUB_VND' && !isDirectVnd(x) &&
+    const indirect = rows.filter((x: any) => x.mode === 'RUB_USDT_VND' &&
       n(x.rubSpent) > 0 && n(x.vndReceived) > 0);
     const estimatedTarget = rows.filter((x: any) => x.mode === 'RUB_TARGET' && !isDirectVnd(x) && x.targetVndEquivalent != null);
-    const estimatedUsdtRows = rows.filter((x: any) => x.mode !== 'RUB_VND' && !isDirectVnd(x) && x.vndReceived == null &&
-      ((isTarget(x, 'USDT') && x.targetReceived != null && x.targetVndEquivalent == null) || x.usdtReceived != null));
+    const estimatedUsdtRows = rows.filter((x: any) =>
+      (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
+      (isTarget(x, 'USDT') && x.vndReceived == null && x.targetReceived != null && x.targetVndEquivalent == null));
     return [{
       rubUsdtRub: eligibleRubUsdt.reduce((sum: number, x: any) => sum + n(x.rubSpent)!, 0),
       rubUsdtUsdt: eligibleRubUsdt.reduce((sum: number, x: any) => sum + (isTarget(x, 'USDT') ? n(x.targetReceived)! : n(x.usdtReceived)!), 0),
@@ -97,12 +98,15 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
       directVnd: direct.reduce((sum: number, x: any) => sum + (x.mode === 'RUB_VND' ? n(x.vndReceived)! : n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived)!), 0),
       indirectRub: indirect.reduce((sum: number, x: any) => sum + n(x.rubSpent)!, 0),
       indirectVnd: indirect.reduce((sum: number, x: any) => sum + n(x.vndReceived)!, 0),
-      confirmedVnd: rows.reduce((sum: number, x: any) => sum + (isDirectVnd(x) ? n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) ?? 0 : n(x.vndReceived) ?? 0), 0),
+      confirmedVnd: rows.reduce((sum: number, x: any) => sum + (
+        isDirectVnd(x) ? n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) :
+        x.mode === 'RUB_TARGET' ? 0 : n(x.vndReceived)
+      ), 0),
       estimatedTargetVnd: estimatedTarget.reduce((sum: number, x: any) => sum + n(x.targetVndEquivalent)!, 0),
       estimatedUsdt: estimatedUsdtRows.reduce((sum: number, x: any) => sum + (isTarget(x, 'USDT') ? n(x.targetReceived)! : n(x.usdtReceived)!), 0),
       hasEstimatedTargetVnd: estimatedTarget.length > 0,
       hasUnpricedUsdtTopUps: rows.some((x: any) => (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
-        (isTarget(x, 'USDT') && x.targetReceived != null && x.targetVndEquivalent == null)),
+        (isTarget(x, 'USDT') && x.vndReceived == null && x.targetReceived != null && x.targetVndEquivalent == null)),
     }];
   };
   expenseModel.aggregate = async (args: any) => {
@@ -399,6 +403,70 @@ describe('dashboard weighted rates preserve actual observations', () => {
       assert.ok(Math.abs(body.effectiveRubPerUsdt - (5400 / 60)) < 1e-8);
       assert.ok(body.planningVndPerUsdt != null);
       assert.equal(body.planningVndPerUsdt, 30000);
+    });
+  });
+});
+
+
+describe('dashboard ignores stale fields on non-VND target exchanges', () => {
+  it('does not treat legacy VND, USDT, or planning values on a GEL target as VND balance or rate inputs', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [
+      {
+        ...exchangeFixture(),
+        id: 'gel-target-stale-vnd',
+        mode: 'RUB_TARGET',
+        targetCurrency: 'GEL',
+        rubSpent: 1000,
+        targetReceived: 5,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        usdtReceived: 888,
+        planningVndPerUsdt: 999,
+        vndReceived: 999999,
+      },
+      {
+        ...exchangeFixture(),
+        id: 'gel-target-stale-planning-only',
+        mode: 'RUB_TARGET',
+        targetCurrency: 'GEL',
+        rubSpent: 1200,
+        targetReceived: 6,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        usdtReceived: 777,
+        planningVndPerUsdt: 30000,
+        vndReceived: null,
+      },
+    ];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        planningVndPerUsdt: number | null;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+        effectiveVndPerUsdt: number | null;
+        effectiveVndPerRub: number | null;
+        effectiveRubPerUsdt: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 0, 'non-VND RUB_TARGET rows must not count stale vndReceived as confirmed VND');
+      assert.equal(body.estimatedUnconvertedVnd, 0, 'stale non-VND target fields must not create a VND estimate');
+      assert.equal(body.planningVndPerUsdt, null, 'planning rates are only valid for RUB_USDT_VND records');
+      assert.equal(body.balanceVnd, 0, 'stale target values must not inflate the estimated balance');
+      assert.equal(body.balanceIsEstimated, false);
+      assert.equal(body.effectiveVndPerUsdt, null, 'non-VND target rows are not actual or planning VND/USDT observations');
+      assert.equal(body.effectiveVndPerRub, null, 'non-VND target rows are not direct or indirect VND/RUB cost inputs');
+      assert.equal(body.effectiveRubPerUsdt, null, 'stale USDT fields on non-USDT targets must not affect the RUB/USDT rate');
     });
   });
 });
