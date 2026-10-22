@@ -33,6 +33,22 @@ const expectedMonthExpenseVndForTenant = (tenant: number) => Array.from({ length
   date: new Date(seedReferenceTime.getTime() - (i % 300) * DAY_MS),
 })).reduce((total, expense) => total + (expense.date >= currentMonthStart ? expense.base + tenant * 100 : 0), 0);
 const expectedCardUsdtForTenant = (tenant: number) => EXPECTED_CARD_USDT + tenant * 0.01 * EXPENSES_PER_USER;
+/** Linear-interpolated percentile over a non-empty sample; keeps P50 conventional for even-sized samples. */
+function percentile(values: number[], p: number): number {
+  assert.ok(values.length > 0, 'percentile requires at least one observation');
+  assert.ok(Number.isFinite(p) && p >= 0 && p <= 1, 'percentile must be between 0 and 1');
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = (sorted.length - 1) * p;
+  const lowerIndex = Math.floor(rank);
+  const upperIndex = Math.ceil(rank);
+  const interpolated = sorted[lowerIndex] + (sorted[upperIndex] - sorted[lowerIndex]) * (rank - lowerIndex);
+  return Number(interpolated.toFixed(3));
+}
+
+assert.equal(percentile([10, 20], 0.5), 15, 'P50 for an even sample is the mean of the two central observations');
+assert.equal(percentile([10, 20], 0.95), 19.5, 'P95 uses linear interpolation instead of rounding every small sample to its maximum');
+assert.equal(percentile([40, 10, 30, 20], 0.5), 25, 'percentiles sort observations before calculating rank');
+
 const expectedRubPerUsdtForTenant = (tenant: number) => {
   let rubTotal = 0;
   let usdtTotal = 0;
@@ -218,8 +234,8 @@ try {
     dashboardApiTotalExpenseCount: dashboardBody.totalExpenseCount,
     concurrentDashboardRequests: concurrentRequestCount,
     concurrentDashboardLatencyMs: concurrentApiTimings,
-    concurrentDashboardLatencyP50Ms: sortedConcurrentApiTimings[Math.floor((sortedConcurrentApiTimings.length - 1) * 0.5)],
-    concurrentDashboardLatencyP95Ms: sortedConcurrentApiTimings[Math.ceil((sortedConcurrentApiTimings.length - 1) * 0.95)],
+    concurrentDashboardLatencyP50Ms: percentile(sortedConcurrentApiTimings, 0.5),
+    concurrentDashboardLatencyP95Ms: percentile(sortedConcurrentApiTimings, 0.95),
     runtimeAggregateExplainAnalyze: runtimePlan,
     selectiveTenantExplainAnalyze: scopedPlan,
   }, null, 2));
