@@ -107,7 +107,8 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
               AND "vndReceived" IS NULL
               AND (( "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
                     AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
-                OR "usdtReceived" IS NOT NULL)
+                OR (NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT')
+                    AND "usdtReceived" IS NOT NULL))
               THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
                         THEN COALESCE("targetReceived", 0) ELSE "usdtReceived" END
             ELSE 0 END), 0) AS "estimatedUnpricedUsdt",
