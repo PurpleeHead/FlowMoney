@@ -79,6 +79,10 @@ describe('printed receipt total detection', () => {
     expect(parseReceiptPrintedTotal('Subtotal 40.000\nCash 50.000\nChange 10.000')).toBeNull();
   });
 
+  it('does not treat Vietnamese goods subtotal labels as the payable total', () => {
+    expect(parseReceiptPrintedTotal('Tổng cộng tiền hàng 120.000\nTạm tính 120.000')).toBeNull();
+  });
+
   it('does not infer a printed total when no labelled total exists', () => {
     expect(parseReceiptPrintedTotal('Coffee 40.000\nWater 12.000')).toBeNull();
   });
