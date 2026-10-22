@@ -67,7 +67,7 @@ export async function aggregateDashboardExchanges(userId: string): Promise<Dashb
               THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
                 THEN "targetReceived" ELSE "usdtReceived" END
             ELSE 0 END), 0)::float8 AS "estimatedUsdt",
-          COALESCE(bool_or("mode" = 'RUB_TARGET' AND NOT upper(trim("targetCurrency")) = 'VND'
+          COALESCE(bool_or("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) <> 'VND'
             AND "targetVndEquivalent" IS NOT NULL), false) AS "hasEstimatedTargetVnd",
           COALESCE(bool_or(
             ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
