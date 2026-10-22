@@ -208,6 +208,7 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 ## Latest verification — 2026-10-22 (dashboard limit test fidelity)
 
 - [x] Tightened the 105-exchange history regression so its Prisma test double now simulates the database-side `take: 100` limit instead of returning all rows and relying on the route's final array slice.
-- [x] The mock still returns all 105 rows for the separate all-history aggregate/count path, preserving the intended check that the activity window is bounded while totals include older records.
-- [ ] CI and Security results for this code change are pending; the GitHub Actions run lookup has not surfaced PR-triggered runs for the new SHA yet.
-- [ ] Performance benchmark results and production release hard stops remain open. No production DB access/mutation, Render setting change, merge, or deployment was performed.
+- [x] The mock now requires `take: 100` and `orderBy: { createdAt: 'desc' }` on the selected activity query; the separate all-history aggregate/count path still sees all 105 rows.
+- [x] CI [#1910](https://github.com/PurpleeHead/FlowMoney/actions/runs/39721441434) passed on exact code head `0d49bb5bf3d61906b2886289dc0c46c4e291aa16`; both `verify` and `verify-migrations` succeeded.
+- [x] Security [#282](https://github.com/PurpleeHead/FlowMoney/actions/runs/39721441479) passed on the same code head, including lockfile refresh workflow completion.
+- [ ] Representative-volume performance benchmark results and production release hard stops remain open. No production DB access/mutation, Render setting change, merge, or deployment was performed; PR #83 remains Draft.
