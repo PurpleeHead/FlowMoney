@@ -53,11 +53,12 @@ jobs:
           mkdir -p "$RUNNER_TEMP/flowmoney-backup"
           # Refuse unencrypted connections and unsupported server versions before dumping data.
           # The gate is covered by mocked-docker regression tests in CI.
+          pg_url="$(bash scripts/normalize-backup-db-url.sh)"
           pg_major="$(bash scripts/verify-backup-db-connection.sh)"
           postgres_image="postgres:${pg_major}"
           echo "Using PostgreSQL ${pg_major} client for the backup archive."
           docker run --rm \
-            -e DATABASE_URL="$DATABASE_URL" \
+            -e DATABASE_URL="$pg_url" \
             -v "$RUNNER_TEMP/flowmoney-backup:/backup" \
             "$postgres_image" \
             sh -euc 'pg_dump "$DATABASE_URL" --format=custom --no-owner --no-acl --file=/backup/flowmoney.dump'
