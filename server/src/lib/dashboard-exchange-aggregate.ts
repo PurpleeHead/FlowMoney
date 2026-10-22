@@ -59,7 +59,7 @@ export function dashboardExchangeAggregateQuery(userId: string): Prisma.Sql {
           COALESCE(SUM(CASE
             WHEN ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
               OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
-                AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+                AND "vndReceived" IS NULL AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
               THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
                 THEN "targetReceived" ELSE "usdtReceived" END
             ELSE 0 END), 0)::float8 AS "estimatedUsdt",
