@@ -59,6 +59,6 @@ Create a private R2 bucket and a dedicated bucket-scoped access key. Do not reus
 
 - GitHub Actions backup workflow is only scheduled after the workflow is merged to `main`; it cannot access production secrets from an unmerged draft PR.
 - Cloudflare R2 credentials and the database backup URL must be configured by the account owner; these credentials are not currently available to this workflow.
-- The workflow validates the dump and uploaded object, but the first successful backup still requires a separate manual restore drill.
+- The workflow detects the database server major version and uses matching `pg_dump`/`pg_restore` clients (PostgreSQL 14+). It validates the dump archive and uploaded object, but the first successful backup still requires a separate manual restore drill.
 - Free tiers are not an SLA. Keep usage under the published quota and review provider policies periodically.
 - Do not switch the live service to `main`, trigger a production deploy, or run production migrations until the required checks and backup/restore gate are complete.
