@@ -18,11 +18,30 @@ export async function fetchAllCursorPages<T>(
   let cursor: string | null = null;
 
   for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
-    const page = await fetchPage(cursor);
-    items.push(...page.items);
+    const page: unknown = await fetchPage(cursor);
+    if (
+      page === null ||
+      typeof page !== 'object' ||
+      !Array.isArray((page as CursorPage<T>).items) ||
+      typeof (page as CursorPage<T>).hasMore !== 'boolean' ||
+      !(
+        (page as CursorPage<T>).nextCursor === null ||
+        typeof (page as CursorPage<T>).nextCursor === 'string'
+      )
+    ) {
+      throw new Error('Export stopped because the API returned an invalid page response.');
+    }
 
-    if (!page.hasMore) return items;
-    if (!page.nextCursor) {
+    const validPage = page as CursorPage<T>;
+    items.push(...validPage.items);
+
+    if (!validPage.hasMore) {
+      if (validPage.nextCursor !== null) {
+        throw new Error('Export stopped because the API returned a cursor for the final page.');
+      }
+      return items;
+    }
+    if (!validPage.nextCursor) {
       throw new Error('Export stopped because the API did not return a continuation cursor.');
     }
     if (seenCursors.has(page.nextCursor) || page.nextCursor === cursor) {
