@@ -35,6 +35,8 @@ try {
     { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 5000, targetReceived: 56, planningVndPerUsdt: 26_000 },
     // A valued direct USDT target may retain a stale legacy usdtReceived value; don't count both buckets.
     { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 0, targetReceived: 10, targetToVndRate: 50_000, targetVndEquivalent: 500_000, usdtReceived: 10 },
+    // If actual VND was later recorded, don't add a stale target valuation on top.
+    { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 1000, targetReceived: 10, targetVndEquivalent: 500_000, vndReceived: 510_000 },
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
     // Canonical VND must win over a stale legacy vndReceived value.
     { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999, usdtReceived: 10 },
@@ -180,6 +182,8 @@ try {
       COALESCE(SUM(CASE
         WHEN "mode" = 'RUB_TARGET'
           AND ("targetCurrency" IS NULL OR upper(trim("targetCurrency")) <> 'VND')
+          AND "vndReceived" IS NULL
+          AND "targetVndEquivalent" > 0
           THEN "targetVndEquivalent"
         ELSE 0
       END), 0) AS "estimatedTargetVnd",
@@ -230,7 +234,7 @@ try {
     FROM "Exchange"
     WHERE "userId" = ${mainUserId}
   `;
-  assert.equal(Number(budgetAggregate.confirmedVnd), 3_135_000,
+  assert.equal(Number(budgetAggregate.confirmedVnd), 3_645_000,
     'confirmed VND aggregate must count direct targets once, preserve explicit zero outcomes, and include only recorded non-direct outcomes');
   assert.equal(Number(budgetAggregate.estimatedTargetVnd), 1_420_000,
     'estimated non-VND target value must stay separate from confirmed VND');
