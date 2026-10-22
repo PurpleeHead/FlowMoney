@@ -182,7 +182,7 @@ try {
       END), 0) AS "estimatedTargetVnd",
       COALESCE(SUM(CASE
         WHEN "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
           AND "vndReceived" IS NULL
           AND "usdtReceived" IS NOT NULL
           AND "planningVndPerUsdt" IS NOT NULL
@@ -191,7 +191,7 @@ try {
       END), 0) AS "plannedUsdt",
       COALESCE(SUM(CASE
         WHEN "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
           AND "vndReceived" IS NULL
           AND "usdtReceived" IS NOT NULL
           AND "planningVndPerUsdt" IS NOT NULL
