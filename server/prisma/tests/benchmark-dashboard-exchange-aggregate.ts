@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../src/services/prisma.js';
-import { aggregateDashboardExchanges } from '../../src/lib/dashboard-exchange-aggregate.js';
+import { aggregateDashboardExchanges, dashboardExchangeAggregateQuery } from '../../src/lib/dashboard-exchange-aggregate.js';
 
 const suffix = `dashboard-aggregate-benchmark-${Date.now()}`;
 const users: string[] = [];
@@ -60,12 +61,9 @@ try {
   const historyPayloadBytes = Buffer.byteLength(JSON.stringify(history), 'utf8');
   assert.equal(history.length, 100, 'dashboard history response must remain capped at 100 exchanges');
 
-  const plans = await prisma.$queryRaw<Array<{ 'QUERY PLAN': Array<Record<string, unknown>> }>>`
-    EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-    SELECT COALESCE(SUM("rubSpent"), 0)
-    FROM "Exchange"
-    WHERE "userId" = ${targetUserId}
-  `;
+  const plans = await prisma.$queryRaw<Array<{ 'QUERY PLAN': Array<Record<string, unknown>> }>>(
+    Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${dashboardExchangeAggregateQuery(targetUserId)}`,
+  );
   const plan = plans[0]?.['QUERY PLAN']?.[0];
   assert.ok(plan, 'PostgreSQL must return an EXPLAIN ANALYZE plan');
   const planText = JSON.stringify(plan);
@@ -84,7 +82,7 @@ try {
     recentHistoryRows: history.length,
     recentHistoryQueryMs: historyQueryMs,
     recentHistoryPayloadBytes: historyPayloadBytes,
-    tenantScopedExplainAnalyze: plan,
+    runtimeAggregateExplainAnalyze: plan,
   }, null, 2));
 } finally {
   if (users.length) await prisma.user.deleteMany({ where: { id: { in: users } } });
