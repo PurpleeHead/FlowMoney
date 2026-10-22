@@ -18,6 +18,8 @@ const EXPENSES_PER_USER = 1_000;
 const TENANT_COUNT = 10;
 const EXPECTED_EXPENSE_VND = Array.from({ length: EXPENSES_PER_USER }, (_, i) => 20_000 + (i % 37) * 1_000)
   .reduce((total, amount) => total + amount, 0);
+const EXPECTED_CARD_USDT = Array.from({ length: EXPENSES_PER_USER }, (_, i) => 0.8 + (i % 13) / 10)
+  .reduce((total, amount) => total + amount, 0);
 
 try {
   // Disposable CI database only: model a multi-tenant table with 25k exchange rows.
@@ -103,12 +105,14 @@ try {
   const apiPayload = await apiResponse.text();
   const dashboardApiMs = Number((performance.now() - apiStarted).toFixed(3));
   assert.equal(apiResponse.status, 200, `dashboard API benchmark failed: ${apiPayload}`);
-  const dashboardBody = JSON.parse(apiPayload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; observedVnd: number; expenses: unknown[]; exchanges: unknown[] };
+  const dashboardBody = JSON.parse(apiPayload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; observedVnd: number; observedUsdt: number; observedVndPerUsdt: number; expenses: unknown[]; exchanges: unknown[] };
   assert.equal(dashboardBody.totalExchangeCount, EXCHANGES_PER_USER, 'real dashboard response counts full tenant history');
   assert.equal(dashboardBody.exchanges.length, 100, 'real dashboard response returns only bounded exchange history');
   assert.equal(dashboardBody.totalExpenseCount, EXPENSES_PER_USER, 'real dashboard response counts full tenant expense history');
   assert.equal(dashboardBody.totalVnd, EXPECTED_EXPENSE_VND, 'real dashboard response sums all and only this tenant\'s expenses');
   assert.equal(dashboardBody.observedVnd, EXPECTED_EXPENSE_VND, 'weighted card-purchase rate uses all eligible priced expenses');
+  assert.ok(Math.abs(dashboardBody.observedUsdt - EXPECTED_CARD_USDT) < 0.000001, 'weighted card-purchase denominator includes all tenant USDT spend');
+  assert.ok(Math.abs(dashboardBody.observedVndPerUsdt - EXPECTED_EXPENSE_VND / EXPECTED_CARD_USDT) < 0.000001, 'observed VND/USDT rate is weighted by the full expense history');
   assert.equal(dashboardBody.expenses.length, EXPENSES_PER_USER, 'real dashboard response includes the chart expense window');
   const dashboardResponsePayloadBytes = Buffer.byteLength(apiPayload, 'utf8');
 
