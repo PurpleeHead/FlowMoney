@@ -15,6 +15,7 @@ const originalExpenseAggregate = expenseModel.aggregate;
 const originalExpenseCount = expenseModel.count;
 const originalExchangeFindMany = exchangeModel.findMany;
 const originalExchangeCount = exchangeModel.count;
+const originalRawQuery = prisma.$queryRaw;
 const previousSecret = process.env.JWT_SECRET;
 let dashboardAggregateArgs: any[] = [];
 
@@ -25,6 +26,7 @@ afterEach(() => {
   expenseModel.count = originalExpenseCount;
   exchangeModel.findMany = originalExchangeFindMany;
   exchangeModel.count = originalExchangeCount;
+  (prisma as any).$queryRaw = originalRawQuery;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
@@ -40,6 +42,46 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   expenseModel.count = async (args: any) => {
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time expense count must be scoped to the authenticated user');
     return (await expenseModel.findMany({})).length;
+  };
+  (prisma as any).$queryRaw = async () => {
+    const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
+    const n = (value: any) => value == null ? null : Number(value);
+    const isTarget = (x: any, currency: string) => x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === currency;
+    const isDirectVnd = (x: any) => isTarget(x, 'VND');
+    const eligibleRubUsdt = rows.filter((x: any) =>
+      (x.mode === 'RUB_USDT_VND' && n(x.rubSpent) > 0 && n(x.usdtReceived) > 0) ||
+      (isTarget(x, 'USDT') && n(x.rubSpent) > 0 && n(x.targetReceived) > 0));
+    const actual = rows.filter((x: any) => x.mode === 'RUB_USDT_VND' && n(x.vndReceived) > 0 && n(x.usdtReceived) > 0);
+    const planning = rows.filter((x: any) => x.mode !== 'RUB_VND' && !isDirectVnd(x) &&
+      x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
+    const direct = rows.filter((x: any) => {
+      const vnd = x.mode === 'RUB_VND' ? n(x.vndReceived) : isDirectVnd(x) ? n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) : null;
+      return n(x.rubSpent) > 0 && vnd != null && vnd > 0 &&
+        (x.mode === 'RUB_VND' || isDirectVnd(x));
+    });
+    const indirect = rows.filter((x: any) => x.mode !== 'RUB_VND' && !isDirectVnd(x) &&
+      n(x.rubSpent) > 0 && n(x.vndReceived) > 0);
+    const estimatedTarget = rows.filter((x: any) => x.mode === 'RUB_TARGET' && !isDirectVnd(x) && x.targetVndEquivalent != null);
+    const estimatedUsdtRows = rows.filter((x: any) => x.mode !== 'RUB_VND' && !isDirectVnd(x) && x.vndReceived == null &&
+      ((isTarget(x, 'USDT') && x.targetReceived != null && x.targetVndEquivalent == null) || x.usdtReceived != null));
+    return [{
+      rubUsdtRub: eligibleRubUsdt.reduce((sum: number, x: any) => sum + n(x.rubSpent)!, 0),
+      rubUsdtUsdt: eligibleRubUsdt.reduce((sum: number, x: any) => sum + (isTarget(x, 'USDT') ? n(x.targetReceived)! : n(x.usdtReceived)!), 0),
+      actualVndUsdtVnd: actual.reduce((sum: number, x: any) => sum + n(x.vndReceived)!, 0),
+      actualVndUsdtUsdt: actual.reduce((sum: number, x: any) => sum + n(x.usdtReceived)!, 0),
+      planningUsdt: planning.reduce((sum: number, x: any) => sum + n(x.usdtReceived)!, 0),
+      planningWeightedVnd: planning.reduce((sum: number, x: any) => sum + n(x.usdtReceived)! * n(x.planningVndPerUsdt)!, 0),
+      directRub: direct.reduce((sum: number, x: any) => sum + n(x.rubSpent)!, 0),
+      directVnd: direct.reduce((sum: number, x: any) => sum + (x.mode === 'RUB_VND' ? n(x.vndReceived)! : n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived)!), 0),
+      indirectRub: indirect.reduce((sum: number, x: any) => sum + n(x.rubSpent)!, 0),
+      indirectVnd: indirect.reduce((sum: number, x: any) => sum + n(x.vndReceived)!, 0),
+      confirmedVnd: rows.reduce((sum: number, x: any) => sum + (isDirectVnd(x) ? n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) ?? 0 : n(x.vndReceived) ?? 0), 0),
+      estimatedTargetVnd: estimatedTarget.reduce((sum: number, x: any) => sum + n(x.targetVndEquivalent)!, 0),
+      estimatedUsdt: estimatedUsdtRows.reduce((sum: number, x: any) => sum + (isTarget(x, 'USDT') ? n(x.targetReceived)! : n(x.usdtReceived)!), 0),
+      hasEstimatedTargetVnd: estimatedTarget.length > 0,
+      hasUnpricedUsdtTopUps: rows.some((x: any) => (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
+        (isTarget(x, 'USDT') && x.targetReceived != null && x.targetVndEquivalent == null)),
+    }];
   };
   expenseModel.aggregate = async (args: any) => {
     dashboardAggregateArgs.push(args);
@@ -245,6 +287,7 @@ describe('dashboard query shape', () => {
     ].sort());
     assert.deepEqual(exchangeArgs.where, { userId: 'dashboard-user' });
     assert.deepEqual(exchangeArgs.orderBy, { createdAt: 'desc' });
+    assert.equal(exchangeArgs.take, 100, 'only recent exchange history should be loaded into application memory');
     assert.equal(dashboardAggregateArgs.length, 3);
     // Count queries are independent of the recent history page and always tenant-scoped.
     assert.ok(true);
