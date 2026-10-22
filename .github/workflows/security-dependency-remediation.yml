@@ -18,7 +18,7 @@ concurrency:
 jobs:
   refresh-lockfile:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Check out pull request
         uses: actions/checkout@v4
@@ -34,11 +34,14 @@ jobs:
           node --version
           npm --version
       - name: Regenerate lockfile from manifests
-        run: npm install --package-lock-only --ignore-scripts --no-audit --registry=https://registry.npmjs.org/
+        timeout-minutes: 10
+        run: npm install --package-lock-only --ignore-scripts --no-audit --fetch-retries=3 --fetch-timeout=120000 --registry=https://registry.npmjs.org/
       - name: Enforce patched deepmerge-ts in lockfile
-        run: npm update deepmerge-ts --package-lock-only --ignore-scripts --no-audit --registry=https://registry.npmjs.org/
+        timeout-minutes: 10
+        run: npm update deepmerge-ts --package-lock-only --ignore-scripts --no-audit --fetch-retries=3 --fetch-timeout=120000 --registry=https://registry.npmjs.org/
       - name: Install exact lockfile
-        run: npm ci --registry=https://registry.npmjs.org/
+        timeout-minutes: 15
+        run: npm ci --fetch-retries=3 --fetch-timeout=120000 --registry=https://registry.npmjs.org/
       - name: Generate Prisma client
         run: npm run db:generate
       - name: Run test suites
