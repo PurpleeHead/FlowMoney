@@ -35,6 +35,13 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
   // as PostgreSQL. This keeps route tests independent of a live database.
   dashboardAggregateArgs = [];
+  const exchangeFindManyFixture = exchangeModel.findMany;
+  exchangeModel.findMany = async (args: any = {}) => {
+    const rows = await exchangeFindManyFixture(args);
+    // Match Prisma's bounded result behavior in API tests; summary aggregation mocks
+    // intentionally omit take so they can still see the complete fixture history.
+    return args.take == null ? rows : rows.slice(0, args.take);
+  };
   exchangeModel.count = async (args: any) => {
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time exchange count must be scoped to the authenticated user');
     return (await exchangeModel.findMany({ where: { userId: 'dashboard-user' } })).length;
