@@ -105,7 +105,7 @@ describe('journal API integration', () => {
       assert.deepEqual(expenseArgs.where.userId, 'journal-user');
       assert.deepEqual(exchangeArgs.where.userId, 'journal-user');
       assert.deepEqual(movementArgs.where.userId, 'journal-user');
-      assert.equal(expenseArgs.where.OR.length, 1);
+      assert.equal(expenseArgs.where.OR.length, 2);
       assert.equal(exchangeArgs.where.OR.length, 2);
       assert.equal(movementArgs.where.OR.length, 2);
       assert.deepEqual(exchangeArgs.where.OR[1], {
@@ -188,11 +188,11 @@ describe('journal API integration', () => {
     let exchangeCalls = 0;
     expenseModel.findMany = async () => {
       expenseCalls++;
-      return expenseCalls === 1 ? expenseRows : [];
+      return expenseCalls === 1 ? expenseRows : [expenseRows[1]];
     };
     exchangeModel.findMany = async () => {
       exchangeCalls++;
-      return exchangeCalls === 1 ? [exchangeRow] : [exchangeRow];
+      return exchangeCalls === 1 ? [exchangeRow] : [];
     };
     movementModel.findMany = async () => [];
 
@@ -206,13 +206,13 @@ describe('journal API integration', () => {
         hasMore: boolean;
         nextCursor: string | null;
       };
-      assert.deepEqual(firstBody.entries.map(entry => entry.id), ['expense:expense-a', 'expense:expense-b']);
+      assert.deepEqual(firstBody.entries.map(entry => entry.id), ['exchange:exchange-a', 'expense:expense-a']);
       assert.equal(firstBody.hasMore, true);
       assert.ok(firstBody.nextCursor);
       const decoded = JSON.parse(Buffer.from(firstBody.nextCursor!, 'base64url').toString('utf8'));
       assert.deepEqual(decoded, {
         occurredAt: timestamp.toISOString(),
-        id: 'expense:expense-b',
+        id: 'expense:expense-a',
         type: 'expense',
       });
 
@@ -225,7 +225,7 @@ describe('journal API integration', () => {
         hasMore: boolean;
         nextCursor: string | null;
       };
-      assert.deepEqual(secondBody.entries.map(entry => entry.id), ['exchange:exchange-a']);
+      assert.deepEqual(secondBody.entries.map(entry => entry.id), ['expense:expense-b']);
       assert.equal(secondBody.hasMore, false);
       assert.equal(secondBody.nextCursor, null);
     });
