@@ -107,6 +107,10 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
     const rows = await expenseModel.findMany({});
     const where = args.where ?? {};
     const filtered = rows.filter((row: any) => {
+      // Real PostgreSQL applies userId before aggregation. Mirror that predicate in
+      // the test double too, so a missing/wrong tenant filter cannot pass on fixtures
+      // that happen to contain only one user's rows.
+      if (where.userId != null && row.userId != null && row.userId !== where.userId) return false;
       if (where.date?.gte && new Date(row.date) < where.date.gte) return false;
       if (where.amountVnd?.gt != null && !(row.amountVnd != null && Number(row.amountVnd) > where.amountVnd.gt)) return false;
       if (where.usdtCharged?.gt != null && !(row.usdtCharged != null && Number(row.usdtCharged) > where.usdtCharged.gt)) return false;
