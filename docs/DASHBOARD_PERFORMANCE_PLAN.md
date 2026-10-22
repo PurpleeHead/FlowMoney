@@ -182,3 +182,19 @@ Latest synthetic CI sample (35,000 seeded rows):
 - Exact runtime aggregate `EXPLAIN ANALYZE`: 5.011 ms; selective tenant-only query: 0.478 ms.
 
 This is a synthetic, single-run, warm ephemeral CI baseline. It does not include a hosted app-to-database network hop, cold-cache measurements, realistic expense distributions or long-duration concurrency. The benchmark is confined to the disposable CI PostgreSQL service and deletes its synthetic users in cleanup. Hosted performance/load testing, final financial review/stabilization, and operational backup/restore/Render/smoke-test gates remain outstanding. PR #96 remains Draft and must not be merged or deployed without explicit authorization.
+
+
+## Current-month financial assertion and latest repeat — 2026-10-22 (head 8bfee97d)
+
+The expense-inclusive benchmark now also checks `monthVnd` against the independently computed sum for the current local calendar month, in addition to all-time VND, card-purchase VND/USDT denominator and weighted rate. This supplements the dashboard API unit tests for month-scoped totals and catches accidental leakage of all-time totals into the monthly card.
+
+Both workflows passed on head `8bfee97d2b77237e36c5d5562aa08a5a80387a74`: [application verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39705497032) and [PostgreSQL/migration/benchmark verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39705500824).
+
+Latest repeat with 35,000 seeded rows (10 tenants, 2,500 exchanges + 1,000 expenses per tenant):
+- Full dashboard API: 48.270 ms; response 248,835 bytes.
+- Ten concurrent requests: p50 145.589 ms; p95 150.334 ms.
+- Exchange aggregate helper median: 2.994 ms.
+- Bounded exchange history: 100 rows in 2.783 ms; history JSON 34,879 bytes.
+- Exact runtime aggregate EXPLAIN ANALYZE: 2.634 ms; selective tenant-only query: 0.332 ms.
+
+Compared with the prior run, this is a lower latency sample, but the difference should not be interpreted as a guaranteed improvement: ephemeral CI timings vary with runner/cache/connection state. Continue to use repeated hosted measurements before setting production latency expectations. This benchmark remains synthetic and disposable; it does not alter production data. PR #96 remains Draft, unmerged and undeployed.
