@@ -106,6 +106,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         mode: x.mode,
         rubSpent: Number(x.rubSpent),
         vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
         targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
         targetCurrency: x.targetCurrency,
       }))),
