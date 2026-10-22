@@ -135,6 +135,39 @@ describe('dashboard exchange rates', () => {
   });
 });
 
+describe('dashboard confirmed direct VND outcomes', () => {
+  it('prefers actual net VND and counts a direct-target exchange only once', async () => {
+    expenseModel.findMany = async () => [];
+    const token = jwt.sign(
+      { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+      'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+    );
+
+    for (const scenario of [
+      { vndReceived: 900000, expected: 900000, label: 'net outcome' },
+      { vndReceived: 0, expected: 0, label: 'explicit zero outcome' },
+    ]) {
+      exchangeModel.findMany = async () => [{
+        ...exchangeFixture(),
+        mode: 'RUB_TARGET',
+        targetCurrency: 'VND',
+        targetReceived: 1000000,
+        targetVndEquivalent: 950000,
+        vndReceived: scenario.vndReceived,
+      }];
+
+      await withApi(async baseUrl => {
+        const response = await fetch(`${baseUrl}/api/dashboard`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(response.status, 200);
+        const body = await response.json() as { confirmedExchangeVnd: number };
+        assert.equal(body.confirmedExchangeVnd, scenario.expected, scenario.label);
+      });
+    }
+  });
+});
+
 describe('dashboard historical expense snapshots', () => {
   it('returns the stored RUB valuation instead of recalculating past expenses from current exchange rates', async () => {
     expenseModel.findMany = async () => [{
