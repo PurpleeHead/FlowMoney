@@ -136,3 +136,13 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 - [x] Extended the canonical direct-VND regression assertion to verify the observed VND/RUB rate remains `250` (1,000,000 VND / 4,000 RUB) even when stale legacy `vndReceived` is 9,999,999.
 - [x] Follow-up TypeScript annotation fix is included in `16f499dcc826721f883b455940ed7cec3e01b9ee`; both CI and Security are green on that commit. The intermediate commit `905a25fa244c6a204932e9fd1083dd799f190468` failed build because the test response type omitted `effectiveVndPerRub`; the annotation is now corrected.
+
+
+## Latest PR #83 verification — 2026-10-22 (direct-target balance aggregate regressions)
+
+- [x] CI workflow run [#1858](https://github.com/PurpleeHead/FlowMoney/actions/runs/39718139555) passed on exact head `3b25523f879e8c0c5690268bea032452dd0fa93a`; both `verify` and `verify-migrations` succeeded, including disposable-PostgreSQL aggregate-equivalence, transaction rollback/concurrency, wallet preflight fixture, migration idempotency, dependency audits, tests, and production build.
+- [x] Security dependency-remediation run [#256](https://github.com/PurpleeHead/FlowMoney/actions/runs/39718139601) passed on the same exact head, including tests, build, audit, and review-artifact upload.
+- [x] PostgreSQL fixture now covers a valued direct RUB → USDT target retaining a stale legacy `usdtReceived` field; its recorded VND valuation remains in the estimated-target bucket and is not counted again as an unpriced USDT balance.
+- [x] PostgreSQL fixture also covers a legacy direct RUB → VND row with stale `usdtReceived`, ensuring it cannot inflate the unpriced-USDT balance estimate. Planned USDT totals continue to include eligible direct USDT targets without promoting planning rates to observed rates.
+- [ ] Production database identity, encrypted backup and isolated restore, legacy wallet preflight against the approved target, live Render configuration reconciliation, explicit release approval, and production smoke tests remain blockers. The live service still points at branch `review/pr-3-fix`, auto-deploy is enabled, health check is `/api/health`, and startup runs `prisma migrate deploy`; the only listed database is the expiring test resource `flowmoney-test-db`.
+- [ ] No production database was queried or changed, no Render settings were changed, and no merge or deployment was performed. PR #83 remains Draft until the operational gates and review are complete.
