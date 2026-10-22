@@ -47,7 +47,7 @@ try {
     // Planning rate is not an observed VND outcome.
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1000, usdtReceived: 10, vndReceived: null, planningVndPerUsdt: 25_000 },
     // A legacy target with a missing currency still contributes its explicit VND estimate.
-    { mode: 'RUB_TARGET', targetCurrency: null, rubSpent: 500, targetReceived: 2, targetVndEquivalent: 3_000 },
+    { mode: 'RUB_TARGET', targetCurrency: '', rubSpent: 500, targetReceived: 2, targetVndEquivalent: 3_000 },
   ] as const;
 
   for (const row of rows) {
