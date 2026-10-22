@@ -14,6 +14,7 @@ const suffix = `dashboard-aggregate-benchmark-${Date.now()}`;
 const users: string[] = [];
 let apiServer: ReturnType<typeof createServer> | undefined;
 const EXCHANGES_PER_USER = 2_500;
+const EXPENSES_PER_USER = 1_000;
 const TENANT_COUNT = 10;
 
 try {
@@ -33,6 +34,19 @@ try {
         targetReceived: i % 7 === 0 ? 12 + (i % 5) : null,
         vndReceived: i % 13 === 0 ? null : 200_000 + (i % 31) * 1_000,
         planningVndPerUsdt: i % 13 === 0 ? 24_000 : null,
+      })),
+    });
+    await prisma.expense.createMany({
+      data: Array.from({ length: EXPENSES_PER_USER }, (_, i) => ({
+        userId: user.id,
+        title: `Synthetic dashboard expense ${i + 1}`,
+        category: i % 4 === 0 ? 'Food' : i % 4 === 1 ? 'Transport' : i % 4 === 2 ? 'Shopping' : 'Other',
+        amount: 20_000 + (i % 37) * 1_000,
+        currency: 'VND',
+        amountVnd: 20_000 + (i % 37) * 1_000,
+        amountRub: 60 + (i % 19),
+        usdtCharged: 0.8 + (i % 13) / 10,
+        date: new Date(Date.now() - (i % 300) * 24 * 60 * 60 * 1_000),
       })),
     });
   }
@@ -86,9 +100,11 @@ try {
   const apiPayload = await apiResponse.text();
   const dashboardApiMs = Number((performance.now() - apiStarted).toFixed(3));
   assert.equal(apiResponse.status, 200, `dashboard API benchmark failed: ${apiPayload}`);
-  const dashboardBody = JSON.parse(apiPayload) as { totalExchangeCount: number; exchanges: unknown[] };
+  const dashboardBody = JSON.parse(apiPayload) as { totalExchangeCount: number; totalExpenseCount: number; expenses: unknown[]; exchanges: unknown[] };
   assert.equal(dashboardBody.totalExchangeCount, EXCHANGES_PER_USER, 'real dashboard response counts full tenant history');
   assert.equal(dashboardBody.exchanges.length, 100, 'real dashboard response returns only bounded exchange history');
+  assert.equal(dashboardBody.totalExpenseCount, EXPENSES_PER_USER, 'real dashboard response counts full tenant expense history');
+  assert.equal(dashboardBody.expenses.length, EXPENSES_PER_USER, 'real dashboard response includes the chart expense window');
   const dashboardResponsePayloadBytes = Buffer.byteLength(apiPayload, 'utf8');
 
   // Small concurrency smoke benchmark catches connection-pool or tenant-scope
@@ -101,9 +117,11 @@ try {
     });
     const payload = await response.text();
     assert.equal(response.status, 200, `concurrent dashboard request failed: ${payload}`);
-    const body = JSON.parse(payload) as { totalExchangeCount: number; exchanges: unknown[] };
+    const body = JSON.parse(payload) as { totalExchangeCount: number; totalExpenseCount: number; expenses: unknown[]; exchanges: unknown[] };
     assert.equal(body.totalExchangeCount, EXCHANGES_PER_USER, 'concurrent dashboard response keeps lifetime count scoped');
     assert.equal(body.exchanges.length, 100, 'concurrent dashboard response keeps history bounded');
+    assert.equal(body.totalExpenseCount, EXPENSES_PER_USER, 'concurrent dashboard response keeps lifetime expense count scoped');
+    assert.equal(body.expenses.length, EXPENSES_PER_USER, 'concurrent dashboard response keeps the chart expense window');
     return Number((performance.now() - started).toFixed(3));
   }));
   const sortedConcurrentApiTimings = [...concurrentApiTimings].sort((a, b) => a - b);
@@ -133,8 +151,11 @@ try {
     benchmark: 'dashboard-exchange-aggregate',
     database: 'disposable CI PostgreSQL only',
     exchangeRows: EXCHANGES_PER_USER * TENANT_COUNT,
+    expenseRows: EXPENSES_PER_USER * TENANT_COUNT,
+    totalSeededRows: (EXCHANGES_PER_USER + EXPENSES_PER_USER) * TENANT_COUNT,
     tenantCount: TENANT_COUNT,
-    rowsPerTenant: EXCHANGES_PER_USER,
+    exchangesPerTenant: EXCHANGES_PER_USER,
+    expensesPerTenant: EXPENSES_PER_USER,
     aggregateHelperLatencyMs: timingsMs,
     aggregateLatencyMedianMs: [...timingsMs].sort((a, b) => a - b)[Math.floor(timingsMs.length / 2)],
     recentHistoryRows: history.length,
@@ -144,6 +165,8 @@ try {
     dashboardApiResponsePayloadBytes: dashboardResponsePayloadBytes,
     dashboardApiReturnedExchanges: dashboardBody.exchanges.length,
     dashboardApiTotalExchangeCount: dashboardBody.totalExchangeCount,
+    dashboardApiReturnedExpenses: dashboardBody.expenses.length,
+    dashboardApiTotalExpenseCount: dashboardBody.totalExpenseCount,
     concurrentDashboardRequests: concurrentRequestCount,
     concurrentDashboardLatencyMs: concurrentApiTimings,
     concurrentDashboardLatencyP50Ms: sortedConcurrentApiTimings[Math.floor((sortedConcurrentApiTimings.length - 1) * 0.5)],
