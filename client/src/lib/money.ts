@@ -1,3 +1,19 @@
+/** Planning fallback only; never presented as a live market quote. */
+export const DEFAULT_PLANNING_VND_PER_USDT = 25450;
+
+export function calculateBalanceEquivalents(
+  balanceVnd: number | null | undefined,
+  vndPerUsdt: number | null | undefined,
+  vndPerRub: number | null | undefined,
+): { vnd: number | null; usdt: number | null; rub: number | null } {
+  if (balanceVnd == null || !Number.isFinite(balanceVnd)) return { vnd: null, usdt: null, rub: null };
+  return {
+    vnd: balanceVnd,
+    usdt: Number.isFinite(vndPerUsdt) && Number(vndPerUsdt) > 0 ? balanceVnd / Number(vndPerUsdt) : null,
+    rub: Number.isFinite(vndPerRub) && Number(vndPerRub) > 0 ? balanceVnd / Number(vndPerRub) : null,
+  };
+}
+
 export type ExchangeInput = { rubSpent: number; usdtReceived: number; vndPerUsdt?: number; vndFee?: number };
 export type ExchangeResult = { vndReceived?: number; effectiveVndPerRub?: number; effectiveRubPerUsdt: number; effectiveVndPerUsdt?: number };
 
@@ -22,4 +38,82 @@ export function calculateObservedVndPerUsdt(purchases: Array<{ amountVnd: number
   const vnd = valid.reduce((sum, p) => sum + p.amountVnd, 0);
   const usdt = valid.reduce((sum, p) => sum + p.usdtCharged, 0);
   return usdt > 0 ? vnd / usdt : null;
+}
+
+/** Estimate RUB cost from VND using the observed VND/USDT rate and the recorded RUB/USDT exchange rate. */
+export function estimateRubFromVnd(amountVnd: number, vndPerUsdt: number | null | undefined, rubPerUsdt: number | null | undefined): number | null {
+  if (!Number.isFinite(amountVnd) || amountVnd <= 0 || !Number.isFinite(vndPerUsdt) || !vndPerUsdt || vndPerUsdt <= 0 || !Number.isFinite(rubPerUsdt) || !rubPerUsdt || rubPerUsdt <= 0) return null;
+  return amountVnd / vndPerUsdt * rubPerUsdt;
+}
+
+
+/** Calculate all rates for the same in-progress exchange, using only its entered amounts. */
+export function calculateActualExchangeRates(input: {
+  rubSpent: number;
+  usdtReceived: number;
+  vndReceived?: number | null;
+}): { effectiveRubPerUsdt: number; effectiveVndPerUsdt: number | null; effectiveVndPerRub: number | null } {
+  const { rubSpent, usdtReceived, vndReceived = null } = input;
+  if (!Number.isFinite(rubSpent) || rubSpent <= 0 || !Number.isFinite(usdtReceived) || usdtReceived <= 0) {
+    throw new Error('RUB spent and USDT received must be positive finite amounts.');
+  }
+  if (vndReceived != null && (!Number.isFinite(vndReceived) || vndReceived <= 0)) {
+    throw new Error('VND received must be a positive finite amount.');
+  }
+  return {
+    effectiveRubPerUsdt: rubSpent / usdtReceived,
+    effectiveVndPerUsdt: vndReceived == null ? null : vndReceived / usdtReceived,
+    effectiveVndPerRub: vndReceived == null ? null : vndReceived / rubSpent,
+  };
+}
+
+/** Parse common keyboard/paste formats without turning decimal values into thousands. */
+export function parseAmountInput(value: string): string {
+  const input = value.trim().replace(/\s/g, '').replace(/[^\d.,-]/g, '');
+  if (!input || input === '-') return input;
+  const comma = input.lastIndexOf(',');
+  const dot = input.lastIndexOf('.');
+  const hasComma = comma >= 0;
+  const hasDot = dot >= 0;
+
+  if (hasComma && hasDot) {
+    const decimalSeparator = comma > dot ? ',' : '.';
+    const splitAt = input.lastIndexOf(decimalSeparator);
+    const integer = input.slice(0, splitAt).replace(/[.,]/g, '').replace(/(?!^)-/g, '');
+    const fraction = input.slice(splitAt + 1).replace(/\D/g, '');
+    return fraction ? integer + '.' + fraction : integer + '.';
+  }
+
+  const separator = hasComma ? ',' : hasDot ? '.' : '';
+  if (!separator) return input.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
+  const parts = input.split(separator);
+  if (parts.length > 2) {
+    const groups = parts.slice(1);
+    if (groups.every(group => group.length === 3)) return parts.join('').replace(/\D/g, '');
+    const integer = parts.slice(0, -1).join('').replace(/\D/g, '');
+    const fraction = parts[parts.length - 1].replace(/\D/g, '');
+    return fraction ? integer + '.' + fraction : integer + '.';
+  }
+
+  const [whole = '', fraction = ''] = parts;
+  if (fraction.length === 3 && whole !== '0' && whole.length <= 3) {
+    return (whole + fraction).replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
+  }
+  const integer = whole.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
+  const decimal = fraction.replace(/\D/g, '');
+  return decimal ? integer + '.' + decimal : integer + '.';
+}
+
+/** Format exact decimal strings without converting the monetary value to Number. */
+export function formatExactDecimal(value: string | number | null, locale = 'en-US'): string {
+  if (value == null) return '';
+  const raw = String(value);
+  const match = raw.match(/^([+-]?)(\d+)(?:\.(\d+))?$/);
+  if (!match) return raw;
+  const sign = match[1] === '-' ? '-' : '';
+  const integer = BigInt(match[2]);
+  const grouped = new Intl.NumberFormat(locale, { maximumFractionDigits: 0, useGrouping: true }).format(integer);
+  const fraction = (match[3] ?? '').replace(/0+$/, '');
+  const decimalSeparator = new Intl.NumberFormat(locale).formatToParts(1.1).find(part => part.type === 'decimal')?.value ?? '.';
+  return sign + grouped + (fraction ? decimalSeparator + fraction : '');
 }

@@ -11,9 +11,13 @@ model User {
   id           String     @id @default(cuid())
   email        String     @unique
   passwordHash String
+  tokenVersion Int        @default(0)
+  name         String?
+  country      String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   wallets      Wallet[]
+  walletMovements WalletMovement[]
   exchanges    Exchange[]
   expenses     Expense[]
   receipts     Receipt[]
@@ -35,13 +39,19 @@ model Wallet {
 model Exchange {
   id                 String   @id @default(cuid())
   userId             String
+  mode               String   @default("RUB_USDT_VND")
+  targetCurrency     String   @default("VND")
+  targetReceived     Decimal? @db.Decimal(20, 8)
+  targetToVndRate    Decimal? @db.Decimal(20, 8)
+  targetVndEquivalent Decimal? @db.Decimal(20, 4)
   rubSpent           Decimal  @db.Decimal(20, 4)
-  usdtReceived       Decimal  @db.Decimal(20, 8)
+  usdtReceived       Decimal? @db.Decimal(20, 8)
   vndPerUsdt         Decimal? @db.Decimal(20, 4)
+  planningVndPerUsdt Decimal? @db.Decimal(20, 4)
   vndFee             Decimal  @default(0) @db.Decimal(20, 4)
   vndReceived        Decimal? @db.Decimal(20, 4)
   effectiveVndPerRub Decimal? @db.Decimal(20, 8)
-  effectiveRubPerUsdt Decimal @db.Decimal(20, 8)
+  effectiveRubPerUsdt Decimal? @db.Decimal(20, 8)
   createdAt          DateTime @default(now())
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -55,7 +65,7 @@ model Expense {
   category  String
   amount    Decimal  @db.Decimal(20, 6)
   currency  String
-  amountVnd   Decimal  @db.Decimal(20, 4)
+  amountVnd   Decimal? @db.Decimal(20, 4)
   amountRub   Decimal? @db.Decimal(20, 4)
   usdtCharged Decimal? @db.Decimal(20, 8)
   date        DateTime
@@ -80,3 +90,19 @@ model Receipt {
   @@index([userId, createdAt])
 }
 
+
+model WalletMovement {
+  id          String   @id @default(cuid())
+  userId      String
+  currency    String
+  amountDelta Decimal  @db.Decimal(20, 8)
+  kind        String
+  sourceKey   String   @unique
+  note        String?
+  occurredAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, currency, occurredAt])
+  @@index([userId, kind, currency])
+}

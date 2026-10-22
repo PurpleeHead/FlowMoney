@@ -1,0 +1,115 @@
+name: FLOWMONEY encrypted database backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flowmoney-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    # Backups are only allowed from the trusted production branch. Never run
+    # this workflow against untrusted pull-request code with database secrets.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.FLOWMONEY_BACKUP_DATABASE_URL }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      AGE_RECIPIENT: ${{ vars.FLOWMONEY_BACKUP_AGE_RECIPIENT }}
+      AWS_DEFAULT_REGION: auto
+    steps:
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in DATABASE_URL R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET AGE_RECIPIENT; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required GitHub secret/variable: $name"
+              exit 1
+            fi
+          done
+          if [[ "$DATABASE_URL" != postgresql://* && "$DATABASE_URL" != postgres://* ]]; then
+            echo "::error::FLOWMONEY_BACKUP_DATABASE_URL must be a PostgreSQL connection URL."
+            exit 1
+          fi
+      - name: Install backup tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes age awscli
+      - name: Create and verify PostgreSQL dump
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/flowmoney-backup"
+          # Use a client newer than the PostgreSQL versions commonly offered by
+          # managed hosts; do not print connection strings or dump contents.
+          docker run --rm \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -v "$RUNNER_TEMP/flowmoney-backup:/backup" \
+            postgres:18 \
+            sh -euc 'pg_dump "$DATABASE_URL" --format=custom --no-owner --no-acl --file=/backup/flowmoney.dump'
+          test -s "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump"
+          docker run --rm \
+            -v "$RUNNER_TEMP/flowmoney-backup:/backup:ro" \
+            postgres:18 \
+            pg_restore --list /backup/flowmoney.dump > "$RUNNER_TEMP/flowmoney-backup/restore-list.txt"
+          test -s "$RUNNER_TEMP/flowmoney-backup/restore-list.txt"
+      - name: Encrypt backup before upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          age --recipient "$AGE_RECIPIENT" \
+            --output "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump.age" \
+            "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump"
+          test -s "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump.age"
+          rm -f "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump" "$RUNNER_TEMP/flowmoney-backup/restore-list.txt"
+      - name: Upload encrypted backup to Cloudflare R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          stamp="$(date -u +'%Y/%m/%d/%H%M%S')"
+          key="flowmoney/database/${stamp}-${GITHUB_SHA}.dump.age"
+          aws --endpoint-url "$endpoint" s3 cp \
+            "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump.age" \
+            "s3://${R2_BUCKET}/${key}" \
+            --only-show-errors
+          # Verify the uploaded object exists and has a non-zero size.
+          size="$(aws --endpoint-url "$endpoint" s3api head-object \
+            --bucket "$R2_BUCKET" --key "$key" --query ContentLength --output text)"
+          if [[ ! "$size" =~ ^[0-9]+$ ]] || (( size < 1 )); then
+            echo "::error::Uploaded backup verification failed."
+            exit 1
+          fi
+          echo "Encrypted backup uploaded and verified: $key ($size bytes)"
+      - name: Remove backups older than 30 days
+        shell: bash
+        run: |
+          set -euo pipefail
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          cutoff="$(date -u -d '30 days ago' +%s)"
+          aws --endpoint-url "$endpoint" s3api list-objects-v2 \
+            --bucket "$R2_BUCKET" --prefix "flowmoney/database/" \
+            --query 'Contents[].[Key,LastModified]' --output text |
+          while IFS=$'\t' read -r key modified; do
+            [[ -n "${key:-}" && "$key" != "None" && -n "${modified:-}" ]] || continue
+            modified_epoch="$(date -u -d "$modified" +%s)"
+            if (( modified_epoch < cutoff )); then
+              aws --endpoint-url "$endpoint" s3 rm "s3://${R2_BUCKET}/${key}" --only-show-errors
+              echo "Removed expired encrypted backup: $key"
+            fi
+          done

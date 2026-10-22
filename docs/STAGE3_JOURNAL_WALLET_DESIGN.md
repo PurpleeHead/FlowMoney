@@ -1,0 +1,36 @@
+# Stage 3 — journal and wallet accounting design
+
+Status: authenticated journal API and manual wallet opening/adjustment endpoints are implemented. Wallet movements are stored in a new additive model; the migration is committed but has not been applied to any database.
+
+## Current findings
+
+- `Wallet.balance` exists but is not updated by exchange or expense create/edit/delete routes.
+- The dashboard's `balanceVnd` is an estimated single-currency budget, not a set of actual RUB, USDT, and VND wallet balances.
+- Exchange and expense records are stored independently. A change or deletion changes the source record but there is no persistent unified journal.
+- Card purchases can have both a local purchase amount (usually VND) and a separate USDT card debit. These are two views of one purchase and must not be subtracted from both currency wallets.
+- Unknown conversion values must remain null and must not affect a confirmed balance.
+
+## Proposed ledger rules
+
+1. Every exchange is one journal operation with separate actual amounts: RUB spent, USDT received when applicable, and target currency received only when actually known.
+2. Every expense keeps its source amount/currency. If a card debit is recorded, `usdtCharged` is the actual USDT outflow; a VND amount is the purchase-value/reference amount and must not also be treated as a VND wallet outflow.
+3. Direct cash/VND expenses without a card debit reduce VND; RUB expenses reduce RUB; USDT expenses reduce USDT.
+4. Balances require an explicit opening balance or a recorded balance adjustment for each currency. Without it, only net movement can be calculated; it must not be labelled "available balance".
+5. Editing/deleting a source operation must update its ledger representation atomically in the same database transaction. Each source operation must have at most one current ledger representation per currency.
+6. Historical RUB cost estimates are valuation metadata and are not additional wallet movements.
+7. No exchange rate is inferred for a currency without a reliable observation or an explicit user-entered rate.
+
+## Next implementation steps
+
+- [x] Expose the normalized chronological journal through an authenticated API (`GET /api/journal?limit=100`, limit 1–500; current-user records only), including manual wallet movements.
+- [x] Add `POST /api/wallets/movements` for one opening balance per currency or signed manual adjustments.
+- [x] Add `GET /api/wallets/balances`; it returns a numeric balance only when an opening balance is recorded, otherwise `balance: null` plus net movement.
+- [x] Add an additive `WalletMovement` Prisma model and forward-only SQL migration (not applied).
+- [x] Add opening balance / adjustment operations and derive per-currency balances from signed ledger movements.
+- [x] Synchronize create, edit, and delete of expenses/exchanges transactionally.
+- [x] Add API/integration coverage for duplicate prevention, user ownership, card-debit accounting, edits/deletes, and unknown rates.
+- [x] Add an idempotent forward-only backfill migration for pre-existing expenses/exchanges. It preserves already-synchronized source keys and never treats card purchases as a second VND debit.
+- [ ] Validate the backfill against a disposable PostgreSQL database and compare expected per-currency movement totals before deployment.
+- [ ] Run browser smoke tests against a preview built from the final candidate branch.
+
+Do not apply migrations to any database without explicit approval.
