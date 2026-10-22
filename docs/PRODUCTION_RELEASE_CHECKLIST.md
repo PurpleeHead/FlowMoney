@@ -136,3 +136,11 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 
 - [x] Extended the canonical direct-VND regression assertion to verify the observed VND/RUB rate remains `250` (1,000,000 VND / 4,000 RUB) even when stale legacy `vndReceived` is 9,999,999.
 - [x] Follow-up TypeScript annotation fix is included in `16f499dcc826721f883b455940ed7cec3e01b9ee`; both CI and Security are green on that commit. The intermediate commit `905a25fa244c6a204932e9fd1083dd799f190468` failed build because the test response type omitted `effectiveVndPerRub`; the annotation is now corrected.
+
+
+## Receipt payable-total regression — 2026-10-22
+
+- [x] Receipt OCR total detection now prefers explicit payable labels (for example, `Tổng thanh toán`, `Phải trả`, or `Grand total`) over an earlier generic `Tổng cộng` line. It also excludes common Vietnamese pre-total labels such as `Tạm tính` and `Tổng tiền hàng`, reducing the risk that OCR review compares line items with a subtotal instead of the amount actually charged.
+- [x] Added a regression with `Tổng cộng 120.000`, a discount, and `Tổng thanh toán 108.000`; the expected printed total is 108,000 VND.
+- [x] CI run [#39710111507](https://github.com/PurpleeHead/FlowMoney/actions/runs/39710111507) passed on commit `95c25d43bb54241e7fb5d596d64ae17216aafd4f`: both `verify` and `verify-migrations` succeeded, including tests and production bundle build.
+- [ ] This is parser-level regression evidence only. OCR accuracy/translation quality must still be reviewed with representative real receipts in the target environment; no production receipt data was accessed or changed.
