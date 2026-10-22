@@ -102,6 +102,8 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   };
   expenseModel.aggregate = async (args: any) => {
     dashboardAggregateArgs.push(args);
+    assert.equal(args.where?.userId, 'dashboard-user',
+      'expense aggregate queries must be scoped to the authenticated user');
     const rows = await expenseModel.findMany({});
     const where = args.where ?? {};
     const filtered = rows.filter((row: any) => {
