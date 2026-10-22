@@ -35,7 +35,7 @@ try {
     { mode: 'RUB_TARGET', targetCurrency: 'USDT', rubSpent: 5000, targetReceived: 56, planningVndPerUsdt: 26_000 },
     { mode: 'RUB_VND', targetCurrency: 'VND', rubSpent: 1000, vndReceived: 250_000 },
     // Canonical VND must win over a stale legacy vndReceived value.
-    { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999 },
+    { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, targetReceived: 460_000, targetVndEquivalent: 460_000, vndReceived: 9_999_999, usdtReceived: 10 },
     // An explicit zero net outcome must not fall back to the positive gross target.
     { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 1800, targetReceived: 350_000, targetVndEquivalent: 0, vndReceived: 345_000 },
     // Legacy/corrupt casing and whitespace must still classify as a direct VND target.
@@ -167,6 +167,7 @@ try {
     estimatedTargetVnd: unknown;
     plannedUsdt: unknown;
     plannedWeightedVnd: unknown;
+    estimatedUnpricedUsdt: unknown;
   }>>`
     SELECT
       COALESCE(SUM(CASE
@@ -209,7 +210,20 @@ try {
           THEN (CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
             THEN "targetReceived" ELSE "usdtReceived" END) * "planningVndPerUsdt"
         ELSE 0
-      END), 0) AS "plannedWeightedVnd"
+      END), 0) AS "plannedWeightedVnd",
+      COALESCE(SUM(CASE
+        WHEN "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
+          AND "vndReceived" IS NULL
+          AND (
+            ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+              AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+            OR "usdtReceived" IS NOT NULL
+          )
+          THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+            THEN COALESCE("targetReceived", 0) ELSE "usdtReceived" END
+        ELSE 0
+      END), 0) AS "estimatedUnpricedUsdt"
     FROM "Exchange"
     WHERE "userId" = ${mainUserId}
   `;
@@ -221,6 +235,8 @@ try {
     'planning-rate denominator must include only eligible unpriced USDT top-ups');
   assert.equal(Number(budgetAggregate.plannedWeightedVnd), 1_706_000,
     'planning-rate numerator must be USDT-weighted and must not mix into factual observed rates');
+  assert.equal(Number(budgetAggregate.estimatedUnpricedUsdt), 66,
+    'legacy direct VND rows with stale usdtReceived must not inflate unpriced USDT balance estimates');
   const helperPlanned = exchangeRows
     .filter(x => x.mode !== 'RUB_VND' &&
       !(x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') &&
