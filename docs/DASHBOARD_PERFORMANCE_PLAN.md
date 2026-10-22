@@ -239,3 +239,17 @@ Latest synthetic run with tenant-distinct financial data (35,000 seeded rows):
 - Exact runtime aggregate EXPLAIN ANALYZE: 4.785 ms; selective tenant-only query: 0.516 ms.
 
 This is a warm, ephemeral CI baseline, not a production SLA. The concurrent timings include ten distinct tenant reads and will naturally differ from same-tenant runs. Hosted performance and longer-duration load tests are still required. PR #96 remains Draft, unmerged and undeployed.
+
+
+## Tenant-specific exchange-rate concurrency guard — 2026-10-22 (head 5f198053)
+
+The disposable dashboard benchmark now varies exchange-side RUB spend and USDT received by tenant, in addition to tenant-distinct expense/card-purchase data. It calculates the expected weighted RUB/USDT rate independently from the seeded row rules and asserts the rate for the single-tenant API response and for every one of ten concurrent tenant-authenticated responses. This addresses a blind spot where earlier tenants had identical exchange fixtures, so a cross-tenant exchange aggregate leak could have gone undetected even though expense totals were tenant-distinct.
+
+Both required CI jobs passed on head `5f19805341598d0e3b61895a1a452ca2b8986228`: [application verification and production build](https://github.com/PurpleeHead/FlowMoney/actions/runs/39707194711) and [PostgreSQL migration/equivalence/benchmark verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39707194711). The disposable benchmark seeded 25,000 exchanges and 10,000 expenses across ten tenants (35,000 rows total). Latest measurements:
+- Runtime exchange aggregate median: 5.268 ms.
+- Bounded 100-row exchange history: 3.900 ms; serialized history 34,879 bytes.
+- Full dashboard API: 77.335 ms; complete response 248,835 bytes.
+- Ten concurrent tenant-specific requests: p50 211.229 ms; p95 219.382 ms.
+- Exact runtime aggregate EXPLAIN ANALYZE: 4.734 ms; selective tenant-only query: 0.522 ms.
+
+These are a single warm, disposable CI sample and not production SLOs. Hosted network/database performance, cold-cache and sustained-load tests, final review, and operational backup/restore/Render/smoke-test gates remain outstanding. PR #96 remains Draft, open, unmerged and undeployed.
