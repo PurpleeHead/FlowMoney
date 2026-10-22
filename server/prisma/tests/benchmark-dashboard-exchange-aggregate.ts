@@ -54,6 +54,7 @@ try {
   }
 
   await prisma.$executeRaw`ANALYZE "Exchange"`;
+  await prisma.$executeRaw`ANALYZE "Expense"`;
   const targetUserId = users[0];
 
   // Warm the connection/cache, then report multiple real timings for the exact
