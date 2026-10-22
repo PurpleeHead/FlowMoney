@@ -46,6 +46,8 @@ try {
     { mode: 'RUB_TARGET', targetCurrency: 'GEL', rubSpent: 1500, targetReceived: 100, targetToVndRate: 9200, targetVndEquivalent: 920_000 },
     // Planning rate is not an observed VND outcome.
     { mode: 'RUB_USDT_VND', targetCurrency: 'VND', rubSpent: 1000, usdtReceived: 10, vndReceived: null, planningVndPerUsdt: 25_000 },
+    // A legacy target with a missing currency still contributes its explicit VND estimate.
+    { mode: 'RUB_TARGET', targetCurrency: null, rubSpent: 500, targetReceived: 2, targetVndEquivalent: 3_000 },
   ] as const;
 
   for (const row of rows) {
@@ -178,7 +180,7 @@ try {
     WHERE "userId" = ${mainUserId}
   `;
   assert.equal(Number(budgetSql.confirmedVnd), 3_135_000, 'confirmed budget VND combines direct and actual indirect outcomes without double-counting legacy fields');
-  assert.equal(Number(budgetSql.estimatedTargetVnd), 920_000, 'non-VND target equivalents remain a separate estimate bucket');
+  assert.equal(Number(budgetSql.estimatedTargetVnd), 923_000, 'non-VND target equivalents remain a separate estimate bucket');
   assert.equal(Number(budgetSql.plannedUsdt), 10, 'planning rate denominator only includes eligible USDT rows with no actual VND outcome');
   assert.equal(Number(budgetSql.plannedWeightedVnd), 250_000, 'planning weighted numerator excludes actual and direct-target outcomes');
   assert.equal(Number(budgetSql.estimatedUsdt), 66, 'unconverted estimate denominator preserves direct USDT target fallback and indirect USDT-only top-ups');
@@ -304,7 +306,7 @@ try {
   assert.equal(runtimeAggregate.indirectRub, 8_300, 'runtime SQL indirect RUB cost basis excludes planning-only rows');
   assert.equal(runtimeAggregate.indirectVnd, 2_300_000, 'runtime SQL indirect VND cost basis excludes planning-only rows');
   assert.equal(runtimeAggregate.confirmedVnd, 3_135_000, 'runtime SQL confirmed VND total matches the legacy budget formula');
-  assert.equal(runtimeAggregate.estimatedTargetVnd, 920_000, 'runtime SQL keeps non-VND target equivalents in estimates');
+  assert.equal(runtimeAggregate.estimatedTargetVnd, 923_000, 'runtime SQL keeps non-VND target equivalents in estimates');
   assert.equal(runtimeAggregate.estimatedUsdt, 66, 'runtime SQL estimates direct and indirect unconverted USDT');
   assert.equal(runtimeAggregate.hasEstimatedTargetVnd, true);
   assert.equal(runtimeAggregate.hasUnpricedUsdtTopUps, true);
