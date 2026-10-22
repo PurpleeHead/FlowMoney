@@ -33,6 +33,21 @@ const expectedMonthExpenseVndForTenant = (tenant: number) => Array.from({ length
   date: new Date(seedReferenceTime.getTime() - (i % 300) * DAY_MS),
 })).reduce((total, expense) => total + (expense.date >= currentMonthStart ? expense.base + tenant * 100 : 0), 0);
 const expectedCardUsdtForTenant = (tenant: number) => EXPECTED_CARD_USDT + tenant * 0.01 * EXPENSES_PER_USER;
+const expectedRubPerUsdtForTenant = (tenant: number) => {
+  let rubTotal = 0;
+  let usdtTotal = 0;
+  for (let i = 0; i < EXCHANGES_PER_USER; i += 1) {
+    const rubSpent = 1_000 + (i % 19) * 17 + tenant * 10;
+    if (i % 7 === 0) {
+      rubTotal += rubSpent;
+      usdtTotal += 12 + (i % 5) + tenant * 0.1;
+    } else if (i % 13 !== 0) {
+      rubTotal += rubSpent;
+      usdtTotal += 10 + (i % 11) + tenant * 0.01;
+    }
+  }
+  return rubTotal / usdtTotal;
+};
 
 try {
   // Disposable CI database only: model multi-tenant exchange and expense history (35k rows total).
@@ -46,9 +61,9 @@ try {
         userId: user.id,
         mode: i % 7 === 0 ? 'RUB_TARGET' : 'RUB_USDT_VND',
         targetCurrency: i % 7 === 0 ? 'USDT' : 'VND',
-        rubSpent: 1_000 + (i % 19) * 17,
-        usdtReceived: i % 13 === 0 ? null : 10 + (i % 11),
-        targetReceived: i % 7 === 0 ? 12 + (i % 5) : null,
+        rubSpent: 1_000 + (i % 19) * 17 + tenant * 10,
+        usdtReceived: i % 13 === 0 ? null : 10 + (i % 11) + tenant * 0.01,
+        targetReceived: i % 7 === 0 ? 12 + (i % 5) + tenant * 0.1 : null,
         vndReceived: i % 13 === 0 ? null : 200_000 + (i % 31) * 1_000,
         planningVndPerUsdt: i % 13 === 0 ? 24_000 : null,
       })),
@@ -118,8 +133,9 @@ try {
   const apiPayload = await apiResponse.text();
   const dashboardApiMs = Number((performance.now() - apiStarted).toFixed(3));
   assert.equal(apiResponse.status, 200, `dashboard API benchmark failed: ${apiPayload}`);
-  const dashboardBody = JSON.parse(apiPayload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; monthVnd: number; observedVnd: number; observedUsdt: number; observedVndPerUsdt: number; expenses: unknown[]; exchanges: unknown[] };
+  const dashboardBody = JSON.parse(apiPayload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; monthVnd: number; observedVnd: number; observedUsdt: number; observedVndPerUsdt: number; effectiveRubPerUsdt: number; expenses: unknown[]; exchanges: unknown[] };
   assert.equal(dashboardBody.totalExchangeCount, EXCHANGES_PER_USER, 'real dashboard response counts full tenant history');
+  assert.ok(Math.abs(dashboardBody.effectiveRubPerUsdt - expectedRubPerUsdtForTenant(0)) < 0.000001, 'real dashboard RUB/USDT rate matches all eligible exchange rows');
   assert.equal(dashboardBody.exchanges.length, 100, 'real dashboard response returns only bounded exchange history');
   assert.equal(dashboardBody.totalExpenseCount, EXPENSES_PER_USER, 'real dashboard response counts full tenant expense history');
   assert.equal(dashboardBody.totalVnd, EXPECTED_EXPENSE_VND, 'real dashboard response sums all and only this tenant\'s expenses');
@@ -146,6 +162,7 @@ try {
     assert.ok(Buffer.byteLength(payload, 'utf8') < 350_000, 'concurrent full dashboard response remains within the 350 KB regression budget');
     const body = JSON.parse(payload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; monthVnd: number; observedUsdt: number; observedVndPerUsdt: number; expenses: unknown[]; exchanges: unknown[] };
     assert.equal(body.totalExchangeCount, EXCHANGES_PER_USER, 'concurrent dashboard response keeps lifetime count scoped');
+    assert.ok(Math.abs(body.effectiveRubPerUsdt - expectedRubPerUsdtForTenant(tenant)) < 0.000001, 'concurrent exchange-derived RUB/USDT rate stays isolated to the authenticated tenant');
     assert.equal(body.exchanges.length, 100, 'concurrent dashboard response keeps history bounded');
     assert.equal(body.totalExpenseCount, EXPENSES_PER_USER, 'concurrent dashboard response keeps lifetime expense count scoped');
     assert.equal(body.totalVnd, expectedExpenseVndForTenant(tenant), 'concurrent dashboard totals stay isolated to the authenticated tenant');
