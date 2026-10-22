@@ -29,7 +29,7 @@ const EXPECTED_CARD_USDT = Array.from({ length: EXPENSES_PER_USER }, (_, i) => 0
   .reduce((total, amount) => total + amount, 0);
 
 try {
-  // Disposable CI database only: model a multi-tenant table with 25k exchange rows.
+  // Disposable CI database only: model multi-tenant exchange and expense history (35k rows total).
   for (let tenant = 0; tenant < TENANT_COUNT; tenant += 1) {
     const user = await prisma.user.create({
       data: { email: `${suffix}-${tenant}@example.invalid`, passwordHash: 'test-only' },
@@ -134,11 +134,14 @@ try {
     });
     const payload = await response.text();
     assert.equal(response.status, 200, `concurrent dashboard request failed: ${payload}`);
-    const body = JSON.parse(payload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; expenses: unknown[]; exchanges: unknown[] };
+    const body = JSON.parse(payload) as { totalExchangeCount: number; totalExpenseCount: number; totalVnd: number; monthVnd: number; observedUsdt: number; observedVndPerUsdt: number; expenses: unknown[]; exchanges: unknown[] };
     assert.equal(body.totalExchangeCount, EXCHANGES_PER_USER, 'concurrent dashboard response keeps lifetime count scoped');
     assert.equal(body.exchanges.length, 100, 'concurrent dashboard response keeps history bounded');
     assert.equal(body.totalExpenseCount, EXPENSES_PER_USER, 'concurrent dashboard response keeps lifetime expense count scoped');
     assert.equal(body.totalVnd, EXPECTED_EXPENSE_VND, 'concurrent dashboard totals stay tenant-scoped');
+    assert.equal(body.monthVnd, EXPECTED_MONTH_EXPENSE_VND, 'concurrent dashboard month totals stay consistent');
+    assert.ok(Math.abs(body.observedUsdt - EXPECTED_CARD_USDT) < 0.000001, 'concurrent weighted card denominator stays tenant-scoped');
+    assert.ok(Math.abs(body.observedVndPerUsdt - EXPECTED_EXPENSE_VND / EXPECTED_CARD_USDT) < 0.000001, 'concurrent weighted card rate remains stable');
     assert.equal(body.expenses.length, EXPENSES_PER_USER, 'concurrent dashboard response keeps the chart expense window');
     return Number((performance.now() - started).toFixed(3));
   }));
