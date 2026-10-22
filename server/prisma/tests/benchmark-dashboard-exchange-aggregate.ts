@@ -189,7 +189,6 @@ try {
     assert.equal(body.expenses.length, EXPENSES_PER_USER, 'concurrent dashboard response keeps the chart expense window');
     return Number((performance.now() - started).toFixed(3));
   }));
-  const sortedConcurrentApiTimings = [...concurrentApiTimings].sort((a, b) => a - b);
 
   const runtimePlans = await prisma.$queryRaw<Array<{ 'QUERY PLAN': Array<Record<string, unknown>> }>>(
     Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${dashboardExchangeAggregateQuery(targetUserId)}`,
