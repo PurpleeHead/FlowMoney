@@ -152,3 +152,17 @@ Latest CI sample on head `2aa231dff87a86e5353e441e4e1cd572a5793f52` (25,000 exch
 - Both application verification and PostgreSQL/migration verification passed: [application run](https://github.com/PurpleeHead/FlowMoney/actions/runs/39704742106), [PostgreSQL benchmark run](https://github.com/PurpleeHead/FlowMoney/actions/runs/39704745965).
 
 These timings are one warm, synthetic CI sample and include local loopback HTTP but not a hosted network hop. They are a repeatable baseline, not a production SLA or a cold/concurrent-load result. The end-to-end payload is for the complete dashboard response for a tenant with 2,500 exchanges and no seeded expenses; realistic user data and hosted measurements are still needed. The benchmark only writes disposable CI data and cleans up its users; no production database or deployment was touched.
+
+
+## Concurrent dashboard request baseline — 2026-10-22 (head 85052c6c)
+
+The disposable PostgreSQL benchmark now sends ten simultaneous authenticated requests through the real `GET /api/dashboard` route. Every response is asserted to be HTTP 200, retain the tenant's full 2,500-exchange lifetime count, and return only 100 exchange rows. Application verification and the PostgreSQL benchmark/migration workflow both passed on this head: [application verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39704922744) and [PostgreSQL benchmark](https://github.com/PurpleeHead/FlowMoney/actions/runs/39704927393).
+
+Latest synthetic sample:
+- Single complete dashboard request: 45.270 ms; complete JSON payload: 34,706 bytes.
+- Ten concurrent requests: p50 55.619 ms; p95 87.037 ms.
+- Runtime aggregate helper median: 5.292 ms.
+- Exact runtime aggregate `EXPLAIN ANALYZE`: 8.392 ms; selective tenant-only query: 0.891 ms.
+- The 100-row standalone history query took 4.042 ms and serialized to 34,879 bytes.
+
+The SQL-plan sample was captured after the concurrent requests, so its execution time may reflect the test's local contention and is not directly comparable to a separately warmed single-query sample. These are single-run synthetic baselines on an ephemeral runner, not an SLO or production estimate; real hosted PostgreSQL, cold cache, production row distributions, and longer concurrency/load profiles remain release gates. The benchmark is read-only against production: it only creates and deletes synthetic records in the disposable CI database.
