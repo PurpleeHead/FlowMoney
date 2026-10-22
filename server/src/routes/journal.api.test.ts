@@ -80,6 +80,99 @@ describe('journal API integration', () => {
       assert.equal(body.entries.length, 500);
       assert.equal(body.limit, 500);
       assert.equal(body.hasMore, true);
+      assert.equal(typeof (body as any).nextCursor, 'string');
     });
   });
+  
+  it('applies a stable timestamp/type/id cursor to all user-scoped sources', async () => {
+    let expenseArgs: any;
+    let exchangeArgs: any;
+    let movementArgs: any;
+    expenseModel.findMany = async args => { expenseArgs = args; return []; };
+    exchangeModel.findMany = async args => { exchangeArgs = args; return []; };
+    movementModel.findMany = async args => { movementArgs = args; return []; };
+    const cursor = Buffer.from(JSON.stringify({
+      occurredAt: '2026-10-18T08:00:00.000Z',
+      id: 'exchange:ex-5',
+      type: 'exchange',
+    })).toString('base64url');
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/journal?limit=25&cursor=${encodeURIComponent(cursor)}`, {
+        headers: { authorization: bearer() },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(expenseArgs.where.userId, 'journal-user');
+      assert.deepEqual(exchangeArgs.where.userId, 'journal-user');
+      assert.deepEqual(movementArgs.where.userId, 'journal-user');
+      // buildJournal sorts equal timestamps by prefixed ID: expense, exchange, movement.
+      // After an exchange cursor, expenses at that same timestamp must not reappear.
+      assert.equal(expenseArgs.where.OR.length, 1);
+      assert.equal(exchangeArgs.where.OR.length, 2);
+      assert.equal(movementArgs.where.OR.length, 2);
+      assert.deepEqual(exchangeArgs.where.OR[1], {
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+        id: { gt: 'ex-5' },
+      });
+      assert.deepEqual(await response.json(), { entries: [], limit: 25, hasMore: false, nextCursor: null });
+    });
+  });
+
+  it('rejects malformed journal cursors without querying records', async () => {
+    let queryCount = 0;
+    expenseModel.findMany = async () => { queryCount++; return []; };
+    exchangeModel.findMany = async () => { queryCount++; return []; };
+    movementModel.findMany = async () => { queryCount++; return []; };
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/journal?cursor=not-a-valid-cursor`, {
+        headers: { authorization: bearer() },
+      });
+      assert.equal(response.status, 400);
+      assert.equal(queryCount, 0);
+    });
+  });
+
+  it('rejects a cursor whose type does not match its prefixed ID', async () => {
+    let queryCount = 0;
+    expenseModel.findMany = async () => { queryCount++; return []; };
+    exchangeModel.findMany = async () => { queryCount++; return []; };
+    movementModel.findMany = async () => { queryCount++; return []; };
+    const cursor = Buffer.from(JSON.stringify({
+      occurredAt: '2026-10-18T08:00:00.000Z',
+      id: 'expense:exp-7',
+      type: 'exchange',
+    })).toString('base64url');
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/journal?cursor=${encodeURIComponent(cursor)}`, {
+        headers: { authorization: bearer() },
+      });
+      assert.equal(response.status, 400);
+      assert.equal(queryCount, 0);
+    });
+  });
+
+  it('accepts the wallet-movement cursor shape emitted by buildJournal', async () => {
+    let movementArgs: any;
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [];
+    movementModel.findMany = async args => { movementArgs = args; return []; };
+    const cursor = Buffer.from(JSON.stringify({
+      occurredAt: '2026-10-18T08:00:00.000Z',
+      id: 'movement:move-7',
+      type: 'wallet_movement',
+    })).toString('base64url');
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/journal?limit=25&cursor=${encodeURIComponent(cursor)}`, {
+        headers: { authorization: bearer() },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(movementArgs.where.OR[1], {
+        occurredAt: new Date('2026-10-18T08:00:00.000Z'),
+        id: { gt: 'move-7' },
+      });
+    });
+  });
+
 });

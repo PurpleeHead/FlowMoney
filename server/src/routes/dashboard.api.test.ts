@@ -7,22 +7,131 @@ import { prisma } from '../services/prisma.js';
 import dashboardRoutes from './dashboard.js';
 
 const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
-const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any> };
-const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
+const expenseModel = prisma.expense as unknown as { findMany: (...args: any[]) => Promise<any>; aggregate: (...args: any[]) => Promise<any>; count: (...args: any[]) => Promise<number> };
+const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any>; count: (...args: any[]) => Promise<number> };
 const originalUserFindFirst = userModel.findFirst;
 const originalExpenseFindMany = expenseModel.findMany;
+const originalExpenseAggregate = expenseModel.aggregate;
+const originalExpenseCount = expenseModel.count;
 const originalExchangeFindMany = exchangeModel.findMany;
+const originalExchangeCount = exchangeModel.count;
+const rawPrisma = prisma as unknown as { $queryRaw: (...args: any[]) => Promise<any[]> };
+const originalQueryRaw = rawPrisma.$queryRaw;
 const previousSecret = process.env.JWT_SECRET;
+let dashboardAggregateArgs: any[] = [];
+let dashboardExpenseCountArgs: any[] = [];
+let dashboardExchangeCountArgs: any[] = [];
 
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
   expenseModel.findMany = originalExpenseFindMany;
+  expenseModel.aggregate = originalExpenseAggregate;
+  expenseModel.count = originalExpenseCount;
   exchangeModel.findMany = originalExchangeFindMany;
+  exchangeModel.count = originalExchangeCount;
+  rawPrisma.$queryRaw = originalQueryRaw;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
 
 async function withApi(run: (baseUrl: string) => Promise<void>) {
+  // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
+  // as PostgreSQL. This keeps route tests independent of a live database.
+  dashboardAggregateArgs = [];
+  dashboardExpenseCountArgs = [];
+  dashboardExchangeCountArgs = [];
+  exchangeModel.count = async (args: any) => {
+    dashboardExchangeCountArgs.push(args);
+    assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time exchange count must be scoped to the authenticated user');
+    return (await exchangeModel.findMany({ where: { userId: 'dashboard-user' } })).length;
+  };
+  rawPrisma.$queryRaw = async (strings: TemplateStringsArray, ...values: any[]) => {
+    assert.ok(strings.join('').includes('"userId"'), 'exchange summary SQL must scope aggregates to the authenticated user');
+    assert.deepEqual(values, ['dashboard-user'], 'exchange summary SQL must bind the authenticated user ID as a parameter');
+    const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
+    const amount = (x: any, key: string) => x[key] == null ? null : Number(x[key]);
+    const currency = (x: any) => String(x.targetCurrency ?? '').trim().toUpperCase();
+    const directVnd = (x: any) => x.mode === 'RUB_TARGET' && currency(x) === 'VND';
+    const directUsdt = (x: any) => x.mode === 'RUB_TARGET' && currency(x) === 'USDT';
+    const positive = (n: number | null) => n != null && Number.isFinite(n) && n > 0;
+    const sum = (items: any[], value: (x: any) => number) => items.reduce((total, x) => total + value(x), 0);
+    const rubUsdtRows = rows.filter((x: any) =>
+      x.mode === 'RUB_USDT_VND' ? positive(amount(x, 'rubSpent')) && positive(amount(x, 'usdtReceived'))
+        : directUsdt(x) && positive(amount(x, 'rubSpent')) && positive(amount(x, 'targetReceived')));
+    const rubUsdtRub = sum(rubUsdtRows, (x: any) => Number(x.rubSpent));
+    const rubUsdtUsdt = sum(rubUsdtRows, (x: any) => Number(directUsdt(x) ? x.targetReceived : x.usdtReceived));
+    const actualRows = rows.filter((x: any) => x.mode === 'RUB_USDT_VND' && positive(amount(x, 'vndReceived')) && positive(amount(x, 'usdtReceived')));
+    const confirmedExchangeVnd = sum(rows, (x: any) => {
+      const value = directVnd(x) ? (x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) : x.vndReceived;
+      return value == null ? 0 : Number(value);
+    });
+    const estimatedTargetCurrencyVnd = sum(rows.filter((x: any) =>
+      x.mode === 'RUB_TARGET' && !directVnd(x) && x.vndReceived == null &&
+      x.targetVndEquivalent != null && Number(x.targetVndEquivalent) > 0),
+      (x: any) => Number(x.targetVndEquivalent));
+    const plannedRows = rows.filter((x: any) => x.mode !== 'RUB_VND' && !directVnd(x) &&
+      x.vndReceived == null &&
+      (directUsdt(x)
+        ? amount(x, 'targetReceived') != null && amount(x, 'targetVndEquivalent') == null
+        : amount(x, 'usdtReceived') != null) &&
+      x.planningVndPerUsdt != null);
+    const plannedAmount = (x: any) => Number(directUsdt(x) ? x.targetReceived : x.usdtReceived);
+    const plannedUsdt = sum(plannedRows, plannedAmount);
+    const plannedWeightedVnd = sum(plannedRows, (x: any) => plannedAmount(x) * Number(x.planningVndPerUsdt));
+    const estimateRows = rows.filter((x: any) => x.mode !== 'RUB_VND' && !directVnd(x) && x.vndReceived == null &&
+      ((directUsdt(x) && x.targetReceived != null && x.targetVndEquivalent == null) || x.usdtReceived != null));
+    const estimatedUnpricedUsdt = sum(estimateRows, (x: any) => directUsdt(x) ? Number(x.targetReceived ?? 0) : Number(x.usdtReceived));
+    const hasUnpricedUsdtTopUps = rows.some((x: any) =>
+      (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
+      (directUsdt(x) && x.vndReceived == null && x.targetReceived != null && x.targetVndEquivalent == null));
+    const directRows = rows.filter((x: any) => x.mode === 'RUB_VND' || directVnd(x)).map((x: any) => ({
+      rub: Number(x.rubSpent),
+      vnd: Number(directVnd(x) ? (x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) : x.vndReceived),
+    })).filter((x: any) => positive(x.rub) && positive(x.vnd));
+    const actualRubVndRows = rows.filter((x: any) => x.mode !== 'RUB_VND' && !directVnd(x) &&
+      positive(amount(x, 'rubSpent')) && positive(amount(x, 'vndReceived')));
+    return [{
+      rubUsdtRub, rubUsdtUsdt,
+      actualVndUsdtVnd: sum(actualRows, (x: any) => Number(x.vndReceived)),
+      actualVndUsdtUsdt: sum(actualRows, (x: any) => Number(x.usdtReceived)),
+      confirmedExchangeVnd, estimatedTargetCurrencyVnd, plannedUsdt, plannedWeightedVnd,
+      estimatedUnpricedUsdt, hasUnpricedUsdtTopUps,
+      directRub: sum(directRows, (x: any) => x.rub),
+      directVnd: sum(directRows, (x: any) => x.vnd),
+      actualRub: sum(actualRubVndRows, (x: any) => Number(x.rubSpent)),
+      actualVnd: sum(actualRubVndRows, (x: any) => Number(x.vndReceived)),
+    }];
+  };
+  expenseModel.count = async (args: any) => {
+    dashboardExpenseCountArgs.push(args);
+    assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time expense count must be scoped to the authenticated user');
+    const rows = await expenseModel.findMany({});
+    // Mirror tenant filtering in the mock as well as checking the Prisma arguments.
+    return rows.filter((row: any) => row.userId == null || row.userId === args.where.userId).length;
+  };
+  expenseModel.aggregate = async (args: any) => {
+    dashboardAggregateArgs.push(args);
+    assert.equal(args.where?.userId, 'dashboard-user',
+      'expense aggregate queries must be scoped to the authenticated user');
+    const rows = await expenseModel.findMany({});
+    const where = args.where ?? {};
+    const filtered = rows.filter((row: any) => {
+      // Real PostgreSQL applies userId before aggregation. Mirror that predicate in
+      // the test double too, so a missing/wrong tenant filter cannot pass on fixtures
+      // that happen to contain only one user's rows.
+      if (where.userId != null && row.userId != null && row.userId !== where.userId) return false;
+      if (where.date?.gte && new Date(row.date) < where.date.gte) return false;
+      if (where.amountVnd?.gt != null && !(row.amountVnd != null && Number(row.amountVnd) > where.amountVnd.gt)) return false;
+      if (where.usdtCharged?.gt != null && !(row.usdtCharged != null && Number(row.usdtCharged) > where.usdtCharged.gt)) return false;
+      return true;
+    });
+    const sums: Record<string, number | null> = {};
+    for (const key of Object.keys(args._sum ?? {})) {
+      const values = filtered.map((row: any) => row[key]).filter((value: any) => value != null).map(Number);
+      sums[key] = values.length ? values.reduce((sum: number, value: number) => sum + value, 0) : null;
+    }
+    return { _sum: sums };
+  };
   userModel.findFirst = async () => ({ tokenVersion: 0 });
   process.env.JWT_SECRET = 'dashboard-api-test-secret-long-enough-for-jwt-middleware';
   const app = express();
@@ -111,6 +220,119 @@ describe('dashboard confirmed and estimated VND totals', () => {
   });
 });
 
+describe('dashboard confirmed and estimated VND totals', () => {
+  it('prefers actual VND received over a stale non-VND target valuation', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      rubSpent: 1000,
+      targetReceived: 10,
+      targetVndEquivalent: 500000,
+      vndReceived: 510000,
+      usdtReceived: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        balanceVnd: number | null;
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.confirmedExchangeVnd, 510000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 510000);
+      assert.equal(body.balanceIsEstimated, false);
+    });
+  });
+
+  it('does not mark an actual VND outcome as unpriced USDT when the estimate is absent', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      rubSpent: 1000,
+      targetReceived: 10,
+      targetVndEquivalent: null,
+      vndReceived: 510000,
+      usdtReceived: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { balanceVnd: number | null };
+      assert.equal(body.balanceVnd, 510000);
+    });
+  });
+});
+
+describe('dashboard history window', () => {
+  it('bounds recent exchange rows without truncating all-history counts or balances', async () => {
+    expenseModel.findMany = async () => [];
+    const history = Array.from({ length: 105 }, (_, index) => ({
+      id: `legacy-direct-vnd-${index}`,
+      userId: 'dashboard-user',
+      mode: 'RUB_VND',
+      targetCurrency: 'VND',
+      rubSpent: 1000,
+      usdtReceived: null,
+      vndReceived: 100000,
+      targetReceived: null,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+      planningVndPerUsdt: null,
+      vndPerUsdt: null,
+      effectiveVndPerRub: null,
+      effectiveRubPerUsdt: null,
+      createdAt: new Date(Date.UTC(2026, 9, 22, 0, index)),
+    }));
+    exchangeModel.findMany = async (args: any) => {
+      assert.deepEqual(args.where, { userId: 'dashboard-user' });
+      if (args.select) {
+        // The visible activity query must be database-bounded; a final JS slice is insufficient.
+        assert.equal(args.take, 100);
+        assert.deepEqual(args.orderBy, { createdAt: 'desc' });
+        return history.slice(0, args.take);
+      }
+      // Separate all-history count and aggregate test paths intentionally see every row.
+      return history;
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalExchangeCount: number;
+        balanceVnd: number | null;
+        exchanges: Array<{ id: string }>;
+      };
+      assert.equal(body.totalExchangeCount, 105, 'all-history exchange count must include records outside the recent activity window');
+      assert.equal(body.exchanges.length, 100, 'dashboard activity rows must remain bounded');
+      assert.equal(body.balanceVnd, 10_500_000, 'balance must aggregate all 105 exchanges, not only the latest 100');
+    });
+  });
+});
+
 describe('dashboard exchange rates', () => {
   it('includes direct RUB-to-USDT target exchanges in the effective RUB/USDT rate', async () => {
     expenseModel.findMany = async () => [];
@@ -179,3 +401,990 @@ describe('dashboard historical expense snapshots', () => {
   });
 });
 
+
+
+describe('dashboard query shape', () => {
+  it('selects only fields needed for dashboard calculations and visible history', async () => {
+    let expenseArgs: any;
+    let exchangeArgs: any;
+    expenseModel.findMany = async (args: any) => { if (args.select) expenseArgs = args; return []; };
+    exchangeModel.findMany = async (args: any) => { if (args.select) exchangeArgs = args; return []; };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+    });
+
+    assert.equal(expenseArgs.where.userId, 'dashboard-user');
+    assert.ok(expenseArgs.where.date.gte instanceof Date);
+    const expectedChartStart = new Date(new Date().getFullYear(), new Date().getMonth() - 11, 1);
+    assert.equal(expenseArgs.where.date.gte.getTime(), expectedChartStart.getTime());
+    assert.deepEqual(expenseArgs.orderBy, { date: 'desc' });
+    assert.deepEqual(Object.keys(expenseArgs.select).sort(), [
+      'amount', 'amountRub', 'amountVnd', 'category', 'currency', 'date',
+      'id', 'title', 'usdtCharged',
+    ].sort());
+    assert.deepEqual(exchangeArgs.where, { userId: 'dashboard-user' });
+    assert.deepEqual(exchangeArgs.orderBy, { createdAt: 'desc' });
+    assert.equal(dashboardAggregateArgs.length, 3);
+    // Count queries are independent of the recent history page and always tenant-scoped.
+    assert.equal(dashboardExpenseCountArgs.length, 1, 'dashboard should issue one all-history expense count');
+    assert.equal(dashboardExchangeCountArgs.length, 1, 'dashboard should issue one all-history exchange count');
+    assert.deepEqual(dashboardExpenseCountArgs[0].where, { userId: 'dashboard-user' });
+    assert.deepEqual(dashboardExchangeCountArgs[0].where, { userId: 'dashboard-user' });
+    assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
+    const allTimeAggregate = dashboardAggregateArgs.find(args => args._sum.amountVnd && !args.where.date);
+    const monthAggregate = dashboardAggregateArgs.find(args => args.where.date?.gte);
+    const purchaseAggregate = dashboardAggregateArgs.find(args => args._sum.usdtCharged);
+    assert.ok(allTimeAggregate, 'all-time expense aggregate must not have a date limit');
+    assert.ok(monthAggregate, 'month aggregate must have a date boundary');
+    assert.ok(purchaseAggregate, 'weighted card aggregate must sum VND and USDT');
+    assert.ok(monthAggregate.where.date.gte instanceof Date);
+    assert.deepEqual(purchaseAggregate.where, {
+      userId: 'dashboard-user', amountVnd: { gt: 0 }, usdtCharged: { gt: 0 },
+    });
+    assert.deepEqual(Object.keys(purchaseAggregate._sum).sort(), ['amountVnd', 'usdtCharged']);
+    assert.deepEqual(Object.keys(exchangeArgs.select).sort(), [
+      'createdAt', 'effectiveRubPerUsdt', 'effectiveVndPerRub', 'id', 'mode',
+      'planningVndPerUsdt', 'rubSpent', 'targetCurrency', 'targetReceived',
+      'targetToVndRate', 'targetVndEquivalent', 'usdtReceived', 'vndPerUsdt',
+      'vndReceived',
+    ].sort());
+  });
+});
+
+
+describe('dashboard weighted rates preserve actual observations', () => {
+  it('weights actual card observations by charged USDT and does not use planning-only rates as actual', async () => {
+    expenseModel.findMany = async () => [
+      {
+        id: 'card-a', title: 'Groceries', category: 'Food', amount: 120000,
+        currency: 'VND', amountVnd: 120000, amountRub: 332, usdtCharged: 4,
+        date: new Date('2026-10-10T08:00:00.000Z'),
+      },
+      {
+        id: 'card-b', title: 'Dinner', category: 'Food', amount: 60000,
+        currency: 'VND', amountVnd: 60000, amountRub: 166, usdtCharged: 3,
+        date: new Date('2026-10-11T08:00:00.000Z'),
+      },
+    ];
+    exchangeModel.findMany = async () => [
+      {
+        ...exchangeFixture(),
+        id: 'actual-exchange',
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        targetReceived: 40,
+        rubSpent: 3600,
+        planningVndPerUsdt: 26000,
+        vndReceived: 1000000,
+        usdtReceived: 40,
+      },
+      {
+        ...exchangeFixture(),
+        id: 'planning-only-exchange',
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        targetReceived: 20,
+        rubSpent: 1800,
+        planningVndPerUsdt: 30000,
+        vndReceived: null,
+        usdtReceived: 20,
+      },
+    ];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        observedVndPerUsdt: number | null;
+        effectiveVndPerUsdt: number | null;
+        effectiveRubPerUsdt: number | null;
+        planningVndPerUsdt: number | null;
+      };
+      assert.ok(body.observedVndPerUsdt != null);
+      assert.ok(Math.abs(body.observedVndPerUsdt - (180000 / 7)) < 1e-8);
+      assert.equal(body.effectiveVndPerUsdt, body.observedVndPerUsdt);
+      assert.ok(body.effectiveRubPerUsdt != null);
+      assert.ok(Math.abs(body.effectiveRubPerUsdt - (5400 / 60)) < 1e-8);
+      assert.ok(body.planningVndPerUsdt != null);
+      assert.equal(body.planningVndPerUsdt, 30000);
+    });
+  });
+});
+
+
+describe('dashboard aggregates stay independent from chart history window', () => {
+  it('keeps all-time totals and weighted purchase rates while returning only chart-window expenses', async () => {
+    const recent = {
+      id: 'recent-expense', title: 'Recent', category: 'Food', amount: 50000,
+      currency: 'VND', amountVnd: 50000, amountRub: 140, usdtCharged: 2,
+      date: new Date(), receiptId: null,
+    };
+    const old = {
+      id: 'old-expense', title: 'Old', category: 'Food', amount: 100000,
+      currency: 'VND', amountVnd: 100000, amountRub: 280, usdtCharged: 5,
+      date: new Date('2024-01-15T08:00:00.000Z'), receiptId: null,
+    };
+    expenseModel.findMany = async (args: any) => {
+      const all = [recent, old];
+      return args.where?.date?.gte
+        ? all.filter(row => row.date >= args.where.date.gte)
+        : all;
+    };
+    exchangeModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalVnd: number;
+        monthVnd: number;
+        observedVnd: number;
+        observedUsdt: number;
+        observedVndPerUsdt: number | null;
+        expenses: Array<{ id: string }>;
+      };
+      assert.equal(body.totalVnd, 150000);
+      assert.equal(body.monthVnd, 50000);
+      assert.equal(body.observedVnd, 150000);
+      assert.equal(body.observedUsdt, 7);
+      assert.ok(body.observedVndPerUsdt != null);
+      assert.ok(Math.abs(body.observedVndPerUsdt - (150000 / 7)) < 1e-8);
+      assert.deepEqual(body.expenses.map(row => row.id), ['recent-expense']);
+    });
+  });
+});
+
+
+describe('dashboard historical purchase-rate observations', () => {
+  it('keeps all-history weighted purchase rates independent of the chart window', async () => {
+    const oldPurchase = {
+      id: 'purchase-old',
+      userId: 'dashboard-user',
+      title: 'Old purchase',
+      category: 'food',
+      amount: 1000000,
+      currency: 'VND',
+      amountVnd: 1000000,
+      amountRub: null,
+      usdtCharged: 40,
+      date: new Date('2024-01-15T10:00:00.000Z'),
+    };
+    const recentPurchase = {
+      id: 'purchase-recent',
+      userId: 'dashboard-user',
+      title: 'Recent purchase',
+      category: 'food',
+      amount: 500000,
+      currency: 'VND',
+      amountVnd: 500000,
+      amountRub: null,
+      usdtCharged: 20,
+      date: new Date(),
+    };
+    const foreignPurchase = {
+      id: 'purchase-foreign-user',
+      userId: 'another-user',
+      title: 'Must not leak into this dashboard',
+      category: 'food',
+      amount: 99_000_000,
+      currency: 'VND',
+      amountVnd: 99_000_000,
+      amountRub: null,
+      usdtCharged: 1,
+      date: new Date(),
+    };
+    const allExpenses = [oldPurchase, recentPurchase, foreignPurchase];
+    const expenseReadArgs: any[] = [];
+    expenseModel.findMany = async (args: any = {}) => {
+      expenseReadArgs.push(args);
+      const lowerBound = args.where?.date?.gte;
+      return allExpenses.filter(row =>
+        (args.where?.userId == null || row.userId === args.where.userId) &&
+        (lowerBound == null || row.date >= lowerBound));
+    };
+    exchangeModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        expenses: Array<{ id: string }>;
+        totalExpenseCount: number;
+        observedVndPerUsdt: number | null;
+        observedVnd: number;
+        observedUsdt: number;
+      };
+      assert.deepEqual(body.expenses.map(row => row.id), ['purchase-recent'],
+        'chart rows should remain limited to the configured 12-calendar-month window');
+      assert.equal(body.totalExpenseCount, 2,
+        'all-history expense count must exclude rows owned by another user');
+      assert.equal(body.observedVnd, 1500000,
+        'weighted observed purchase VND must include historical purchases outside the chart window');
+      assert.equal(body.observedUsdt, 60,
+        'weighted observed purchase USDT must include historical purchases outside the chart window');
+      assert.equal(body.observedVndPerUsdt, 25000,
+        'effective purchase rate must be sum(VND) / sum(USDT) over all qualifying observations');
+      assert.ok(expenseReadArgs.some(args => args.where?.date?.gte != null),
+        'chart expense query must use the bounded chart window');
+      assert.ok(expenseReadArgs.some(args => args.where?.date == null),
+        'aggregate source reads must not inherit the chart date bound');
+    });
+  });
+});
+
+describe('dashboard local calendar boundaries', () => {
+  it('uses local month starts for current-month totals and the 12-calendar-month chart window', async () => {
+    const now = new Date();
+    const expectedMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const expectedChartStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const expenseQueries: any[] = [];
+    expenseModel.findMany = async (args: any = {}) => {
+      expenseQueries.push(args);
+      return [];
+    };
+    expenseModel.aggregate = async (args: any) => {
+      dashboardAggregateArgs.push(args);
+      return { _sum: { amountVnd: null, usdtCharged: null } };
+    };
+    exchangeModel.findMany = async () => [];
+    exchangeModel.count = async () => 0;
+    expenseModel.count = async () => 0;
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const chartQuery = expenseQueries.find(args => args.where?.date?.gte != null);
+      assert.ok(chartQuery, 'chart expense query must have a lower date bound');
+      assert.equal(new Date(chartQuery.where.date.gte).getTime(), expectedChartStart.getTime(),
+        'chart must begin at the first day of the month eleven months before the current month');
+      const monthAggregate = dashboardAggregateArgs.find(args => args.where?.date?.gte != null);
+      assert.ok(monthAggregate, 'current-month aggregate must have a date bound');
+      assert.equal(new Date(monthAggregate.where.date.gte).getTime(), expectedMonthStart.getTime(),
+        'current-month totals must begin at the first day of the local current month');
+    });
+  });
+});
+
+describe('dashboard direct RUB-to-VND target exchange', () => {
+  it('counts the direct VND target equivalent once as confirmed VND, not as an estimate', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async ({ where }: any) => {
+      assert.deepEqual(where, { userId: 'dashboard-user' });
+      return [{
+        id: 'direct-vnd-target',
+        mode: 'RUB_TARGET',
+        rubSpent: 3500,
+        usdtReceived: null,
+        vndPerUsdt: null,
+        planningVndPerUsdt: null,
+        vndFee: 0,
+        vndReceived: null,
+        effectiveVndPerRub: 1000000 / 3500,
+        effectiveRubPerUsdt: null,
+        targetCurrency: 'VND',
+        targetReceived: 1000000,
+        targetToVndRate: 1,
+        targetVndEquivalent: 1000000,
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+      }];
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+        effectiveVndPerRub: number | null;
+        observedVndPerUsdt: number | null;
+        effectiveVndPerUsdt: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1000000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1000000);
+      assert.equal(body.balanceIsEstimated, false);
+      // A legacy direct VND target is not a RUB→USDT→VND rate observation,
+      // even when stale USDT/VND fields remain on the record.
+      assert.equal(body.observedVndPerUsdt, null);
+      assert.equal(body.effectiveVndPerUsdt, null);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.ok(
+        Math.abs(body.effectiveVndPerRub - (1000000 / 3500)) < 1e-10,
+        'direct target VND exchange must contribute exactly once to the observed VND/RUB rate',
+      );
+    });
+  });
+});
+
+describe('dashboard direct VND target legacy compatibility', () => {
+  it('does not double-count a direct VND target if legacy vndReceived is also populated', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [
+      {
+        id: 'legacy-direct-vnd-target-with-duplicate-fields',
+        mode: 'RUB_TARGET',
+        rubSpent: 3500,
+        usdtReceived: null,
+        vndPerUsdt: null,
+        planningVndPerUsdt: null,
+        vndFee: 0,
+        vndReceived: 1000000,
+        effectiveVndPerRub: 1000000 / 3500,
+        effectiveRubPerUsdt: null,
+        targetCurrency: 'VND',
+        targetReceived: 1000000,
+        targetToVndRate: 1,
+        targetVndEquivalent: 1000000,
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+      },
+      {
+        id: 'legacy-direct-vnd-target-without-equivalent',
+        mode: 'RUB_TARGET',
+        rubSpent: 3500,
+        usdtReceived: null,
+        vndPerUsdt: null,
+        planningVndPerUsdt: null,
+        vndFee: 0,
+        vndReceived: null,
+        effectiveVndPerRub: null,
+        effectiveRubPerUsdt: null,
+        targetCurrency: 'VND',
+        targetReceived: 500000,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+      },
+    ];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        effectiveVndPerRub: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1500000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1500000);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.ok(Math.abs(body.effectiveVndPerRub - (1500000 / 7000)) < 1e-10);
+    });
+  });
+});
+
+
+describe('dashboard mixed direct VND exchange modes', () => {
+  it('weights RUB_VND and RUB_TARGET-to-VND outcomes once in the same observed rate', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async ({ where }: any) => {
+      assert.deepEqual(where, { userId: 'dashboard-user' });
+      return [
+        {
+          id: 'direct-rub-vnd',
+          mode: 'RUB_VND',
+          rubSpent: 2500,
+          usdtReceived: null,
+          vndPerUsdt: null,
+          planningVndPerUsdt: null,
+          vndFee: 0,
+          vndReceived: 500000,
+          effectiveVndPerRub: 200,
+          effectiveRubPerUsdt: null,
+          targetCurrency: null,
+          targetReceived: null,
+          targetToVndRate: null,
+          targetVndEquivalent: null,
+          createdAt: new Date('2026-10-17T08:00:00.000Z'),
+        },
+        {
+          id: 'direct-vnd-target',
+          mode: 'RUB_TARGET',
+          rubSpent: 3500,
+          usdtReceived: null,
+          vndPerUsdt: null,
+          planningVndPerUsdt: null,
+          vndFee: 0,
+          vndReceived: null,
+          effectiveVndPerRub: 1000000 / 3500,
+          effectiveRubPerUsdt: null,
+          targetCurrency: 'VND',
+          targetReceived: 1000000,
+          targetToVndRate: 1,
+          targetVndEquivalent: 1000000,
+          createdAt: new Date('2026-10-18T08:00:00.000Z'),
+        },
+      ];
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        effectiveVndPerRub: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1500000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1500000);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.ok(
+        Math.abs(body.effectiveVndPerRub - (1500000 / 6000)) < 1e-10,
+        'both direct exchange modes must contribute their actual VND and RUB exactly once',
+      );
+    });
+  });
+});
+
+
+
+describe('dashboard observed VND/RUB combines all actual source types once', () => {
+  it('weights direct exchanges, actual exchange outcomes, and card purchases without double counting', async () => {
+    expenseModel.findMany = async () => [{
+      id: 'card-observation',
+      title: 'Market',
+      category: 'Food',
+      amount: 50000,
+      currency: 'VND',
+      amountVnd: 50000,
+      amountRub: null,
+      usdtCharged: 5,
+      date: new Date('2026-10-19T08:00:00.000Z'),
+    }];
+    exchangeModel.findMany = async () => [
+      {
+        ...exchangeFixture(),
+        id: 'direct-rub-vnd',
+        mode: 'RUB_VND',
+        rubSpent: 1000,
+        usdtReceived: null,
+        targetCurrency: null,
+        targetReceived: null,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        vndReceived: 200000,
+        planningVndPerUsdt: null,
+        effectiveVndPerRub: 200,
+        effectiveRubPerUsdt: null,
+      },
+      {
+        ...exchangeFixture(),
+        id: 'direct-vnd-target',
+        mode: 'RUB_TARGET',
+        rubSpent: 2000,
+        usdtReceived: null,
+        targetCurrency: 'VND',
+        targetReceived: 400000,
+        targetToVndRate: 1,
+        targetVndEquivalent: 400000,
+        vndReceived: null,
+        planningVndPerUsdt: null,
+        effectiveVndPerRub: 200,
+        effectiveRubPerUsdt: null,
+      },
+      {
+        ...exchangeFixture(),
+        id: 'actual-usdt-vnd',
+        mode: 'RUB_USDT_VND',
+        rubSpent: 3000,
+        usdtReceived: 30,
+        targetCurrency: null,
+        targetReceived: null,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        vndReceived: 750000,
+        planningVndPerUsdt: null,
+        effectiveVndPerRub: 250,
+        effectiveRubPerUsdt: 100,
+      },
+    ];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        effectiveVndPerRub: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1350000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1300000, 'the 50,000 VND card purchase must reduce the exchange balance');
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.ok(
+        Math.abs(body.effectiveVndPerRub - (1400000 / 6500)) < 1e-10,
+        'observed VND/RUB must combine 600,000 direct VND, 750,000 exchange VND, and 50,000 card VND against 6,000 RUB plus 500 RUB card cost',
+      );
+    });
+  });
+});
+
+
+describe('dashboard planning rates stay separate from factual rates', () => {
+  it('does not promote a planning-only exchange rate into observed or effective VND/USDT', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'planning-only',
+      mode: 'RUB_USDT_VND',
+      targetCurrency: null,
+      targetReceived: null,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+      usdtReceived: 100,
+      vndReceived: null,
+      vndPerUsdt: null,
+      planningVndPerUsdt: 26000,
+      rubSpent: 9000,
+      effectiveVndPerRub: null,
+      effectiveRubPerUsdt: 90,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        observedVndPerUsdt: number | null;
+        effectiveVndPerUsdt: number | null;
+        planningVndPerUsdt: number | null;
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+      };
+      assert.equal(body.observedVndPerUsdt, null);
+      assert.equal(body.effectiveVndPerUsdt, null);
+      assert.equal(body.planningVndPerUsdt, 26000);
+      assert.equal(body.confirmedExchangeVnd, 0);
+      assert.equal(body.estimatedUnconvertedVnd, 2600000);
+    });
+  });
+});
+
+
+describe('dashboard planning rate for direct USDT targets', () => {
+  it('uses a direct USDT target planning rate when no observed rate or target VND valuation exists', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      mode: 'RUB_TARGET',
+      targetCurrency: 'USDT',
+      targetReceived: 50,
+      targetVndEquivalent: null,
+      targetToVndRate: null,
+      usdtReceived: null,
+      vndReceived: null,
+      planningVndPerUsdt: 26000,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        planningVndPerUsdt: number | null;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.planningVndPerUsdt, 26000);
+      assert.equal(body.estimatedUnconvertedVnd, 1300000);
+      assert.equal(body.balanceVnd, 1300000);
+      assert.equal(body.balanceIsEstimated, true);
+    });
+  });
+});
+
+describe('dashboard legacy direct VND target records', () => {
+  it('does not treat a legacy direct VND target as an unconverted USDT top-up', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'legacy-direct-vnd',
+      mode: 'RUB_TARGET',
+      targetCurrency: 'VND',
+      targetReceived: 1000000,
+      targetToVndRate: 1,
+      targetVndEquivalent: 1000000,
+      // Older records may have retained this field from an earlier exchange form.
+      usdtReceived: 10,
+      vndReceived: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+        observedVndPerUsdt: number | null;
+        effectiveVndPerUsdt: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1000000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1000000);
+      assert.equal(body.balanceIsEstimated, false);
+      assert.equal(body.observedVndPerUsdt, null);
+      assert.equal(body.effectiveVndPerUsdt, null);
+    });
+  });
+});
+
+
+describe('dashboard canonical direct VND amount precedence', () => {
+  it('counts targetVndEquivalent once and ignores a stale legacy vndReceived value', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'canonical-vnd-with-stale-legacy-value',
+      mode: 'RUB_TARGET',
+      targetCurrency: 'VND',
+      targetReceived: 1_000_000,
+      targetToVndRate: 1,
+      targetVndEquivalent: 1_000_000,
+      // This stale value must not be added to or replace the canonical target amount.
+      vndReceived: 9_999_999,
+      usdtReceived: null,
+      rubSpent: 4_000,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        effectiveVndPerRub: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1_000_000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 1_000_000);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.equal(body.effectiveVndPerRub, 250, 'the stale legacy VND field must not distort the observed VND/RUB rate');
+    });
+  });
+});
+
+
+describe('dashboard normalizes legacy direct VND target currency', () => {
+  it('classifies padded lowercase VND as a direct VND outcome, not an estimated target currency', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'legacy-padded-lowercase-vnd-target',
+      mode: 'RUB_TARGET',
+      targetCurrency: ' vnd ',
+      targetReceived: 125_000,
+      targetToVndRate: 1,
+      targetVndEquivalent: 125_000,
+      // Stale legacy data must not override the canonical VND equivalent.
+      vndReceived: 777_777,
+      usdtReceived: null,
+      rubSpent: 500,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+        effectiveVndPerRub: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 125_000);
+      assert.equal(body.estimatedUnconvertedVnd, 0);
+      assert.equal(body.balanceVnd, 125_000);
+      assert.equal(body.balanceIsEstimated, false);
+      assert.equal(body.effectiveVndPerRub, 250);
+    });
+  });
+});
+
+
+describe('dashboard normalizes legacy direct USDT target currency', () => {
+  it('recognizes padded lowercase USDT for unpriced-balance detection and estimates', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'legacy-padded-lowercase-usdt-target',
+      mode: 'RUB_TARGET',
+      targetCurrency: ' usdt ',
+      targetReceived: 50,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+      usdtReceived: null,
+      vndReceived: null,
+      planningVndPerUsdt: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.confirmedExchangeVnd, 0);
+      assert.equal(body.estimatedUnconvertedVnd, 0, 'without an observed/planning VND rate, the estimate remains unknown');
+      assert.equal(body.balanceVnd, null, 'an unpriced USDT target must not look like a zero balance');
+      assert.equal(body.balanceIsEstimated, false);
+    });
+  });
+});
+
+
+describe('dashboard estimates legacy direct USDT targets', () => {
+  it('uses the observed VND/USDT rate for a padded lowercase USDT target', async () => {
+    expenseModel.findMany = async () => [{
+      id: 'rate-observation',
+      title: 'Card purchase',
+      category: 'Food',
+      amount: 100000,
+      currency: 'VND',
+      amountVnd: 100000,
+      amountRub: 400,
+      usdtCharged: 4,
+      date: new Date('2026-10-10T08:00:00.000Z'),
+    }];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      id: 'legacy-usdt-target-with-observed-rate',
+      mode: 'RUB_TARGET',
+      targetCurrency: ' usdt ',
+      targetReceived: 50,
+      targetToVndRate: null,
+      targetVndEquivalent: null,
+      usdtReceived: null,
+      vndReceived: null,
+      planningVndPerUsdt: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        effectiveVndPerUsdt: number | null;
+        estimatedUnconvertedVnd: number;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+      };
+      assert.equal(body.effectiveVndPerUsdt, 25000);
+      assert.equal(body.estimatedUnconvertedVnd, 1250000, 'the normalized USDT target should be valued using the observed rate');
+      assert.equal(body.balanceVnd, 1150000);
+      assert.equal(body.balanceIsEstimated, true);
+    });
+  });
+});
+
+
+describe('dashboard exchange response bounds', () => {
+  it('keeps lifetime exchange count and financial totals while returning only the latest 100 rows', async () => {
+    expenseModel.findMany = async () => [];
+    const rows = Array.from({ length: 125 }, (_, offset) => {
+      const i = 124 - offset;
+      return ({
+      ...exchangeFixture(),
+      id: `exchange-${i}`,
+      mode: 'RUB_VND',
+      targetCurrency: 'VND',
+      targetReceived: null,
+      targetVndEquivalent: null,
+      rubSpent: 100,
+      usdtReceived: null,
+      vndReceived: 1000,
+      createdAt: new Date(Date.UTC(2026, 9, 21, 0, i)),
+      });
+    });
+    exchangeModel.findMany = async () => rows;
+    exchangeModel.count = async (args: any) => {
+      assert.deepEqual(args.where, { userId: 'dashboard-user' });
+      return rows.length;
+    };
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalExchangeCount: number;
+        exchanges: Array<{ id: string }>;
+        confirmedExchangeVnd: number;
+        balanceVnd: number | null;
+      };
+      assert.equal(body.totalExchangeCount, 125);
+      assert.equal(body.exchanges.length, 100);
+      assert.equal(body.confirmedExchangeVnd, 125000, 'lifetime financial totals must use all records, not only the response slice');
+      assert.equal(body.balanceVnd, 125000);
+      assert.equal(body.exchanges[0].id, 'exchange-124', 'the list preserves the existing newest-first query order');
+    });
+  });
+});
+
+
+describe('dashboard all-time expense count', () => {
+  it('keeps the all-time count separate from the bounded recent expense list', async () => {
+    const rows = [
+      {
+        id: 'older-expense',
+        title: 'Older expense',
+        category: 'Other',
+        amount: 100,
+        currency: 'VND',
+        amountVnd: 100,
+        amountRub: null,
+        usdtCharged: null,
+        date: new Date('2025-10-01T08:00:00.000Z'),
+      },
+      {
+        id: 'recent-expense',
+        title: 'Recent expense',
+        category: 'Food',
+        amount: 200,
+        currency: 'VND',
+        amountVnd: 200,
+        amountRub: null,
+        usdtCharged: null,
+        date: new Date('2026-10-01T08:00:00.000Z'),
+      },
+    ];
+    expenseModel.findMany = async (args: any = {}) => rows.filter(row =>
+      !args.where?.date?.gte || row.date >= args.where.date.gte
+    );
+    expenseModel.count = async () => rows.length;
+    exchangeModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalExpenseCount: number;
+        totalVnd: number;
+        monthVnd: number;
+        expenses: Array<{ id: string }>;
+      };
+      assert.equal(body.totalExpenseCount, 2, 'count must include older expenses outside the dashboard activity window');
+      assert.deepEqual(body.expenses.map(x => x.id), ['recent-expense'], 'recent activity remains bounded to the chart window');
+      assert.equal(body.totalVnd, 300, 'all-time financial totals must still include older expenses');
+      assert.equal(body.monthVnd, 200, 'month total remains date-scoped');
+    });
+  });
+});

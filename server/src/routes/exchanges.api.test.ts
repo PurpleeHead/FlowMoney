@@ -6,6 +6,8 @@ import type { AddressInfo } from 'node:net';
 import { prisma } from '../services/prisma.js';
 
 const userModel = prisma.user as unknown as { findFirst: (...args: any[]) => Promise<any> };
+const exchangeModel = prisma.exchange as unknown as { findMany: (...args: any[]) => Promise<any> };
+const originalExchangeFindMany = exchangeModel.findMany;
 const originalUserFindFirst = userModel.findFirst;
 import exchangeRoutes from './exchanges.js';
 
@@ -15,6 +17,7 @@ const previousSecret = process.env.JWT_SECRET;
 
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
+  exchangeModel.findMany = originalExchangeFindMany;
   client.$transaction = originalTransaction;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
@@ -90,6 +93,59 @@ describe('direct RUB to USDT top-up without VND rate', () => {
       assert.equal(body.targetVndEquivalent, null);
       assert.equal(body.effectiveVndPerRub, null);
     });
+  });
+});
+
+
+describe('editing direct RUB to USDT top-ups', () => {
+  it('allows saving a USDT top-up without inventing a VND rate or equivalent', async () => {
+    let updateArgs: any;
+    const movements: any[] = [];
+    const updated = {
+      id: 'usdt-top-up', userId: 'user-42', mode: 'RUB_TARGET',
+      rubSpent: 8300, usdtReceived: null, vndReceived: null,
+      targetCurrency: 'USDT', targetReceived: 93.7853,
+      targetToVndRate: null, targetVndEquivalent: null,
+      effectiveVndPerRub: null, effectiveRubPerUsdt: null,
+      createdAt: new Date('2026-10-18T08:00:00.000Z'),
+    };
+    const tx = {
+      exchange: {
+        updateMany: async (args: any) => { updateArgs = args; return { count: 1 }; },
+        findFirst: async () => updated,
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => { movements.push(...args.data); return { count: args.data.length }; },
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges/usdt-top-up`, {
+        method: 'PATCH',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'RUB_TARGET', rubSpent: 8300,
+          targetCurrency: 'USDT', targetReceived: 93.7853,
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as any;
+      assert.equal(body.targetCurrency, 'USDT');
+      assert.equal(body.targetToVndRate, null);
+      assert.equal(body.targetVndEquivalent, null);
+      assert.equal(body.effectiveVndPerRub, null);
+    });
+
+    assert.deepEqual(updateArgs.where, { id: 'usdt-top-up', userId: 'user-42' });
+    assert.equal(updateArgs.data.targetCurrency, 'USDT');
+    assert.equal(updateArgs.data.targetToVndRate, null);
+    assert.equal(updateArgs.data.targetVndEquivalent, null);
+    assert.deepEqual(movements.map(x => [x.currency, Number(x.amountDelta)]), [
+      ['RUB', -8300],
+      ['USDT', 93.7853],
+    ]);
   });
 });
 
@@ -267,5 +323,66 @@ describe('exchange API ledger synchronization', () => {
       assert.equal(response.status, 404);
       assert.deepEqual(movementDeleteArgs, [], 'ledger deletion must not run if the owner-scoped exchange delete matched no row');
     });
+  });
+});
+
+
+describe('exchange list response privacy', () => {
+  it('scopes the query to the authenticated user and omits the internal userId field', async () => {
+    let queryArgs: any;
+    exchangeModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [{
+        id: 'exchange-list-1', mode: 'RUB_USDT_VND',
+        targetCurrency: 'VND', targetReceived: null, targetToVndRate: null,
+        targetVndEquivalent: null, rubSpent: 8300, usdtReceived: 93.7853,
+        vndPerUsdt: null, planningVndPerUsdt: 25400, vndFee: 0,
+        vndReceived: null, effectiveVndPerRub: null, effectiveRubPerUsdt: 88.5,
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+      }];
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as Array<Record<string, unknown>>;
+      assert.equal(body.length, 1);
+      assert.equal(body[0].id, 'exchange-list-1');
+      assert.equal('userId' in body[0], false);
+    });
+
+    assert.deepEqual(queryArgs.where, { userId: 'user-42' });
+    assert.deepEqual(queryArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
+    assert.equal(queryArgs.take, 100);
+    assert.equal('userId' in queryArgs.select, false);
+  });
+});
+
+describe('exchange cursor pagination', () => {
+  it('returns a page and next cursor without exposing owner identifiers', async () => {
+    let queryArgs: any;
+    exchangeModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [
+        { id: 'exchange-a', createdAt: new Date('2026-10-19T10:00:00.000Z') },
+        { id: 'exchange-b', createdAt: new Date('2026-10-18T10:00:00.000Z') },
+      ];
+    };
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/exchanges?limit=1`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string; userId?: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['exchange-a']);
+      assert.equal('userId' in body.items[0], false);
+      assert.equal(body.hasMore, true);
+      assert.equal(typeof body.nextCursor, 'string');
+    });
+    assert.equal(queryArgs.take, 2);
+    assert.deepEqual(queryArgs.where.userId, 'user-42');
+    assert.deepEqual(queryArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
   });
 });

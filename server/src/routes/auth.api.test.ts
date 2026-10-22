@@ -298,3 +298,38 @@ describe('registration unique constraint scope', () => {
     });
   });
 });
+
+
+describe('email verification is not required', () => {
+  it('allows a newly registered account to sign in without an email-verification step', async () => {
+    const password = 'Valid-password-123';
+    const passwordHash = await bcrypt.hash(password, 4);
+    userModel.findUnique = async args => {
+      assert.deepEqual(args.where, { email: 'new.user@example.com' });
+      return {
+        id: 'new-user',
+        email: 'new.user@example.com',
+        passwordHash,
+        tokenVersion: 0,
+        name: null,
+        country: null,
+      };
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'New.User@Example.com', password }),
+      });
+      const body = await response.json() as {
+        token?: string;
+        user?: { id: string; email: string };
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(typeof body.token, 'string');
+      assert.deepEqual(body.user, { id: 'new-user', email: 'new.user@example.com', name: null, country: null });
+    });
+  });
+});

@@ -59,7 +59,7 @@ describe('receipt API ownership', () => {
     let findManyArgs: any;
     receiptModel.findMany = async (args: any) => {
       findManyArgs = args;
-      return [{ id: 'receipt-user-1', userId: 'user-1', rawText: 'receipt' }];
+      return [{ id: 'receipt-user-1', rawText: 'receipt', items: [], createdAt: new Date('2026-10-19T08:00:00.000Z') }];
     };
 
     await withApi(async baseUrl => {
@@ -69,10 +69,12 @@ describe('receipt API ownership', () => {
 
       assert.equal(response.status, 200);
       assert.deepEqual(findManyArgs.where, { userId: 'user-1' });
-      assert.deepEqual(findManyArgs.orderBy, { createdAt: 'desc' });
+      assert.deepEqual(findManyArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
       assert.equal(findManyArgs.take, 100);
-      const receipts = await response.json() as Array<{ userId: string }>;
-      assert.deepEqual(receipts.map(receipt => receipt.userId), ['user-1']);
+      assert.deepEqual(Object.keys(findManyArgs.select).sort(), ['createdAt', 'id', 'items', 'rawText'].sort());
+      const receipts = await response.json() as Array<{ id: string; userId?: string }>;
+      assert.deepEqual(receipts.map(receipt => receipt.id), ['receipt-user-1']);
+      assert.equal('userId' in receipts[0], false);
     });
   });
 
@@ -169,4 +171,64 @@ describe('receipt API ownership', () => {
     });
   });
 
+});
+
+describe('receipt cursor pagination', () => {
+  it('returns a page and next cursor scoped to the authenticated user', async () => {
+    let queryArgs: any;
+    receiptModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [
+        { id: 'receipt-a', createdAt: new Date('2026-10-19T10:00:00.000Z'), rawText: 'A', items: [] },
+        { id: 'receipt-b', createdAt: new Date('2026-10-18T10:00:00.000Z'), rawText: 'B', items: [] },
+      ];
+    };
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts?limit=1`, {
+        headers: { authorization: bearer('user-1') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string; userId?: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['receipt-a']);
+      assert.equal('userId' in body.items[0], false);
+      assert.equal(body.hasMore, true);
+      assert.equal(typeof body.nextCursor, 'string');
+    });
+    assert.equal(queryArgs.take, 2);
+    assert.deepEqual(queryArgs.where.userId, 'user-1');
+    assert.deepEqual(queryArgs.orderBy, [{ createdAt: 'desc' }, { id: 'asc' }]);
+  });
+});
+
+
+describe('receipt cursor continuation', () => {
+  it('uses the supplied cursor to continue after the previous receipt without changing user scope', async () => {
+    let queryArgs: any;
+    receiptModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [{ id: 'receipt-next', createdAt: new Date('2026-10-18T10:00:00.000Z'), rawText: 'Next page', items: [] }];
+    };
+    const cursor = Buffer.from(JSON.stringify({
+      timestamp: '2026-10-19T10:00:00.000Z',
+      id: 'receipt-first',
+    }), 'utf8').toString('base64url');
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/receipts?limit=1&cursor=${encodeURIComponent(cursor)}`, {
+        headers: { authorization: bearer('user-1') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['receipt-next']);
+      assert.equal(body.hasMore, false);
+      assert.equal(body.nextCursor, null);
+    });
+
+    assert.equal(queryArgs.take, 2);
+    assert.equal(queryArgs.where.userId, 'user-1');
+    assert.deepEqual(queryArgs.where.OR, [
+      { createdAt: { lt: new Date('2026-10-19T10:00:00.000Z') } },
+      { createdAt: new Date('2026-10-19T10:00:00.000Z'), id: { gt: 'receipt-first' } },
+    ]);
+  });
 });

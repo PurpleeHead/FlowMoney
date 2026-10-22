@@ -7,6 +7,8 @@ import {
   calculateObservedVndPerRub,
   calculateRubPerUsdt,
   mapDirectVndExchanges,
+  mapActualVndExchanges,
+  mapActualVndUsdtExchanges,
   mapRubUsdtExchanges,
   estimateRubFromVnd,
   resolveExchangeVndOutcome,
@@ -100,8 +102,10 @@ describe('RUB-to-USDT exchange observations', () => {
     const observations = mapRubUsdtExchanges([
       { mode: 'RUB_USDT_VND', rubSpent: 8300, usdtReceived: 93.7853 },
       { mode: 'RUB_TARGET', rubSpent: 5000, targetCurrency: 'USDT', targetReceived: 56 },
-      { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'GEL', targetReceived: 100 },
-      { mode: 'RUB_VND', rubSpent: 1000, usdtReceived: null },
+      { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'GEL', targetReceived: 100, usdtReceived: 777 },
+      // Legacy rows may retain stale USDT values from an older form version.
+      { mode: 'RUB_TARGET', rubSpent: 1200, targetCurrency: 'VND', targetReceived: 300000, usdtReceived: 40 },
+      { mode: 'RUB_VND', rubSpent: 1000, usdtReceived: 12 },
     ]);
     assert.deepEqual(observations, [
       { rubSpent: 8300, usdtReceived: 93.7853 },
@@ -116,11 +120,46 @@ describe('direct exchange observations', () => {
     assert.deepEqual(mapDirectVndExchanges([
       { mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250000 },
       { mode: 'RUB_TARGET', rubSpent: 2000, targetCurrency: 'VND', targetVndEquivalent: 460000 },
+      { mode: 'RUB_TARGET', rubSpent: 1500, targetCurrency: 'VND', targetReceived: 350000 },
+      { mode: 'RUB_TARGET', rubSpent: 1200, targetCurrency: 'VND', vndReceived: 275000 },
+      // Explicit zero net VND must not fall back to positive gross/legacy fields.
+      { mode: 'RUB_TARGET', rubSpent: 1800, targetCurrency: 'VND', targetReceived: 350000, targetVndEquivalent: 0, vndReceived: 345000 },
       { mode: 'RUB_TARGET', rubSpent: 500, targetCurrency: 'USDT', targetVndEquivalent: 130000 },
       { mode: 'RUB_USDT_VND', rubSpent: 3000, vndReceived: null },
     ]), [
       { rubSpent: 1000, vndReceived: 250000 },
       { rubSpent: 2000, vndReceived: 460000 },
+      { rubSpent: 1500, vndReceived: 350000 },
+      { rubSpent: 1200, vndReceived: 275000 },
+      { rubSpent: 1800, vndReceived: 0 },
+    ]);
+  });
+});
+
+
+
+describe('actual VND/USDT exchange observations', () => {
+  it('uses only completed indirect RUB-USDT-VND exchanges, never direct VND target rows', () => {
+    assert.deepEqual(mapActualVndUsdtExchanges([
+      { mode: 'RUB_USDT_VND', usdtReceived: 93.7853, vndReceived: 2_300_000 },
+      { mode: 'RUB_TARGET', usdtReceived: 10, vndReceived: 250_000 },
+      { mode: 'RUB_VND', usdtReceived: 5, vndReceived: 125_000 },
+      { mode: 'RUB_USDT_VND', usdtReceived: 20, vndReceived: null },
+    ]), [
+      { usdtReceived: 93.7853, vndReceived: 2_300_000 },
+    ]);
+  });
+});
+
+describe('indirect VND exchange observations', () => {
+  it('excludes legacy direct VND target records to avoid counting them twice', () => {
+    assert.deepEqual(mapActualVndExchanges([
+      { mode: 'RUB_USDT_VND', rubSpent: 8300, vndReceived: 2_300_000 },
+      { mode: 'RUB_VND', rubSpent: 1000, vndReceived: 250_000 },
+      { mode: 'RUB_TARGET', targetCurrency: 'VND', rubSpent: 2000, vndReceived: 500_000 },
+      { mode: 'RUB_TARGET', targetCurrency: 'USD', rubSpent: 1500, vndReceived: null },
+    ]), [
+      { rubSpent: 8300, vndReceived: 2_300_000 },
     ]);
   });
 });

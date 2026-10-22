@@ -31,6 +31,18 @@ describe('production security configuration', () => {
     );
   });
 
+
+
+  it('rejects the exact placeholder secret shipped in the environment example', () => {
+    assert.throws(
+      () => assertProductionSecurityConfiguration({
+        NODE_ENV: 'production',
+        JWT_SECRET: 'replace-with-at-least-32-random-characters',
+      }),
+      /must not use a placeholder/,
+    );
+  });
+
   it('accepts a sufficiently long production secret', () => {
     assert.doesNotThrow(() => assertProductionSecurityConfiguration({
       NODE_ENV: 'production',

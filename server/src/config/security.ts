@@ -15,6 +15,9 @@ export function assertProductionSecurityConfiguration(
     'changeme',
     'change-me',
     'replace-me',
+    'replace-with',
+    'placeholder',
+    'example-secret',
     'your-secret',
     'your-jwt-secret',
   ]);

@@ -1,9 +1,10 @@
 import { Router } from 'express';
+import { parseListPageQuery, encodeListCursor, listAfterCursor } from '../lib/list-pagination.js';
 import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
+import { calculateExpenseRub, calculateObservedVndPerRub, calculateObservedVndPerUsdt, calculateRubPerUsdt, mapActualVndExchanges, mapActualVndUsdtExchanges, mapDirectVndExchanges, mapRubUsdtExchanges } from '../lib/money.js';
 import { syncExpenseLedger, removeExpenseLedger } from '../lib/wallet-ledger.js';
 import { areRepresentableDecimals, areSupportedStoredAmounts, hasDecimalScale, MAX_STORED_AMOUNT } from '../lib/amount-limits.js';
 
@@ -93,9 +94,13 @@ router.post('/', async (req: AuthedRequest, res, next) => {
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       previousPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
     );
-    const vndExchanges = exchanges.filter(x => x.mode === 'RUB_USDT_VND' && x.usdtReceived != null && x.vndReceived != null);
-    const exchangeVnd = vndExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
-    const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const vndExchanges = mapActualVndUsdtExchanges(exchanges.map(x => ({
+      mode: x.mode,
+      usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+    })));
+    const exchangeVnd = vndExchanges.reduce((sum, x) => sum + x.vndReceived, 0);
+    const exchangeUsdt = vndExchanges.reduce((sum, x) => sum + x.usdtReceived, 0);
     // Only actual card purchases or completed exchanges establish a historical VND/USDT rate.
     // A planning rate must never be persisted as an expense's factual VND valuation.
     const historicalVndPerUsdt = observedVndPerUsdt ??
@@ -107,11 +112,15 @@ router.post('/', async (req: AuthedRequest, res, next) => {
         rubSpent: Number(x.rubSpent),
         vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
         targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
         targetCurrency: x.targetCurrency,
       }))),
-      actualVndExchanges: exchanges
-        .filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetCurrency: x.targetCurrency,
+      }))),
       cardPurchases: previousPurchases.map(x => ({
         amountVnd: Number(x.amountVnd),
         usdtCharged: Number(x.usdtCharged),
@@ -170,12 +179,31 @@ router.post('/', async (req: AuthedRequest, res, next) => {
 
 router.get('/', async (req: AuthedRequest, res, next) => {
   try {
+    const page = parseListPageQuery(req.query as Record<string, unknown>);
+    if (page.error) {
+      res.status(400).json({ message: 'Invalid pagination parameters.' });
+      return;
+    }
+    const where = { userId: req.user!.id, ...listAfterCursor('date', page.cursor) };
     const records = await prisma.expense.findMany({
-      where: { userId: req.user!.id },
-      orderBy: { date: 'desc' },
-      take: 500,
+      where: page.requested ? where : { userId: req.user!.id },
+      orderBy: [{ date: 'desc' }, { id: 'asc' }],
+      take: page.requested ? page.limit + 1 : 500,
+      select: { id: true, title: true, category: true, amount: true, currency: true, amountVnd: true, amountRub: true, usdtCharged: true, date: true, createdAt: true, updatedAt: true, receiptId: true },
     });
-    res.json(records);
+    if (!page.requested) {
+      res.json(records);
+      return;
+    }
+    const hasMore = records.length > page.limit;
+    const items = hasMore ? records.slice(0, page.limit) : records;
+    const last = items.at(-1);
+    res.json({
+      items,
+      limit: page.limit,
+      hasMore,
+      nextCursor: hasMore && last ? encodeListCursor(last.date, last.id) : null,
+    });
   } catch (e) {
     next(e);
   }
@@ -228,9 +256,13 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
     const observedVndPerUsdt = calculateObservedVndPerUsdt(
       otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) }))
     );
-    const actualExchanges = exchanges.filter(x => x.mode !== 'RUB_VND' && x.usdtReceived != null && x.vndReceived != null);
-    const actualVnd = actualExchanges.reduce((sum, x) => sum + Number(x.vndReceived), 0);
-    const actualUsdt = actualExchanges.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+    const actualExchanges = mapActualVndUsdtExchanges(exchanges.map(x => ({
+      mode: x.mode,
+      usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
+      vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+    })));
+    const actualVnd = actualExchanges.reduce((sum, x) => sum + x.vndReceived, 0);
+    const actualUsdt = actualExchanges.reduce((sum, x) => sum + x.usdtReceived, 0);
     // Keep estimates out of the historical expense valuation. Planning rates are used
     // by the planning UI, but an unknown actual VND outcome remains unknown here.
     const vndPerUsdt = observedVndPerUsdt ?? (actualUsdt > 0 ? actualVnd / actualUsdt : null);
@@ -240,10 +272,15 @@ router.patch('/:id', async (req: AuthedRequest, res, next) => {
         rubSpent: Number(x.rubSpent),
         vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
         targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
         targetCurrency: x.targetCurrency,
       }))),
-      actualVndExchanges: exchanges.filter(x => x.mode !== 'RUB_VND' && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
+      actualVndExchanges: mapActualVndExchanges(exchanges.map(x => ({
+        mode: x.mode,
+        rubSpent: Number(x.rubSpent),
+        vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetCurrency: x.targetCurrency,
+      }))),
       cardPurchases: otherPurchases.map(x => ({ amountVnd: Number(x.amountVnd), usdtCharged: Number(x.usdtCharged) })),
       rubPerUsdt,
     });

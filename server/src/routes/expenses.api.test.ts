@@ -300,7 +300,7 @@ describe('expense API ledger synchronization', () => {
     exchangeModel.findMany = async () => [{
       mode: 'RUB_TARGET', rubSpent: 2000, usdtReceived: null, vndReceived: null,
       planningVndPerUsdt: null, targetCurrency: 'VND', targetReceived: 460000,
-      targetVndEquivalent: 460000,
+      targetVndEquivalent: null, // legacy row only has targetReceived
     }];
     let updateData: any;
     const tx = {
@@ -458,6 +458,52 @@ describe('expense API ledger synchronization', () => {
   });
 
 
+  it('limits valuation observations to the expense effective date', async () => {
+    const effectiveDate = new Date('2026-10-12T09:30:00.000Z');
+    let exchangeQuery: any;
+    let purchaseQuery: any;
+    let createdData: any;
+    exchangeModel.findMany = async (args: any) => { exchangeQuery = args; return []; };
+    expenseModel.findMany = async (args: any) => { purchaseQuery = args; return []; };
+    const tx = {
+      expense: {
+        create: async (args: any) => {
+          createdData = args.data;
+          return { id: 'expense-historical-date', ...args.data };
+        },
+      },
+      walletMovement: {
+        deleteMany: async () => ({ count: 0 }),
+        createMany: async (args: any) => ({ count: args.data.length }),
+      },
+    };
+    client.$transaction = async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx);
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        method: 'POST',
+        headers: { authorization: bearer('user-42'), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Historical groceries', category: 'Food', amount: 120000,
+          amountVnd: 120000, currency: 'VND', date: effectiveDate.toISOString(),
+        }),
+      });
+
+      assert.equal(response.status, 201);
+      assert.equal(createdData.date.toISOString(), effectiveDate.toISOString());
+    });
+
+    assert.deepEqual(exchangeQuery.where, {
+      userId: 'user-42',
+      createdAt: { lte: effectiveDate },
+    });
+    assert.deepEqual(purchaseQuery.where, {
+      userId: 'user-42',
+      date: { lte: effectiveDate },
+      usdtCharged: { not: null },
+    });
+  });
+
   it('keeps a planning VND/USDT rate out of saved factual expense valuations', async () => {
     expenseModel.findMany = async () => [];
     exchangeModel.findMany = async () => [{
@@ -608,4 +654,63 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+});
+
+
+describe('expense list response privacy', () => {
+  it('scopes the query to the authenticated user and omits the internal userId field', async () => {
+    let queryArgs: any;
+    expenseModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [{
+        id: 'expense-list-1', title: 'Lunch', category: 'Food',
+        amount: 100, currency: 'RUB', amountVnd: null, amountRub: 100,
+        usdtCharged: null, date: new Date('2026-10-18T08:00:00.000Z'),
+        createdAt: new Date('2026-10-18T08:00:00.000Z'),
+        updatedAt: new Date('2026-10-18T08:00:00.000Z'), receiptId: null,
+      }];
+    };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as Array<Record<string, unknown>>;
+      assert.equal(body.length, 1);
+      assert.equal(body[0].id, 'expense-list-1');
+      assert.equal('userId' in body[0], false);
+    });
+
+    assert.deepEqual(queryArgs.where, { userId: 'user-42' });
+    assert.deepEqual(queryArgs.orderBy, [{ date: 'desc' }, { id: 'asc' }]);
+    assert.equal(queryArgs.take, 500);
+    assert.equal('userId' in queryArgs.select, false);
+  });
+});
+
+describe('expense cursor pagination', () => {
+  it('returns a page and next cursor without crossing user scope', async () => {
+    let queryArgs: any;
+    expenseModel.findMany = async (args: any) => {
+      queryArgs = args;
+      return [
+        { id: 'expense-a', date: new Date('2026-10-19T10:00:00.000Z') },
+        { id: 'expense-b', date: new Date('2026-10-18T10:00:00.000Z') },
+      ];
+    };
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses?limit=1`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { items: Array<{ id: string }>; hasMore: boolean; nextCursor: string | null };
+      assert.deepEqual(body.items.map(item => item.id), ['expense-a']);
+      assert.equal(body.hasMore, true);
+      assert.equal(typeof body.nextCursor, 'string');
+    });
+    assert.equal(queryArgs.take, 2);
+    assert.deepEqual(queryArgs.where.userId, 'user-42');
+    assert.deepEqual(queryArgs.orderBy, [{ date: 'desc' }, { id: 'asc' }]);
+  });
 });

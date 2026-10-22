@@ -69,6 +69,9 @@ export function mapRubUsdtExchanges(exchanges: Array<{
   return exchanges.flatMap((exchange) => {
     const isDirectUsdt = exchange.mode === 'RUB_TARGET' &&
       exchange.targetCurrency?.trim().toUpperCase() === 'USDT';
+    // Only the indirect exchange mode or an explicitly direct USDT target represents
+    // an acquisition of USDT. Ignore stale legacy fields on RUB→VND/other-target rows.
+    if (!isDirectUsdt && exchange.mode !== 'RUB_USDT_VND') return [];
     const usdtReceived = isDirectUsdt ? exchange.targetReceived : exchange.usdtReceived;
     if (usdtReceived == null || !Number.isFinite(exchange.rubSpent) || exchange.rubSpent <= 0 ||
         !Number.isFinite(usdtReceived) || usdtReceived <= 0) return [];
@@ -81,6 +84,7 @@ export function mapDirectVndExchanges(exchanges: Array<{
   mode: string;
   rubSpent: number;
   vndReceived?: number | null;
+  targetReceived?: number | null;
   targetVndEquivalent?: number | null;
   targetCurrency?: string | null;
 }>): DirectVndObservation[] {
@@ -88,8 +92,11 @@ export function mapDirectVndExchanges(exchanges: Array<{
     if (exchange.mode === 'RUB_VND' && exchange.vndReceived != null) {
       return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
     }
-    if (exchange.mode === 'RUB_TARGET' && exchange.targetCurrency?.trim().toUpperCase() === 'VND' && exchange.targetVndEquivalent != null) {
-      return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.targetVndEquivalent }];
+    if (exchange.mode === 'RUB_TARGET' && exchange.targetCurrency?.trim().toUpperCase() === 'VND') {
+      // Older direct-target records may have the real VND amount in targetReceived
+      // or vndReceived even when targetVndEquivalent was not populated.
+      const vndReceived = exchange.targetVndEquivalent ?? exchange.targetReceived ?? exchange.vndReceived;
+      if (vndReceived != null) return [{ rubSpent: exchange.rubSpent, vndReceived }];
     }
     return [];
   });
@@ -211,4 +218,37 @@ export function isExchangeVndOutcomeConsistent(input: {
   const grossVnd = input.usdtReceived * input.vndPerUsdt;
   return Number.isFinite(grossVnd) && grossVnd > 0 &&
     input.vndReceived <= grossVnd + 0.01;
+}
+
+
+/** Map indirect exchange records with an actual VND outcome; direct target-currency
+ * records are valued separately and must not be counted a second time. */
+export function mapActualVndExchanges(exchanges: Array<{
+  mode: string;
+  rubSpent: number;
+  vndReceived?: number | null;
+  targetCurrency?: string | null;
+}>): DirectVndObservation[] {
+  return exchanges.flatMap((exchange) => {
+    const isDirectVndTarget = exchange.mode === 'RUB_TARGET' &&
+      exchange.targetCurrency?.trim().toUpperCase() === 'VND';
+    if (exchange.mode === 'RUB_VND' || isDirectVndTarget || exchange.vndReceived == null) return [];
+    return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
+  });
+}
+
+
+/** Only completed RUB→USDT→VND exchanges are observations of the VND/USDT rate. */
+export function mapActualVndUsdtExchanges(exchanges: Array<{
+  mode: string;
+  usdtReceived?: number | null;
+  vndReceived?: number | null;
+}>): Array<{ usdtReceived: number; vndReceived: number }> {
+  return exchanges.flatMap((exchange) => {
+    if (exchange.mode !== 'RUB_USDT_VND' ||
+        exchange.usdtReceived == null || exchange.vndReceived == null ||
+        !Number.isFinite(exchange.usdtReceived) || exchange.usdtReceived <= 0 ||
+        !Number.isFinite(exchange.vndReceived) || exchange.vndReceived <= 0) return [];
+    return [{ usdtReceived: exchange.usdtReceived, vndReceived: exchange.vndReceived }];
+  });
 }
