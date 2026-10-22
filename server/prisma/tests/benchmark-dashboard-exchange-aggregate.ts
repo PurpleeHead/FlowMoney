@@ -27,6 +27,12 @@ const EXPECTED_MONTH_EXPENSE_VND = Array.from({ length: EXPENSES_PER_USER }, (_,
 })).reduce((total, expense) => total + (expense.date >= currentMonthStart ? expense.amount : 0), 0);
 const EXPECTED_CARD_USDT = Array.from({ length: EXPENSES_PER_USER }, (_, i) => 0.8 + (i % 13) / 10)
   .reduce((total, amount) => total + amount, 0);
+const expectedExpenseVndForTenant = (tenant: number) => EXPECTED_EXPENSE_VND + tenant * 100 * EXPENSES_PER_USER;
+const expectedMonthExpenseVndForTenant = (tenant: number) => Array.from({ length: EXPENSES_PER_USER }, (_, i) => ({
+  base: 20_000 + (i % 37) * 1_000,
+  date: new Date(seedReferenceTime.getTime() - (i % 300) * DAY_MS),
+})).reduce((total, expense) => total + (expense.date >= currentMonthStart ? expense.base + tenant * 100 : 0), 0);
+const expectedCardUsdtForTenant = (tenant: number) => EXPECTED_CARD_USDT + tenant * 0.01 * EXPENSES_PER_USER;
 
 try {
   // Disposable CI database only: model multi-tenant exchange and expense history (35k rows total).
@@ -52,11 +58,11 @@ try {
         userId: user.id,
         title: `Synthetic dashboard expense ${i + 1}`,
         category: i % 4 === 0 ? 'Food' : i % 4 === 1 ? 'Transport' : i % 4 === 2 ? 'Shopping' : 'Other',
-        amount: 20_000 + (i % 37) * 1_000,
+        amount: 20_000 + (i % 37) * 1_000 + tenant * 100,
         currency: 'VND',
-        amountVnd: 20_000 + (i % 37) * 1_000,
-        amountRub: 60 + (i % 19),
-        usdtCharged: 0.8 + (i % 13) / 10,
+        amountVnd: 20_000 + (i % 37) * 1_000 + tenant * 100,
+        amountRub: 60 + (i % 19) + tenant,
+        usdtCharged: 0.8 + (i % 13) / 10 + tenant * 0.01,
         date: new Date(seedReferenceTime.getTime() - (i % 300) * DAY_MS),
       })),
     });
@@ -128,10 +134,12 @@ try {
   // Small concurrency smoke benchmark catches connection-pool or tenant-scope
   // regressions that a single request cannot reveal.
   const concurrentRequestCount = 10;
-  const concurrentApiTimings = await Promise.all(Array.from({ length: concurrentRequestCount }, async () => {
+  const concurrentApiTimings = await Promise.all(Array.from({ length: concurrentRequestCount }, async (_, requestIndex) => {
+    const tenant = requestIndex % TENANT_COUNT;
+    const tenantToken = jwt.sign({ id: users[tenant], email: `${suffix}-${tenant}@example.invalid`, tokenVersion: 0 }, secret);
     const started = performance.now();
     const response = await fetch(`http://127.0.0.1:${address.port}/api/dashboard`, {
-      headers: { authorization: `Bearer ${token}` },
+      headers: { authorization: `Bearer ${tenantToken}` },
     });
     const payload = await response.text();
     assert.equal(response.status, 200, `concurrent dashboard request failed: ${payload}`);
@@ -140,11 +148,11 @@ try {
     assert.equal(body.totalExchangeCount, EXCHANGES_PER_USER, 'concurrent dashboard response keeps lifetime count scoped');
     assert.equal(body.exchanges.length, 100, 'concurrent dashboard response keeps history bounded');
     assert.equal(body.totalExpenseCount, EXPENSES_PER_USER, 'concurrent dashboard response keeps lifetime expense count scoped');
-    assert.equal(body.totalVnd, EXPECTED_EXPENSE_VND, 'concurrent dashboard totals stay tenant-scoped');
-    assert.equal(body.observedVnd, EXPECTED_EXPENSE_VND, 'concurrent weighted card numerator stays tenant-scoped');
-    assert.equal(body.monthVnd, EXPECTED_MONTH_EXPENSE_VND, 'concurrent dashboard month totals stay consistent');
-    assert.ok(Math.abs(body.observedUsdt - EXPECTED_CARD_USDT) < 0.000001, 'concurrent weighted card denominator stays tenant-scoped');
-    assert.ok(Math.abs(body.observedVndPerUsdt - EXPECTED_EXPENSE_VND / EXPECTED_CARD_USDT) < 0.000001, 'concurrent weighted card rate remains stable');
+    assert.equal(body.totalVnd, expectedExpenseVndForTenant(tenant), 'concurrent dashboard totals stay isolated to the authenticated tenant');
+    assert.equal(body.observedVnd, expectedExpenseVndForTenant(tenant), 'concurrent weighted card numerator stays tenant-scoped');
+    assert.equal(body.monthVnd, expectedMonthExpenseVndForTenant(tenant), 'concurrent dashboard month totals stay tenant-scoped');
+    assert.ok(Math.abs(body.observedUsdt - expectedCardUsdtForTenant(tenant)) < 0.000001, 'concurrent weighted card denominator stays tenant-scoped');
+    assert.ok(Math.abs(body.observedVndPerUsdt - expectedExpenseVndForTenant(tenant) / expectedCardUsdtForTenant(tenant)) < 0.000001, 'concurrent weighted card rate remains tenant-scoped');
     assert.equal(body.expenses.length, EXPENSES_PER_USER, 'concurrent dashboard response keeps the chart expense window');
     return Number((performance.now() - started).toFixed(3));
   }));
