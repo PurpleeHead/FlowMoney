@@ -173,3 +173,9 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Both CI jobs passed on the corrected head: [run #39725923324](https://github.com/PurpleeHead/FlowMoney/actions/runs/39725923324) — application tests/build and PostgreSQL migrations/equivalence/benchmark/rollback checks.
 - [x] Corrected benchmark sample: full dashboard API 62.930 ms and 248,835-byte response; aggregate helper median 4.775 ms; ten concurrent requests interpolated P50 208.010 ms / P95 212.736 ms; 100-row history query 3.542 ms / 34,879 bytes. Exact aggregate EXPLAIN details are in the workflow log.
 - [x] The percentile figures are now mathematically consistent, but remain a single warm synthetic CI sample and are not production latency guarantees. Hosted, cold-cache and sustained-load measurements remain open.
+
+## Dashboard count-query regression — 2026-10-22 (PR #96)
+
+- [x] Removed a vacuous `assert.ok(true)` from the dashboard query-shape test and replaced it with assertions that the route issues exactly one all-time expense count and one all-time exchange count, with both predicates scoped to the authenticated user.
+- [x] CI run [#39727538247](https://github.com/PurpleeHead/FlowMoney/actions/runs/39727538247) passed on commit `1e1cf8d017aa1fde60af95507ed55ba94698c006`: both `verify` and `verify-migrations` succeeded, including the disposable PostgreSQL aggregate-equivalence and dashboard benchmark checks.
+- [ ] This strengthens route query-shape regression coverage only. Production database identity, encrypted backup/restore drill, legacy wallet reconciliation, Render configuration approval, and target-environment smoke tests remain open. PR #96 remains Draft and unmerged.
