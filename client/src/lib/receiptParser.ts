@@ -4,15 +4,26 @@ export type ReceiptPrintedTotal = { amount: number; line: string; needsReview?: 
 /** Extract only clearly labelled receipt totals; never infer a total from item prices. */
 export function parseReceiptPrintedTotal(text: string): ReceiptPrintedTotal | null {
   const totalLabel = /(?:tong\s*(?:thanh\s*toan|cong)|tien\s*can\s*thanh\s*toan|can\s*thanh\s*toan|phai\s*tra|grand\s*total|total\s*(?:due|payable)|amount\s*due|payment\s*due)/i;
+  const payableLabel = /(?:tong\s*thanh\s*toan|tien\s*can\s*thanh\s*toan|can\s*thanh\s*toan|phai\s*tra|grand\s*total|total\s*(?:due|payable)|amount\s*due|payment\s*due)/i;
+  const candidates: Array<ReceiptPrintedTotal & { preferred: boolean }> = [];
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.replace(/\s+/g, ' ').trim();
-    if (!line || !totalLabel.test(fold(line)) || /subtotal|tien\s*khach\s*dua|tien\s*thua/i.test(fold(line))) continue;
+    const folded = fold(line);
+    if (!line || !totalLabel.test(folded) || /subtotal|tam\s*tinh|tong\s*(?:cong\s*)?tien\s*hang|tien\s*khach\s*dua|tien\s*thua/i.test(folded)) continue;
     const match = line.match(/([\d][\d.,'’]*(?:\s+\d{3})*)\s*(?:₫|đ|VND|VNĐ)?\s*$/i);
     if (!match) continue;
     const parsed = normalizeVndPrice(match[1]);
-    if (parsed) return { amount: parsed.price, line, ...(parsed.needsReview ? { needsReview: true } : {}) };
+    if (parsed) candidates.push({
+      amount: parsed.price,
+      line,
+      preferred: payableLabel.test(folded),
+      ...(parsed.needsReview ? { needsReview: true } : {}),
+    });
   }
-  return null;
+  const selected = [...candidates].reverse().find(candidate => candidate.preferred) ?? candidates[candidates.length - 1];
+  if (!selected) return null;
+  const { preferred: _preferred, ...result } = selected;
+  return result;
 }
 
 function normalizeVndPrice(value: string): { price: number; needsReview: boolean } | null {

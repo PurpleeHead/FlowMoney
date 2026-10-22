@@ -230,9 +230,9 @@ export function mapActualVndExchanges(exchanges: Array<{
   targetCurrency?: string | null;
 }>): DirectVndObservation[] {
   return exchanges.flatMap((exchange) => {
-    const isDirectVndTarget = exchange.mode === 'RUB_TARGET' &&
-      exchange.targetCurrency?.trim().toUpperCase() === 'VND';
-    if (exchange.mode === 'RUB_VND' || isDirectVndTarget || exchange.vndReceived == null) return [];
+    // Only the explicit indirect RUB→USDT→VND mode can contribute here.
+    // Unknown/legacy target modes may carry stale vndReceived fields that are not actual VND proceeds.
+    if (exchange.mode !== 'RUB_USDT_VND' || exchange.vndReceived == null) return [];
     return [{ rubSpent: exchange.rubSpent, vndReceived: exchange.vndReceived }];
   });
 }

@@ -15,8 +15,11 @@ const originalExpenseAggregate = expenseModel.aggregate;
 const originalExpenseCount = expenseModel.count;
 const originalExchangeFindMany = exchangeModel.findMany;
 const originalExchangeCount = exchangeModel.count;
+const originalRawQuery = prisma.$queryRaw;
 const previousSecret = process.env.JWT_SECRET;
 let dashboardAggregateArgs: any[] = [];
+let dashboardExpenseCountArgs: any[] = [];
+let dashboardExchangeCountArgs: any[] = [];
 
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
@@ -25,6 +28,7 @@ afterEach(() => {
   expenseModel.count = originalExpenseCount;
   exchangeModel.findMany = originalExchangeFindMany;
   exchangeModel.count = originalExchangeCount;
+  (prisma as any).$queryRaw = originalRawQuery;
   if (previousSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = previousSecret;
 });
@@ -33,18 +37,82 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
   // as PostgreSQL. This keeps route tests independent of a live database.
   dashboardAggregateArgs = [];
+  dashboardExpenseCountArgs = [];
+  dashboardExchangeCountArgs = [];
+  const exchangeFindManyFixture = exchangeModel.findMany;
+  exchangeModel.findMany = async (args: any = {}) => {
+    const rows = await exchangeFindManyFixture(args);
+    // Match Prisma's bounded result behavior in API tests; summary aggregation mocks
+    // intentionally omit take so they can still see the complete fixture history.
+    return args.take == null ? rows : rows.slice(0, args.take);
+  };
   exchangeModel.count = async (args: any) => {
+    dashboardExchangeCountArgs.push(args);
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time exchange count must be scoped to the authenticated user');
     return (await exchangeModel.findMany({ where: { userId: 'dashboard-user' } })).length;
   };
   expenseModel.count = async (args: any) => {
+    dashboardExpenseCountArgs.push(args);
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time expense count must be scoped to the authenticated user');
-    return (await expenseModel.findMany({})).length;
+    return (await expenseModel.findMany({ where: { userId: args.where.userId } })).length;
+  };
+  (prisma as any).$queryRaw = async (queryParts: TemplateStringsArray | { sql?: string; text?: string; values?: unknown[] }, ...queryValues: any[]) => {
+    // Prisma.Sql is passed directly by the runtime helper; retain support for
+    // tagged-template calls used by other raw-query paths in the route tests.
+    const prismaSql = queryParts as unknown as { sql?: string; text?: string; values?: unknown[] };
+    const sqlText = Array.isArray(queryParts)
+      ? queryParts.join('?')
+      : String(prismaSql.sql ?? prismaSql.text ?? '');
+    const boundValues = Array.isArray(queryParts) ? queryValues : prismaSql.values ?? [];
+    assert.ok(sqlText.includes('WHERE "userId" = ?') || sqlText.includes('WHERE "userId" = $1'), 'dashboard aggregate SQL must scope rows by user ID');
+    assert.deepEqual(boundValues, ['dashboard-user'], 'dashboard SQL aggregate must bind the authenticated user ID');
+    const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
+    const n = (value: any): number => value == null ? 0 : Number(value);
+    const isTarget = (x: any, currency: string) => x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === currency;
+    const isDirectVnd = (x: any) => isTarget(x, 'VND');
+    const eligibleRubUsdt = rows.filter((x: any) =>
+      (x.mode === 'RUB_USDT_VND' && n(x.rubSpent) > 0 && n(x.usdtReceived) > 0) ||
+      (isTarget(x, 'USDT') && n(x.rubSpent) > 0 && n(x.targetReceived) > 0));
+    const actual = rows.filter((x: any) => x.mode === 'RUB_USDT_VND' && n(x.vndReceived) > 0 && n(x.usdtReceived) > 0);
+    const planning = rows.filter((x: any) => x.mode === 'RUB_USDT_VND' &&
+      x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
+    const direct = rows.filter((x: any) => {
+      const vnd = x.mode === 'RUB_VND' ? n(x.vndReceived) : isDirectVnd(x) ? n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) : null;
+      return n(x.rubSpent) > 0 && vnd != null && vnd > 0 &&
+        (x.mode === 'RUB_VND' || isDirectVnd(x));
+    });
+    const indirect = rows.filter((x: any) => x.mode === 'RUB_USDT_VND' &&
+      n(x.rubSpent) > 0 && n(x.vndReceived) > 0);
+    const estimatedTarget = rows.filter((x: any) => x.mode === 'RUB_TARGET' && !isDirectVnd(x) && x.targetVndEquivalent != null);
+    const estimatedUsdtRows = rows.filter((x: any) =>
+      (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
+      (isTarget(x, 'USDT') && x.vndReceived == null && x.targetReceived != null && x.targetVndEquivalent == null));
+    return [{
+      rubUsdtRub: eligibleRubUsdt.reduce((sum: number, x: any) => sum + n(x.rubSpent)!, 0),
+      rubUsdtUsdt: eligibleRubUsdt.reduce((sum: number, x: any) => sum + (isTarget(x, 'USDT') ? n(x.targetReceived)! : n(x.usdtReceived)!), 0),
+      actualVndUsdtVnd: actual.reduce((sum: number, x: any) => sum + n(x.vndReceived)!, 0),
+      actualVndUsdtUsdt: actual.reduce((sum: number, x: any) => sum + n(x.usdtReceived)!, 0),
+      planningUsdt: planning.reduce((sum: number, x: any) => sum + n(x.usdtReceived)!, 0),
+      planningWeightedVnd: planning.reduce((sum: number, x: any) => sum + n(x.usdtReceived)! * n(x.planningVndPerUsdt)!, 0),
+      directRub: direct.reduce((sum: number, x: any) => sum + n(x.rubSpent)!, 0),
+      directVnd: direct.reduce((sum: number, x: any) => sum + (x.mode === 'RUB_VND' ? n(x.vndReceived)! : n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived)!), 0),
+      indirectRub: indirect.reduce((sum: number, x: any) => sum + n(x.rubSpent)!, 0),
+      indirectVnd: indirect.reduce((sum: number, x: any) => sum + n(x.vndReceived)!, 0),
+      confirmedVnd: rows.reduce((sum: number, x: any) => sum + (
+        isDirectVnd(x) ? n(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) :
+        x.mode === 'RUB_TARGET' ? 0 : n(x.vndReceived)
+      ), 0),
+      estimatedTargetVnd: estimatedTarget.reduce((sum: number, x: any) => sum + n(x.targetVndEquivalent)!, 0),
+      estimatedUsdt: estimatedUsdtRows.reduce((sum: number, x: any) => sum + (isTarget(x, 'USDT') ? n(x.targetReceived)! : n(x.usdtReceived)!), 0),
+      hasEstimatedTargetVnd: estimatedTarget.length > 0,
+      hasUnpricedUsdtTopUps: rows.some((x: any) => (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
+        (isTarget(x, 'USDT') && x.vndReceived == null && x.targetReceived != null && x.targetVndEquivalent == null)),
+    }];
   };
   expenseModel.aggregate = async (args: any) => {
     dashboardAggregateArgs.push(args);
-    const rows = await expenseModel.findMany({});
     const where = args.where ?? {};
+    const rows = await expenseModel.findMany({ where: { userId: where.userId } });
     const filtered = rows.filter((row: any) => {
       if (where.date?.gte && new Date(row.date) < where.date.gte) return false;
       if (where.amountVnd?.gt != null && !(row.amountVnd != null && Number(row.amountVnd) > where.amountVnd.gt)) return false;
@@ -245,9 +313,13 @@ describe('dashboard query shape', () => {
     ].sort());
     assert.deepEqual(exchangeArgs.where, { userId: 'dashboard-user' });
     assert.deepEqual(exchangeArgs.orderBy, { createdAt: 'desc' });
+    assert.equal(exchangeArgs.take, 100, 'only recent exchange history should be loaded into application memory');
     assert.equal(dashboardAggregateArgs.length, 3);
-    // Count queries are independent of the recent history page and always tenant-scoped.
-    assert.ok(true);
+    // Count queries are independent of the recent history page and must remain tenant-scoped.
+    assert.equal(dashboardExpenseCountArgs.length, 1, 'dashboard must issue one all-time expense count');
+    assert.equal(dashboardExchangeCountArgs.length, 1, 'dashboard must issue one all-time exchange count');
+    assert.deepEqual(dashboardExpenseCountArgs[0].where, { userId: 'dashboard-user' });
+    assert.deepEqual(dashboardExchangeCountArgs[0].where, { userId: 'dashboard-user' });
     assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
     const allTimeAggregate = dashboardAggregateArgs.find(args => args._sum.amountVnd && !args.where.date);
     const monthAggregate = dashboardAggregateArgs.find(args => args.where.date?.gte);
@@ -270,6 +342,55 @@ describe('dashboard query shape', () => {
 });
 
 
+describe('dashboard expense aggregates enforce tenant isolation in the test double', () => {
+  it('excludes another user\'s expense from counts, totals, and weighted purchase rates', async () => {
+    const ownExpense = {
+      id: 'owned-expense', userId: 'dashboard-user', title: 'Owned', category: 'Food',
+      amount: 1000, currency: 'VND', amountVnd: 1000, amountRub: 3, usdtCharged: 2,
+      date: new Date(),
+    };
+    const foreignExpense = {
+      id: 'foreign-expense', userId: 'another-user', title: 'Foreign', category: 'Other',
+      amount: 999999, currency: 'VND', amountVnd: 999999, amountRub: 1, usdtCharged: 1,
+      date: new Date(),
+    };
+    expenseModel.findMany = async (args: any = {}) => {
+      const rows = [ownExpense, foreignExpense].filter(row =>
+        args.where?.userId == null || row.userId === args.where.userId);
+      return args.where?.date?.gte
+        ? rows.filter(row => row.date >= args.where.date.gte)
+        : rows;
+    };
+    exchangeModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        totalExpenseCount: number;
+        totalVnd: number;
+        observedVnd: number;
+        observedUsdt: number;
+        expenses: Array<{ id: string }>;
+      };
+      assert.equal(body.totalExpenseCount, 1);
+      assert.equal(body.totalVnd, 1000);
+      assert.equal(body.observedVnd, 1000);
+      assert.equal(body.observedUsdt, 2);
+      assert.deepEqual(body.expenses.map(row => row.id), ['owned-expense']);
+      assert.deepEqual(dashboardExpenseCountArgs[0].where, { userId: 'dashboard-user' });
+      assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
+    });
+  });
+});
+
+
 describe('dashboard weighted rates preserve actual observations', () => {
   it('weights actual card observations by charged USDT and does not use planning-only rates as actual', async () => {
     expenseModel.findMany = async () => [
@@ -288,9 +409,11 @@ describe('dashboard weighted rates preserve actual observations', () => {
       {
         ...exchangeFixture(),
         id: 'actual-exchange',
+        mode: 'RUB_USDT_VND',
+        targetCurrency: 'VND',
         targetToVndRate: null,
         targetVndEquivalent: null,
-        targetReceived: 40,
+        targetReceived: null,
         rubSpent: 3600,
         planningVndPerUsdt: 26000,
         vndReceived: 1000000,
@@ -299,9 +422,11 @@ describe('dashboard weighted rates preserve actual observations', () => {
       {
         ...exchangeFixture(),
         id: 'planning-only-exchange',
+        mode: 'RUB_USDT_VND',
+        targetCurrency: 'VND',
         targetToVndRate: null,
         targetVndEquivalent: null,
-        targetReceived: 20,
+        targetReceived: null,
         rubSpent: 1800,
         planningVndPerUsdt: 30000,
         vndReceived: null,
@@ -331,6 +456,70 @@ describe('dashboard weighted rates preserve actual observations', () => {
       assert.ok(Math.abs(body.effectiveRubPerUsdt - (5400 / 60)) < 1e-8);
       assert.ok(body.planningVndPerUsdt != null);
       assert.equal(body.planningVndPerUsdt, 30000);
+    });
+  });
+});
+
+
+describe('dashboard ignores stale fields on non-VND target exchanges', () => {
+  it('does not treat legacy VND, USDT, or planning values on a GEL target as VND balance or rate inputs', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [
+      {
+        ...exchangeFixture(),
+        id: 'gel-target-stale-vnd',
+        mode: 'RUB_TARGET',
+        targetCurrency: 'GEL',
+        rubSpent: 1000,
+        targetReceived: 5,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        usdtReceived: 888,
+        planningVndPerUsdt: 999,
+        vndReceived: 999999,
+      },
+      {
+        ...exchangeFixture(),
+        id: 'gel-target-stale-planning-only',
+        mode: 'RUB_TARGET',
+        targetCurrency: 'GEL',
+        rubSpent: 1200,
+        targetReceived: 6,
+        targetToVndRate: null,
+        targetVndEquivalent: null,
+        usdtReceived: 777,
+        planningVndPerUsdt: 30000,
+        vndReceived: null,
+      },
+    ];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        confirmedExchangeVnd: number;
+        estimatedUnconvertedVnd: number;
+        planningVndPerUsdt: number | null;
+        balanceVnd: number | null;
+        balanceIsEstimated: boolean;
+        effectiveVndPerUsdt: number | null;
+        effectiveVndPerRub: number | null;
+        effectiveRubPerUsdt: number | null;
+      };
+      assert.equal(body.confirmedExchangeVnd, 0, 'non-VND RUB_TARGET rows must not count stale vndReceived as confirmed VND');
+      assert.equal(body.estimatedUnconvertedVnd, 0, 'stale non-VND target fields must not create a VND estimate');
+      assert.equal(body.planningVndPerUsdt, null, 'planning rates are only valid for RUB_USDT_VND records');
+      assert.equal(body.balanceVnd, 0, 'stale target values must not inflate the estimated balance');
+      assert.equal(body.balanceIsEstimated, false);
+      assert.equal(body.effectiveVndPerUsdt, null, 'non-VND target rows are not actual or planning VND/USDT observations');
+      assert.equal(body.effectiveVndPerRub, null, 'non-VND target rows are not direct or indirect VND/RUB cost inputs');
+      assert.equal(body.effectiveRubPerUsdt, null, 'stale USDT fields on non-USDT targets must not affect the RUB/USDT rate');
     });
   });
 });
