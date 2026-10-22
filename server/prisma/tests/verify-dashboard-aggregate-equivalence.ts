@@ -161,7 +161,66 @@ try {
   assert.equal(Number(cardAggregate._sum.amountVnd), 95_536);
   assert.equal(Number(cardAggregate._sum.usdtCharged), 3.76);
 
-  console.log('Dashboard aggregate fixture passed against disposable PostgreSQL: user scoping, weighted rates, actual-vs-planned VND, direct VND legacy fallback, card totals, and cross-user exclusion.');
+  // Validate the remaining dashboard budget buckets before moving them into runtime SQL.
+  const [budgetAggregate] = await prisma.$queryRaw<Array<{
+    confirmedVnd: unknown;
+    estimatedTargetVnd: unknown;
+    plannedUsdt: unknown;
+    plannedWeightedVnd: unknown;
+  }>>`
+    SELECT
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND'
+          THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
+        ELSE "vndReceived"
+      END), 0) AS "confirmedVnd",
+      COALESCE(SUM(CASE
+        WHEN "mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) <> 'VND'
+          THEN "targetVndEquivalent"
+        ELSE 0
+      END), 0) AS "estimatedTargetVnd",
+      COALESCE(SUM(CASE
+        WHEN "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND "vndReceived" IS NULL
+          AND "usdtReceived" IS NOT NULL
+          AND "planningVndPerUsdt" IS NOT NULL
+          THEN "usdtReceived"
+        ELSE 0
+      END), 0) AS "plannedUsdt",
+      COALESCE(SUM(CASE
+        WHEN "mode" <> 'RUB_VND'
+          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+          AND "vndReceived" IS NULL
+          AND "usdtReceived" IS NOT NULL
+          AND "planningVndPerUsdt" IS NOT NULL
+          THEN "usdtReceived" * "planningVndPerUsdt"
+        ELSE 0
+      END), 0) AS "plannedWeightedVnd"
+    FROM "Exchange"
+    WHERE "userId" = ${mainUserId}
+  `;
+  assert.equal(Number(budgetAggregate.confirmedVnd), 3_135_000,
+    'confirmed VND aggregate must count direct targets once, preserve explicit zero outcomes, and include only recorded non-direct outcomes');
+  assert.equal(Number(budgetAggregate.estimatedTargetVnd), 920_000,
+    'estimated non-VND target value must stay separate from confirmed VND');
+  assert.equal(Number(budgetAggregate.plannedUsdt), 10,
+    'planning-rate denominator must include only eligible unpriced USDT top-ups');
+  assert.equal(Number(budgetAggregate.plannedWeightedVnd), 250_000,
+    'planning-rate numerator must be USDT-weighted and must not mix into factual observed rates');
+  const helperPlanned = exchangeRows
+    .filter(x => x.mode !== 'RUB_VND' &&
+      !(x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') &&
+      x.vndReceived == null && x.usdtReceived != null && x.planningVndPerUsdt != null);
+  const helperPlannedUsdt = helperPlanned.reduce((sum, x) => sum + Number(x.usdtReceived), 0);
+  const helperPlannedWeightedVnd = helperPlanned.reduce((sum, x) =>
+    sum + Number(x.usdtReceived) * Number(x.planningVndPerUsdt), 0);
+  near(Number(budgetAggregate.plannedUsdt), helperPlannedUsdt, 'PostgreSQL planning-rate denominator matches existing dashboard eligibility');
+  near(Number(budgetAggregate.plannedWeightedVnd), helperPlannedWeightedVnd, 'PostgreSQL planning-rate numerator matches existing dashboard eligibility');
+  near(Number(budgetAggregate.plannedWeightedVnd) / Number(budgetAggregate.plannedUsdt), 25_000,
+    'weighted planning rate is kept distinct from the observed VND/USDT rate');
+
+  console.log('Dashboard aggregate fixture passed against disposable PostgreSQL: user scoping, weighted rates, confirmed/estimated/planned budget buckets, direct VND legacy fallback, card totals, and cross-user exclusion.');
 } finally {
   if (userId) await prisma.user.deleteMany({ where: { id: userId } });
   if (otherUserId) await prisma.user.deleteMany({ where: { id: otherUserId } });
