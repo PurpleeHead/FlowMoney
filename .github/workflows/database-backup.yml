@@ -129,3 +129,13 @@ jobs:
               echo "Removed expired encrypted backup: $key"
             fi
           done
+      - name: Clean up temporary backup files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump" \
+            "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump.age" \
+            "$RUNNER_TEMP/flowmoney-backup/remote-verification.dump.age" \
+            "$RUNNER_TEMP/flowmoney-backup/restore-list.txt"
