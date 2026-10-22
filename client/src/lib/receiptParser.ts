@@ -20,7 +20,7 @@ export function parseReceiptPrintedTotal(text: string): ReceiptPrintedTotal | nu
       ...(parsed.needsReview ? { needsReview: true } : {}),
     });
   }
-  const selected = candidates.find(candidate => candidate.preferred) ?? candidates[0];
+  const selected = [...candidates].reverse().find(candidate => candidate.preferred) ?? candidates[candidates.length - 1];
   if (!selected) return null;
   const { preferred: _preferred, ...result } = selected;
   return result;
