@@ -98,7 +98,9 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   };
   expenseModel.count = async (args: any) => {
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time expense count must be scoped to the authenticated user');
-    return (await expenseModel.findMany({})).length;
+    const rows = await expenseModel.findMany({});
+    // Mirror tenant filtering in the mock as well as checking the Prisma arguments.
+    return rows.filter((row: any) => row.userId == null || row.userId === args.where.userId).length;
   };
   expenseModel.aggregate = async (args: any) => {
     dashboardAggregateArgs.push(args);
@@ -619,12 +621,15 @@ describe('dashboard historical purchase-rate observations', () => {
       assert.equal(response.status, 200);
       const body = await response.json() as {
         expenses: Array<{ id: string }>;
+        totalExpenseCount: number;
         observedVndPerUsdt: number | null;
         observedVnd: number;
         observedUsdt: number;
       };
       assert.deepEqual(body.expenses.map(row => row.id), ['purchase-recent'],
         'chart rows should remain limited to the configured 12-calendar-month window');
+      assert.equal(body.totalExpenseCount, 2,
+        'all-history expense count must exclude rows owned by another user');
       assert.equal(body.observedVnd, 1500000,
         'weighted observed purchase VND must include historical purchases outside the chart window');
       assert.equal(body.observedUsdt, 60,
