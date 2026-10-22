@@ -553,6 +553,45 @@ describe('dashboard aggregates stay independent from chart history window', () =
 });
 
 
+describe('dashboard local calendar boundaries', () => {
+  it('uses local month starts for current-month totals and the 12-calendar-month chart window', async () => {
+    const now = new Date();
+    const expectedMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const expectedChartStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const expenseQueries: any[] = [];
+    expenseModel.findMany = async (args: any = {}) => {
+      expenseQueries.push(args);
+      return [];
+    };
+    expenseModel.aggregate = async (args: any) => {
+      dashboardAggregateArgs.push(args);
+      return { _sum: { amountVnd: null, usdtCharged: null } };
+    };
+    exchangeModel.findMany = async () => [];
+    exchangeModel.count = async () => 0;
+    expenseModel.count = async () => 0;
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const chartQuery = expenseQueries.find(args => args.where?.date?.gte != null);
+      assert.ok(chartQuery, 'chart expense query must have a lower date bound');
+      assert.equal(new Date(chartQuery.where.date.gte).getTime(), expectedChartStart.getTime(),
+        'chart must begin at the first day of the month eleven months before the current month');
+      const monthAggregate = dashboardAggregateArgs.find(args => args.where?.date?.gte != null);
+      assert.ok(monthAggregate, 'current-month aggregate must have a date bound');
+      assert.equal(new Date(monthAggregate.where.date.gte).getTime(), expectedMonthStart.getTime(),
+        'current-month totals must begin at the first day of the local current month');
+    });
+  });
+});
+
 describe('dashboard direct RUB-to-VND target exchange', () => {
   it('counts the direct VND target equivalent once as confirmed VND, not as an estimate', async () => {
     expenseModel.findMany = async () => [];
