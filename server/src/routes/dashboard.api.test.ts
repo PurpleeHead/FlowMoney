@@ -295,11 +295,13 @@ describe('dashboard history window', () => {
     }));
     exchangeModel.findMany = async (args: any) => {
       assert.deepEqual(args.where, { userId: 'dashboard-user' });
-      if (args.take === 100) {
+      if (args.select) {
+        // The visible activity query must be database-bounded; a final JS slice is insufficient.
         assert.equal(args.take, 100);
-        // Simulate Prisma's database-side LIMIT, not merely the route's final slice.
+        assert.deepEqual(args.orderBy, { createdAt: 'desc' });
         return history.slice(0, args.take);
       }
+      // Separate all-history count and aggregate test paths intentionally see every row.
       return history;
     };
 
