@@ -165,3 +165,13 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] Added a route regression with 105 historical exchange rows: the dashboard returns no more than 100 activity rows while preserving the all-history exchange count and the balance aggregated across all 105.
 - [ ] Performance evidence for representative history volumes, explicit local-month/effective-timestamp tests, and review of the 12-month expense payload remain open.
 - [ ] Production DB identity, encrypted backup + isolated restore, legacy wallet preflight/reconciliation, live Render configuration reconciliation, explicit release approval and production smoke tests remain hard-stop gates. No production DB query/mutation, Render setting change, merge or deployment was performed; PR #83 remains Draft.
+
+
+## Latest verification — 2026-10-22 (all-history purchase-rate observation regression)
+
+- [x] Added route-level regression proving that a qualifying purchase older than the dashboard's 12-calendar-month chart window remains part of the all-history weighted purchase rate, while the chart response contains only in-window expense rows.
+- [x] The fixture asserts weighted rate is calculated as `sum(amountVnd) / sum(usdtCharged)` over all qualifying purchases, not from the chart-limited list.
+- [x] CI [#1884](https://github.com/PurpleeHead/FlowMoney/actions/runs/39719515346) passed on exact head `2eb75126c2c619a04a55d2e553dae9e9bfa93604`; both `verify` and `verify-migrations` succeeded.
+- [x] Security [#269](https://github.com/PurpleeHead/FlowMoney/actions/runs/39719515278) passed on the same head, including tests, production build, dependency audit and review-artifact upload.
+- [ ] Representative-volume performance evidence (`EXPLAIN (ANALYZE, BUFFERS)`, timings, row counts and serialized payload sizes) remains open.
+- [ ] Production release hard stops remain: identify/approve the actual production DB, encrypted backup plus successful isolated restore, read-only legacy wallet preflight/reconciliation, reconcile live Render configuration, explicit release approval and post-release smoke tests. No production DB query/mutation, Render setting change, merge or deployment was performed; PR #83 remains Draft.
