@@ -194,3 +194,12 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] CI [#1896](https://github.com/PurpleeHead/FlowMoney/actions/runs/39720043206) passed on code head `84b779c4ea501a610c11cd237118882db4c905b8`; both `verify` and `verify-migrations` succeeded.
 - [x] Security [#275](https://github.com/PurpleeHead/FlowMoney/actions/runs/39720043125) passed on the same code head.
 - [ ] Representative-volume query plans/timings/payload measurements and production infrastructure gates listed above remain open. PR #83 remains Draft; no production access/mutation, Render change, merge or deployment.
+
+
+## Latest verification — 2026-10-22 (performance evidence preparation)
+
+- [x] Added `docs/DASHBOARD_PERFORMANCE_BENCHMARK.md` with a disposable-PostgreSQL-only procedure, synthetic small/medium/large data profiles, median/p95 latency and response-size measurements, and required `EXPLAIN (ANALYZE, BUFFERS)` evidence.
+- [x] Updated `docs/DASHBOARD_PERFORMANCE_PLAN.md` to reflect the current implementation: recent exchange activity is capped at 100 rows, while exchange-derived all-history summaries use a user-scoped PostgreSQL aggregate.
+- [x] CI run [#1898](https://github.com/PurpleeHead/FlowMoney/actions/runs/39720143941) and Security run [#276](https://github.com/PurpleeHead/FlowMoney/actions/runs/39720143983) passed on prior code head `6afbbb0aeb6dab6f9c6ca72194573434617429a4`; the new commits in this section are documentation-only and require their own checks.
+- [ ] No representative-volume benchmark has been run yet. The runbook intentionally does not invent timings or claim a performance improvement without measurements.
+- [ ] Production release blockers remain unchanged: identify/approve the actual production DB, encrypted backup plus successful isolated restore, read-only legacy wallet preflight and reconciliation, reconcile live Render configuration, explicit release-window approval, and production smoke tests. PR #83 remains Draft; no production DB access/mutation, Render setting change, merge, or deployment was performed.
