@@ -53,10 +53,11 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   (prisma as any).$queryRaw = async (queryParts: TemplateStringsArray | { sql?: string; text?: string; values?: unknown[] }, ...queryValues: any[]) => {
     // Prisma.Sql is passed directly by the runtime helper; retain support for
     // tagged-template calls used by other raw-query paths in the route tests.
+    const prismaSql = queryParts as unknown as { sql?: string; text?: string; values?: unknown[] };
     const sqlText = Array.isArray(queryParts)
       ? queryParts.join('?')
-      : String(queryParts.sql ?? queryParts.text ?? '');
-    const boundValues = Array.isArray(queryParts) ? queryValues : queryParts.values ?? [];
+      : String(prismaSql.sql ?? prismaSql.text ?? '');
+    const boundValues = Array.isArray(queryParts) ? queryValues : prismaSql.values ?? [];
     assert.ok(sqlText.includes('WHERE "userId" = ?') || sqlText.includes('WHERE "userId" = $1'), 'dashboard aggregate SQL must scope rows by user ID');
     assert.deepEqual(boundValues, ['dashboard-user'], 'dashboard SQL aggregate must bind the authenticated user ID');
     const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
