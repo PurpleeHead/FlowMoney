@@ -51,17 +51,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/flowmoney-backup"
-          # Use a client newer than the PostgreSQL versions commonly offered by
-          # managed hosts; do not print connection strings or dump contents.
+          # Refuse unencrypted connections and unsupported server versions before dumping data.
+          # The gate is covered by mocked-docker regression tests in CI.
+          pg_url="$(bash scripts/normalize-backup-db-url.sh)"
+          pg_major="$(bash scripts/verify-backup-db-connection.sh)"
+          postgres_image="postgres:${pg_major}"
+          echo "Using PostgreSQL ${pg_major} client for the backup archive."
           docker run --rm \
-            -e DATABASE_URL="$DATABASE_URL" \
+            -e DATABASE_URL="$pg_url" \
             -v "$RUNNER_TEMP/flowmoney-backup:/backup" \
-            postgres:18 \
+            "$postgres_image" \
             sh -euc 'pg_dump "$DATABASE_URL" --format=custom --no-owner --no-acl --file=/backup/flowmoney.dump'
           test -s "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump"
           docker run --rm \
             -v "$RUNNER_TEMP/flowmoney-backup:/backup:ro" \
-            postgres:18 \
+            "$postgres_image" \
             pg_restore --list /backup/flowmoney.dump > "$RUNNER_TEMP/flowmoney-backup/restore-list.txt"
           test -s "$RUNNER_TEMP/flowmoney-backup/restore-list.txt"
       - name: Encrypt backup before upload
@@ -81,7 +85,7 @@ jobs:
           export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           stamp="$(date -u +'%Y/%m/%d/%H%M%S')"
-          key="flowmoney/database/${stamp}-${GITHUB_SHA}.dump.age"
+          key="flowmoney/database/${stamp}-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.dump.age"
           aws --endpoint-url "$endpoint" s3 cp \
             "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump.age" \
             "s3://${R2_BUCKET}/${key}" \
@@ -93,7 +97,19 @@ jobs:
             echo "::error::Uploaded backup verification failed."
             exit 1
           fi
-          echo "Encrypted backup uploaded and verified: $key ($size bytes)"
+          remote_copy="$RUNNER_TEMP/flowmoney-backup/remote-verification.dump.age"
+          aws --endpoint-url "$endpoint" s3 cp \
+            "s3://${R2_BUCKET}/${key}" \
+            "$remote_copy" \
+            --only-show-errors
+          local_sha="$(sha256sum "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump.age" | cut -d' ' -f1)"
+          remote_sha="$(sha256sum "$remote_copy" | cut -d' ' -f1)"
+          if [[ "$local_sha" != "$remote_sha" ]]; then
+            echo "::error::Downloaded backup checksum does not match the uploaded archive."
+            exit 1
+          fi
+          rm -f "$remote_copy"
+          echo "Encrypted backup uploaded, size-checked, and SHA-256 verified after download: $key ($size bytes)"
       - name: Remove backups older than 30 days
         shell: bash
         run: |
@@ -113,3 +129,13 @@ jobs:
               echo "Removed expired encrypted backup: $key"
             fi
           done
+      - name: Clean up temporary backup files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump" \
+            "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump.age" \
+            "$RUNNER_TEMP/flowmoney-backup/remote-verification.dump.age" \
+            "$RUNNER_TEMP/flowmoney-backup/restore-list.txt"

@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+      - name: Test backup TLS and PostgreSQL version gate
+        run: bash scripts/test-backup-db-connection.sh
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -198,3 +200,31 @@ jobs:
             END IF;
           END $backfill$;
           SQL
+      - name: Verify encrypted PostgreSQL backup round-trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes age postgresql-client
+          work_dir="$RUNNER_TEMP/flowmoney-restore-drill"
+          mkdir -p "$work_dir"
+          trap 'rm -rf "$work_dir"' EXIT
+          identity="$work_dir/age-identity.txt"
+          age-keygen -o "$identity" 2>/dev/null
+          recipient="$(age-keygen -y "$identity")"
+          pg_url="$(bash scripts/normalize-backup-db-url.sh)"
+          pg_dump "$pg_url" --format=custom --no-owner --no-acl --file="$work_dir/flowmoney.dump"
+          test -s "$work_dir/flowmoney.dump"
+          age --recipient "$recipient" --output "$work_dir/flowmoney.dump.age" "$work_dir/flowmoney.dump"
+          test -s "$work_dir/flowmoney.dump.age"
+          rm "$work_dir/flowmoney.dump"
+          age --decrypt --identity "$identity" --output "$work_dir/restored.dump" "$work_dir/flowmoney.dump.age"
+          test -s "$work_dir/restored.dump"
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE flowmoney_restore_test'
+          restore_url='postgresql://postgres:postgres@localhost:5432/flowmoney_restore_test'
+          pg_restore --exit-on-error --no-owner --no-acl --dbname="$restore_url" "$work_dir/restored.dump"
+          restored_schema="$(psql "$restore_url" --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT (to_regclass('public.\"User\"') IS NOT NULL AND to_regclass('public.\"WalletMovement\"') IS NOT NULL AND to_regclass('public.\"_prisma_migrations\"') IS NOT NULL)")"
+          [[ "$restored_schema" == "t" ]] || { echo "::error::Encrypted backup restore is missing required FLOWMONEY tables."; exit 1; }
+          movement_count="$(psql "$restore_url" --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT count(*) FROM \"WalletMovement\" WHERE \"userId\" = 'backfill-test-user'")"
+          [[ "$movement_count" == "11" ]] || { echo "::error::Restored wallet movement count mismatch: $movement_count"; exit 1; }
+          echo "PASS: encrypted backup decrypted, restored to a separate disposable database, and key tables/data verified."

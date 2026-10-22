@@ -30,7 +30,7 @@ Create a private R2 bucket and a dedicated bucket-scoped access key. Do not reus
 1. Confirm the production database URL points to the intended persistent database and not `flowmoney-test-db`.
 2. Confirm the R2 bucket is private and the age private identity can be recovered offline.
 3. After PR #82's code review and CI pass, merge only with Render auto-deploy disabled. This makes the workflow available on `main`; merging must not be treated as permission to deploy or migrate the production database.
-4. Run **Actions → FLOWMONEY encrypted database backup → Run workflow** on `main` before triggering a Render deploy. It creates a PostgreSQL custom-format dump, validates its archive catalog, encrypts it before upload, uploads to R2, and verifies the uploaded object's non-zero size.
+4. Run **Actions → FLOWMONEY encrypted database backup → Run workflow** on `main` before triggering a Render deploy. It creates a PostgreSQL custom-format dump, validates its archive catalog, encrypts it before upload, uploads to R2, verifies the uploaded object's non-zero size, downloads it back, and checks its SHA-256 against the local encrypted archive before retention cleanup.
 5. Independently download the encrypted object, decrypt it using the offline private age identity, and restore it into a disposable PostgreSQL database. Verify tables and representative records/counts. A successful upload alone is not a restore test.
 6. Record the timestamp, object key, restore result, and the person who performed the test in the release notes. Do not store secrets or real financial data in the notes.
 7. Manually deploy the reviewed commit only after the pre-deploy backup and restore test pass. The current Render start command runs `prisma migrate deploy`; therefore deploying it applies migrations. Confirm the target URL and backup immediately before triggering the deploy.
@@ -59,7 +59,9 @@ Create a private R2 bucket and a dedicated bucket-scoped access key. Do not reus
 
 - GitHub Actions backup workflow is only scheduled after the workflow is merged to `main`; it cannot access production secrets from an unmerged draft PR.
 - Cloudflare R2 credentials and the database backup URL must be configured by the account owner; these credentials are not currently available to this workflow.
-- The workflow validates the dump and uploaded object, but the first successful backup still requires a separate manual restore drill.
+- The workflow verifies TLS on the actual database connection, detects the server major version, and uses matching PostgreSQL 14+ backup clients. CI regression-tests the gate with TLS enabled/disabled, malformed version output, missing URL, failed connection probe, and PostgreSQL 13.
+- CI also performs an end-to-end encrypted dump round-trip against disposable PostgreSQL: generate a temporary age identity, dump, encrypt, remove the plaintext archive, decrypt, restore into a separate disposable database, and verify required tables plus wallet-movement fixture data. This validates the mechanics but does not replace the required production backup and independent restore drill.
+- The production workflow validates the dump and uploaded object, but the first successful production backup still requires a separate manual restore drill.
 - The proposed Render Blueprint now uses `/api/ready` for health checks. `/api/health` remains a liveness endpoint; readiness returns HTTP 503 when the database probe fails and does not expose connection details. Applying a Blueprint is a live configuration change and still requires explicit owner approval.
 - Free tiers are not an SLA. Keep usage under the published quota and review provider policies periodically.
 - Do not switch the live service to `main`, trigger a production deploy, or run production migrations until the required checks and backup/restore gate are complete.
