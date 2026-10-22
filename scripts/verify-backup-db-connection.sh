@@ -15,10 +15,10 @@ if [[ "$tls_status" != "t" ]]; then
 fi
 
 server_version_num="$(docker run --rm \
-  -e DATABASE_URL="$DATABASE_URL" \
+  -e DATABASE_URL="$pg_url" \
   postgres:18 \
   psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 \
-    "$DATABASE_URL" --command='SHOW server_version_num')"
+    "$pg_url" --command='SHOW server_version_num')"
 if [[ ! "$server_version_num" =~ ^[0-9]+$ ]]; then
   echo "::error::Could not determine PostgreSQL server version." >&2
   exit 1
