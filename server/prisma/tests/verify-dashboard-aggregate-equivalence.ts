@@ -14,6 +14,7 @@ import {
 const suffix = `dashboard-aggregate-equivalence-${Date.now()}`;
 let userId: string | undefined;
 let otherUserId: string | undefined;
+let staleFlagUserId: string | undefined;
 
 function near(actual: number | null, expected: number | null, label: string) {
   if (actual === null || expected === null) {
@@ -194,8 +195,8 @@ try {
     targetCurrency: x.targetCurrency,
     targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
   }))));
-  const sqlRubUsdt = (Number(exchangeAggregate._sum.rubSpent ?? 0) + 5000 + 3200) /
-    (Number(exchangeAggregate._sum.usdtReceived ?? 0) + 56 + 40);
+  const sqlRubUsdt = (Number(exchangeAggregate._sum.rubSpent ?? 0) + 5000) /
+    (Number(exchangeAggregate._sum.usdtReceived ?? 0) + 56);
   near(sqlRubUsdt, helperRubUsdt, 'weighted RUB/USDT rate including direct RUB→USDT target');
 
   const observedExchangeRows = mapActualVndUsdtExchanges(exchangeRows.map(x => ({
@@ -309,6 +310,24 @@ try {
   assert.equal(runtimeAggregate.estimatedUsdt, 66, 'runtime SQL estimates direct and indirect unconverted USDT');
   assert.equal(runtimeAggregate.hasEstimatedTargetVnd, true);
   assert.equal(runtimeAggregate.hasUnpricedUsdtTopUps, true);
+  const staleFlagUser = await prisma.user.create({
+    data: { email: `${suffix}-stale-flag@example.invalid`, passwordHash: 'test-only' },
+  });
+  staleFlagUserId = staleFlagUser.id;
+  await prisma.exchange.create({
+    data: {
+      userId: staleFlagUser.id,
+      mode: 'RUB_TARGET',
+      targetCurrency: 'USDT',
+      rubSpent: 3200,
+      targetReceived: 40,
+      vndReceived: 1_000_000,
+    },
+  });
+  const staleFlagAggregate = await aggregateDashboardExchanges(staleFlagUser.id);
+  assert.equal(staleFlagAggregate.estimatedUsdt, 0, 'a USDT target with a legacy VND outcome is not estimated as unconverted');
+  assert.equal(staleFlagAggregate.hasUnpricedUsdtTopUps, false, 'a USDT target with a legacy VND outcome is not flagged as unpriced');
+
   const runtimeVndRub = (
     runtimeAggregate.directVnd + runtimeAggregate.indirectVnd + cardRows.reduce((sum, x) => sum + x.amountVnd, 0)
   ) / (
@@ -321,5 +340,6 @@ try {
 } finally {
   if (userId) await prisma.user.deleteMany({ where: { id: userId } });
   if (otherUserId) await prisma.user.deleteMany({ where: { id: otherUserId } });
+  if (staleFlagUserId) await prisma.user.deleteMany({ where: { id: staleFlagUserId } });
   await prisma.$disconnect();
 }
