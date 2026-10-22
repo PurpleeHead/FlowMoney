@@ -45,8 +45,9 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time exchange count must be scoped to the authenticated user');
     return (await exchangeModel.findMany({ where: { userId: 'dashboard-user' } })).length;
   };
-  rawPrisma.$queryRaw = async (strings: TemplateStringsArray, ..._values: any[]) => {
+  rawPrisma.$queryRaw = async (strings: TemplateStringsArray, ...values: any[]) => {
     assert.ok(strings.join('').includes('"userId"'), 'exchange summary SQL must scope aggregates to the authenticated user');
+    assert.deepEqual(values, ['dashboard-user'], 'exchange summary SQL must bind the authenticated user ID as a parameter');
     const rows = await exchangeModel.findMany({ where: { userId: 'dashboard-user' } });
     const amount = (x: any, key: string) => x[key] == null ? null : Number(x[key]);
     const currency = (x: any) => String(x.targetCurrency ?? '').trim().toUpperCase();
