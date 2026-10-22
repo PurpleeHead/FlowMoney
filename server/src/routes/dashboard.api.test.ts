@@ -294,9 +294,11 @@ describe('dashboard history window', () => {
       createdAt: new Date(Date.UTC(2026, 9, 22, 0, index)),
     }));
     exchangeModel.findMany = async (args: any) => {
+      assert.deepEqual(args.where, { userId: 'dashboard-user' });
       if (args.take === 100) {
-        assert.deepEqual(args.where, { userId: 'dashboard-user' });
         assert.equal(args.take, 100);
+        // Simulate Prisma's database-side LIMIT, not merely the route's final slice.
+        return history.slice(0, args.take);
       }
       return history;
     };
