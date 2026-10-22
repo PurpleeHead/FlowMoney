@@ -553,6 +553,72 @@ describe('dashboard aggregates stay independent from chart history window', () =
 });
 
 
+describe('dashboard historical purchase-rate observations', () => {
+  it('keeps all-history weighted purchase rates independent of the chart window', async () => {
+    const oldPurchase = {
+      id: 'purchase-old',
+      userId: 'dashboard-user',
+      title: 'Old purchase',
+      category: 'food',
+      amount: 1000000,
+      currency: 'VND',
+      amountVnd: 1000000,
+      amountRub: null,
+      usdtCharged: 40,
+      date: new Date('2024-01-15T10:00:00.000Z'),
+    };
+    const recentPurchase = {
+      id: 'purchase-recent',
+      userId: 'dashboard-user',
+      title: 'Recent purchase',
+      category: 'food',
+      amount: 500000,
+      currency: 'VND',
+      amountVnd: 500000,
+      amountRub: null,
+      usdtCharged: 20,
+      date: new Date(),
+    };
+    const allExpenses = [oldPurchase, recentPurchase];
+    const expenseReadArgs: any[] = [];
+    expenseModel.findMany = async (args: any = {}) => {
+      expenseReadArgs.push(args);
+      const lowerBound = args.where?.date?.gte;
+      return allExpenses.filter(row => lowerBound == null || row.date >= lowerBound);
+    };
+    exchangeModel.findMany = async () => [];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        expenses: Array<{ id: string }>;
+        observedVndPerUsdt: number | null;
+        observedVnd: number;
+        observedUsdt: number;
+      };
+      assert.deepEqual(body.expenses.map(row => row.id), ['purchase-recent'],
+        'chart rows should remain limited to the configured 12-calendar-month window');
+      assert.equal(body.observedVnd, 1500000,
+        'weighted observed purchase VND must include historical purchases outside the chart window');
+      assert.equal(body.observedUsdt, 60,
+        'weighted observed purchase USDT must include historical purchases outside the chart window');
+      assert.equal(body.observedVndPerUsdt, 25000,
+        'effective purchase rate must be sum(VND) / sum(USDT) over all qualifying observations');
+      assert.ok(expenseReadArgs.some(args => args.where?.date?.gte != null),
+        'chart expense query must use the bounded chart window');
+      assert.ok(expenseReadArgs.some(args => args.where?.date == null),
+        'aggregate source reads must not inherit the chart date bound');
+    });
+  });
+});
+
 describe('dashboard local calendar boundaries', () => {
   it('uses local month starts for current-month totals and the 12-calendar-month chart window', async () => {
     const now = new Date();
