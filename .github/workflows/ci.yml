@@ -120,6 +120,8 @@ jobs:
         run: npx prisma migrate deploy --schema=server/prisma/schema.prisma
       - name: Verify dashboard aggregate equivalence against disposable PostgreSQL
         run: npx tsx server/prisma/tests/verify-dashboard-aggregate-equivalence.ts
+      - name: Verify dashboard cost-basis edge cases against disposable PostgreSQL
+        run: npx tsx server/prisma/tests/verify-dashboard-cost-basis-edge-cases.ts
       - name: Benchmark dashboard aggregate and capture EXPLAIN ANALYZE on disposable PostgreSQL
         run: npx tsx server/prisma/tests/benchmark-dashboard-exchange-aggregate.ts
       - name: Verify transaction rollback when ledger write fails
