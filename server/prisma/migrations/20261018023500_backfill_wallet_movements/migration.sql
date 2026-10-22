@@ -1,6 +1,7 @@
 -- Backfill existing source records into the unified wallet ledger.
 -- Additive and idempotent: source keys already synchronized by the live API are preserved.
--- This migration is not applied automatically by application startup.
+-- Deployment note: the current Render startCommand runs `prisma migrate deploy` before `npm start`,
+-- so this migration is applied during service startup unless that command is changed.
 INSERT INTO "WalletMovement" (
   "id", "userId", "currency", "amountDelta", "kind", "sourceKey", "note", "occurredAt"
 )
