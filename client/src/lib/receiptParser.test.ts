@@ -68,6 +68,13 @@ describe('printed receipt total detection', () => {
     expect(parseReceiptPrintedTotal('Coffee 40,000\nGrand total 40,000 VND')).toEqual({ amount: 40000, line: 'Grand total 40,000 VND' });
   });
 
+  it('prefers the final payable total over an earlier generic total', () => {
+    expect(parseReceiptPrintedTotal('Tổng cộng 120.000\nGiảm giá 12.000\nTổng thanh toán 108.000 ₫')).toEqual({
+      amount: 108000,
+      line: 'Tổng thanh toán 108.000 ₫',
+    });
+  });
+
   it('does not mistake subtotal, cash tendered, or change for the payable total', () => {
     expect(parseReceiptPrintedTotal('Subtotal 40.000\nCash 50.000\nChange 10.000')).toBeNull();
   });
