@@ -53,6 +53,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
         mode: x.mode,
         rubSpent: Number(x.rubSpent),
         vndReceived: x.vndReceived == null ? null : Number(x.vndReceived),
+        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
         targetVndEquivalent: x.targetVndEquivalent == null ? null : Number(x.targetVndEquivalent),
         targetCurrency: x.targetCurrency,
       }))),
@@ -76,7 +77,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       if (x.mode === 'RUB_TARGET' && x.targetCurrency?.trim().toUpperCase() === 'VND') {
         // Prefer the recorded net outcome (including an explicit zero) over legacy
         // target equivalents/gross target amounts, and count each exchange only once.
-        return sum + Number(x.vndReceived ?? x.targetVndEquivalent ?? x.targetReceived ?? 0);
+        return sum + Number(x.vndReceived ?? x.targetReceived ?? x.targetVndEquivalent ?? 0);
       }
       return sum + (x.vndReceived != null ? Number(x.vndReceived) : 0);
     }, 0);
