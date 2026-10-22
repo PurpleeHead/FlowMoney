@@ -203,3 +203,11 @@ This checklist is intentionally conservative. Passing CI does not prove that the
 - [x] CI run [#1898](https://github.com/PurpleeHead/FlowMoney/actions/runs/39720143941) and Security run [#276](https://github.com/PurpleeHead/FlowMoney/actions/runs/39720143983) passed on prior code head `6afbbb0aeb6dab6f9c6ca72194573434617429a4`; the new commits in this section are documentation-only and require their own checks.
 - [ ] No representative-volume benchmark has been run yet. The runbook intentionally does not invent timings or claim a performance improvement without measurements.
 - [ ] Production release blockers remain unchanged: identify/approve the actual production DB, encrypted backup plus successful isolated restore, read-only legacy wallet preflight and reconciliation, reconcile live Render configuration, explicit release-window approval, and production smoke tests. PR #83 remains Draft; no production DB access/mutation, Render setting change, merge, or deployment was performed.
+
+
+## Latest verification — 2026-10-22 (dashboard limit test fidelity)
+
+- [x] Tightened the 105-exchange history regression so its Prisma test double now simulates the database-side `take: 100` limit instead of returning all rows and relying on the route's final array slice.
+- [x] The mock still returns all 105 rows for the separate all-history aggregate/count path, preserving the intended check that the activity window is bounded while totals include older records.
+- [ ] CI and Security results for this code change are pending; the GitHub Actions run lookup has not surfaced PR-triggered runs for the new SHA yet.
+- [ ] Performance benchmark results and production release hard stops remain open. No production DB access/mutation, Render setting change, merge, or deployment was performed.
