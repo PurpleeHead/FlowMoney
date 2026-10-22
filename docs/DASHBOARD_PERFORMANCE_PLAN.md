@@ -223,3 +223,19 @@ Latest disposable CI sample with 35,000 seeded rows:
 - Exact runtime aggregate EXPLAIN ANALYZE: 2.831 ms; selective tenant-only query: 0.328 ms.
 
 This is one warm, ephemeral CI sample, not a production SLA. Hosted measurements, cold-cache and longer-load tests remain necessary. PR #96 remains Draft and has not been merged or deployed.
+
+
+## Cross-tenant concurrent API regression — 2026-10-22 (head 6ae83a29)
+
+The concurrency benchmark was strengthened so the ten seeded tenants no longer have identical expense totals/rates. Each concurrent request now carries a tenant-specific JWT and checks that the returned all-time expense sum, current-month sum, weighted VND numerator, USDT denominator, and weighted VND/USDT rate match that tenant's independently calculated expected values. This closes a blind spot in the previous same-tenant concurrency test, which could not reliably expose cross-tenant response mixing when fixture totals were identical. The existing full-response 350,000-byte guard and bounded exchange history assertions remain in place.
+
+Both CI jobs passed on head `6ae83a29a9bf7b0da3c7fa18e6fd9bff9360d11d`: [application verification and production build](https://github.com/PurpleeHead/FlowMoney/actions/runs/39706514819) and [PostgreSQL/migration/benchmark verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39706514819).
+
+Latest synthetic run with tenant-distinct financial data (35,000 seeded rows):
+- Full dashboard API: 67.299 ms; response 248,835 bytes.
+- Ten concurrent cross-tenant requests: p50 232.283 ms; p95 237.147 ms.
+- Runtime aggregate helper median: 5.282 ms.
+- Bounded 100-row exchange-history query: 3.569 ms; history JSON 34,879 bytes.
+- Exact runtime aggregate EXPLAIN ANALYZE: 4.785 ms; selective tenant-only query: 0.516 ms.
+
+This is a warm, ephemeral CI baseline, not a production SLA. The concurrent timings include ten distinct tenant reads and will naturally differ from same-tenant runs. Hosted performance and longer-duration load tests are still required. PR #96 remains Draft, unmerged and undeployed.
