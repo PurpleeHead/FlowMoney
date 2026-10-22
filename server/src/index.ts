@@ -16,6 +16,7 @@ import walletRoutes from './routes/wallets.js';
 import { errorHandler } from './middleware/errors.js';
 import { prisma } from './services/prisma.js';
 import { assertProductionSecurityConfiguration } from './config/security.js';
+import { isDatabaseReady } from './services/readiness.js';
 
 assertProductionSecurityConfiguration();
 
@@ -58,6 +59,17 @@ app.use('/api/auth/register', rateLimit({
   legacyHeaders: false,
 }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'flowmoney-api' }));
+app.get('/api/ready', async (_req, res) => {
+  const ready = await isDatabaseReady(() => prisma.$queryRaw`SELECT 1`);
+  if (!ready) {
+    return res.status(503).json({
+      status: 'error',
+      service: 'flowmoney-api',
+      database: 'unavailable',
+    });
+  }
+  return res.json({ status: 'ok', service: 'flowmoney-api', database: 'ok' });
+});
 app.use('/api/auth', authRoutes);
 app.use('/api/exchanges', exchangeRoutes);
 app.use('/api/expenses', expenseRoutes);
