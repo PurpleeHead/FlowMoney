@@ -11,7 +11,7 @@ type DashboardExchangeAggregate = {
 
 /** Aggregate all dashboard exchange financial inputs in PostgreSQL without loading full history. */
 export async function aggregateDashboardExchanges(userId: string): Promise<DashboardExchangeAggregate> {
-  const rows = await prisma.$queryRaw<DashboardExchangeAggregate[]>\`
+  const rows = await prisma.$queryRaw<DashboardExchangeAggregate[]>`
 
         SELECT
           COALESCE(SUM(CASE
@@ -77,7 +77,7 @@ export async function aggregateDashboardExchanges(userId: string): Promise<Dashb
         FROM "Exchange"
         WHERE "userId" = ${userId}
       
-  \`;
+  `;
   if (!rows[0]) throw new Error('Dashboard exchange aggregate query returned no row.');
   return rows[0];
 }
