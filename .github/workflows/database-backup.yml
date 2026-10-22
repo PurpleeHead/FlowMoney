@@ -97,7 +97,19 @@ jobs:
             echo "::error::Uploaded backup verification failed."
             exit 1
           fi
-          echo "Encrypted backup uploaded and verified: $key ($size bytes)"
+          remote_copy="$RUNNER_TEMP/flowmoney-backup/remote-verification.dump.age"
+          aws --endpoint-url "$endpoint" s3 cp \
+            "s3://${R2_BUCKET}/${key}" \
+            "$remote_copy" \
+            --only-show-errors
+          local_sha="$(sha256sum "$RUNNER_TEMP/flowmoney-backup/flowmoney.dump.age" | cut -d' ' -f1)"
+          remote_sha="$(sha256sum "$remote_copy" | cut -d' ' -f1)"
+          if [[ "$local_sha" != "$remote_sha" ]]; then
+            echo "::error::Downloaded backup checksum does not match the uploaded archive."
+            exit 1
+          fi
+          rm -f "$remote_copy"
+          echo "Encrypted backup uploaded, size-checked, and SHA-256 verified after download: $key ($size bytes)"
       - name: Remove backups older than 30 days
         shell: bash
         run: |
