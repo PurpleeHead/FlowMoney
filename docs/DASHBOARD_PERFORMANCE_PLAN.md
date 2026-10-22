@@ -126,3 +126,15 @@ Latest successful CI run including bounded history payload measurement: [#397039
 - Full mixed-mode runtime aggregate parity and tenant-isolation fixture passed in the same run.
 
 These figures are specific to a warm, local, synthetic CI database. They do not predict cold-cache, network, production-size, concurrent-load, or hosted PostgreSQL latency, and the EXPLAIN query is a representative tenant-scoped aggregate rather than a claim that every dashboard aggregate has an identical plan. Remaining before release: production-like query/response-size measurements, final review/stabilization, and operational backup/restore + Render + smoke-test gates. No merge or deployment is authorized by this work.
+
+
+## Exact runtime aggregate plan — 2026-10-22 (head bc634d07)
+
+The latest application-verification and PostgreSQL-verification workflows both passed on head `bc634d07d14f33cf88ed0738b5d2dacf633e74d6`: [application verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39704425531) and [PostgreSQL verification + benchmark](https://github.com/PurpleeHead/FlowMoney/actions/runs/39704428940). The benchmark now runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` against the exact `Prisma.Sql` query returned by `dashboardExchangeAggregateQuery(userId)`, which is also called by the runtime helper. A separate selective tenant aggregate retains an index-plan assertion; the planner is allowed to choose a sequential scan for the wider multi-column runtime aggregate when that is cheaper.
+
+Latest disposable CI sample (25,000 rows / 10 tenants, warm runner):
+- Exact runtime helper timings: 5.717, 5.467, 5.369, 5.336, 5.347 ms; median 5.369 ms.
+- Exact runtime aggregate `EXPLAIN ANALYZE`: 4.691 ms execution time; 47 shared buffer hits, zero shared reads and zero temp blocks. PostgreSQL used a Bitmap Heap Scan over 2,500 rows for this tenant and chose `Exchange_userId_createdAt_idx` for the inner Bitmap Index Scan.
+- Bounded history: 100 rows, 3.518 ms query time, 34,879 serialized JSON bytes (exchange-history rows only, not the entire dashboard response).
+
+The exact aggregate plan is now recorded in CI output rather than inferred from a separate SUM-only query. This remains a synthetic, warm, disposable PostgreSQL measurement; it does not represent cold-cache behavior, hosted network latency, concurrency, production row distributions, or the full response payload. The latest application and PostgreSQL workflows are green, but hosted/production-like performance, final review/stabilization, and operational release gates remain open. PR #96 remains Draft and must not be merged or deployed without explicit authorization.
