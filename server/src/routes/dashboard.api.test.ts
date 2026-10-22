@@ -19,6 +19,8 @@ const rawPrisma = prisma as unknown as { $queryRaw: (...args: any[]) => Promise<
 const originalQueryRaw = rawPrisma.$queryRaw;
 const previousSecret = process.env.JWT_SECRET;
 let dashboardAggregateArgs: any[] = [];
+let dashboardExpenseCountArgs: any[] = [];
+let dashboardExchangeCountArgs: any[] = [];
 
 afterEach(() => {
   userModel.findFirst = originalUserFindFirst;
@@ -36,7 +38,10 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
   // Fake Prisma aggregate using each test's fixture, while preserving the same predicates
   // as PostgreSQL. This keeps route tests independent of a live database.
   dashboardAggregateArgs = [];
+  dashboardExpenseCountArgs = [];
+  dashboardExchangeCountArgs = [];
   exchangeModel.count = async (args: any) => {
+    dashboardExchangeCountArgs.push(args);
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time exchange count must be scoped to the authenticated user');
     return (await exchangeModel.findMany({ where: { userId: 'dashboard-user' } })).length;
   };
@@ -97,6 +102,7 @@ async function withApi(run: (baseUrl: string) => Promise<void>) {
     }];
   };
   expenseModel.count = async (args: any) => {
+    dashboardExpenseCountArgs.push(args);
     assert.deepEqual(args.where, { userId: 'dashboard-user' }, 'all-time expense count must be scoped to the authenticated user');
     const rows = await expenseModel.findMany({});
     // Mirror tenant filtering in the mock as well as checking the Prisma arguments.
@@ -427,7 +433,10 @@ describe('dashboard query shape', () => {
     assert.deepEqual(exchangeArgs.orderBy, { createdAt: 'desc' });
     assert.equal(dashboardAggregateArgs.length, 3);
     // Count queries are independent of the recent history page and always tenant-scoped.
-    assert.ok(true);
+    assert.equal(dashboardExpenseCountArgs.length, 1, 'dashboard should issue one all-history expense count');
+    assert.equal(dashboardExchangeCountArgs.length, 1, 'dashboard should issue one all-history exchange count');
+    assert.deepEqual(dashboardExpenseCountArgs[0].where, { userId: 'dashboard-user' });
+    assert.deepEqual(dashboardExchangeCountArgs[0].where, { userId: 'dashboard-user' });
     assert.ok(dashboardAggregateArgs.every(args => args.where.userId === 'dashboard-user'));
     const allTimeAggregate = dashboardAggregateArgs.find(args => args._sum.amountVnd && !args.where.date);
     const monthAggregate = dashboardAggregateArgs.find(args => args.where.date?.gte);
