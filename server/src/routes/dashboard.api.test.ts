@@ -196,6 +196,38 @@ describe('dashboard direct VND rate precedence', () => {
   });
 });
 
+describe('dashboard legacy direct VND records', () => {
+  it('uses actual targetReceived before a stale VND equivalent when net VND is absent', async () => {
+    expenseModel.findMany = async () => [];
+    exchangeModel.findMany = async () => [{
+      ...exchangeFixture(),
+      mode: 'RUB_TARGET',
+      targetCurrency: 'VND',
+      targetReceived: 1000000,
+      targetVndEquivalent: 950000,
+      vndReceived: null,
+    }];
+
+    await withApi(async baseUrl => {
+      const token = jwt.sign(
+        { id: 'dashboard-user', email: 'dashboard-user@example.com' },
+        'dashboard-api-test-secret-long-enough-for-jwt-middleware',
+      );
+      const response = await fetch(`${baseUrl}/api/dashboard`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        effectiveVndPerRub: number | null;
+        confirmedExchangeVnd: number;
+      };
+      assert.equal(body.confirmedExchangeVnd, 1000000);
+      assert.ok(body.effectiveVndPerRub != null);
+      assert.ok(Math.abs(body.effectiveVndPerRub - (1000000 / 8300)) < 1e-10);
+    });
+  });
+});
+
 describe('dashboard historical expense snapshots', () => {
   it('returns the stored RUB valuation instead of recalculating past expenses from current exchange rates', async () => {
     expenseModel.findMany = async () => [{
