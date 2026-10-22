@@ -9,6 +9,7 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -18,7 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install dependencies
-        run: npm ci
+        timeout-minutes: 15
+        run: npm ci --fetch-retries=3 --fetch-timeout=120000 --registry=https://registry.npmjs.org/
       - name: Enforce clean full dependency audit
         shell: bash
         run: |
@@ -87,6 +89,7 @@ jobs:
 
   verify-migrations:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:16
@@ -113,7 +116,8 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install dependencies
-        run: npm ci
+        timeout-minutes: 15
+        run: npm ci --fetch-retries=3 --fetch-timeout=120000 --registry=https://registry.npmjs.org/
       - name: Generate Prisma client
         run: npm run db:generate
       - name: Apply all migrations to disposable PostgreSQL
