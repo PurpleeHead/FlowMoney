@@ -18,11 +18,9 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       x.targetCurrency?.trim().toUpperCase() ?? null;
     const isDirectVndTarget = (x: { mode: string; targetCurrency: string | null }) =>
       x.mode === 'RUB_TARGET' && normalizedTargetCurrency(x) === 'VND';
-    const isDirectUsdtTarget = (x: { mode: string; targetCurrency: string | null }) =>
-      x.mode === 'RUB_TARGET' && normalizedTargetCurrency(x) === 'USDT';
-    // Return only fields consumed by dashboard calculations and the client. This keeps
-    // internal ownership/audit metadata out of the response and avoids fetching unused columns.
-    const [expenses,exchanges,totalExpenseAggregate,monthExpenseAggregate,purchaseAggregate,totalExpenseCount,totalExchangeCount]=await Promise.all([
+    // Dashboard rows are a bounded recent-activity window. All-history financial
+    // summaries come from the user-scoped PostgreSQL aggregate below, never this page.
+    const [expenses,exchanges,totalExpenseAggregate,monthExpenseAggregate,purchaseAggregate,totalExpenseCount,totalExchangeCount,exchangeSummaryRows]=await Promise.all([
       prisma.expense.findMany({
         where:{userId:req.user!.id,date:{gte:chartStart}},
         orderBy:{date:'desc'},
@@ -34,6 +32,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       prisma.exchange.findMany({
         where:{userId:req.user!.id},
         orderBy:{createdAt:'desc'},
+        take:100,
         select:{
           id:true,mode:true,targetCurrency:true,targetReceived:true,targetToVndRate:true,
           targetVndEquivalent:true,rubSpent:true,usdtReceived:true,vndPerUsdt:true,
@@ -46,6 +45,86 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       prisma.expense.aggregate({where:{userId:req.user!.id,amountVnd:{gt:0},usdtCharged:{gt:0}},_sum:{amountVnd:true,usdtCharged:true}}),
       prisma.expense.count({where:{userId:req.user!.id}}),
       prisma.exchange.count({where:{userId:req.user!.id}}),
+      prisma.$queryRaw<Array<{
+        rubUsdtRub: unknown; rubUsdtUsdt: unknown;
+        actualVndUsdtVnd: unknown; actualVndUsdtUsdt: unknown;
+        confirmedExchangeVnd: unknown; estimatedTargetCurrencyVnd: unknown;
+        plannedUsdt: unknown; plannedWeightedVnd: unknown; estimatedUnpricedUsdt: unknown;
+        hasUnpricedUsdtTopUps: boolean | null;
+        directRub: unknown; directVnd: unknown; actualRub: unknown; actualVnd: unknown;
+      }>>`
+        SELECT
+          COALESCE(SUM(CASE
+            WHEN "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 THEN "rubSpent"
+            WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+              AND "rubSpent" > 0 AND "targetReceived" > 0 THEN "rubSpent"
+            ELSE 0 END), 0) AS "rubUsdtRub",
+          COALESCE(SUM(CASE
+            WHEN "mode" = 'RUB_USDT_VND' AND "rubSpent" > 0 AND "usdtReceived" > 0 THEN "usdtReceived"
+            WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+              AND "rubSpent" > 0 AND "targetReceived" > 0 THEN "targetReceived"
+            ELSE 0 END), 0) AS "rubUsdtUsdt",
+          COALESCE(SUM(CASE WHEN "mode" = 'RUB_USDT_VND' AND "vndReceived" > 0 AND "usdtReceived" > 0
+            THEN "vndReceived" ELSE 0 END), 0) AS "actualVndUsdtVnd",
+          COALESCE(SUM(CASE WHEN "mode" = 'RUB_USDT_VND' AND "vndReceived" > 0 AND "usdtReceived" > 0
+            THEN "usdtReceived" ELSE 0 END), 0) AS "actualVndUsdtUsdt",
+          COALESCE(SUM(CASE
+            WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND'
+              THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
+            ELSE "vndReceived" END), 0) AS "confirmedExchangeVnd",
+          COALESCE(SUM(CASE
+            WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) <> 'VND'
+              THEN "targetVndEquivalent" ELSE 0 END), 0) AS "estimatedTargetCurrencyVnd",
+          COALESCE(SUM(CASE
+            WHEN "mode" <> 'RUB_VND'
+              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
+              AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL AND "planningVndPerUsdt" IS NOT NULL
+              THEN "usdtReceived" ELSE 0 END), 0) AS "plannedUsdt",
+          COALESCE(SUM(CASE
+            WHEN "mode" <> 'RUB_VND'
+              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
+              AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL AND "planningVndPerUsdt" IS NOT NULL
+              THEN "usdtReceived" * "planningVndPerUsdt" ELSE 0 END), 0) AS "plannedWeightedVnd",
+          COALESCE(SUM(CASE
+            WHEN "mode" <> 'RUB_VND'
+              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
+              AND "vndReceived" IS NULL
+              AND (( "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+                    AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+                OR "usdtReceived" IS NOT NULL)
+              THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+                        THEN COALESCE("targetReceived", 0) ELSE "usdtReceived" END
+            ELSE 0 END), 0) AS "estimatedUnpricedUsdt",
+          BOOL_OR(
+            ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
+            OR ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+                AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+          ) AS "hasUnpricedUsdtTopUps",
+          COALESCE(SUM(CASE
+            WHEN "rubSpent" > 0 AND (
+              ("mode" = 'RUB_VND' AND "vndReceived" > 0)
+              OR ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND'
+                  AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0))
+            THEN "rubSpent" ELSE 0 END), 0) AS "directRub",
+          COALESCE(SUM(CASE
+            WHEN "rubSpent" > 0 AND (
+              ("mode" = 'RUB_VND' AND "vndReceived" > 0)
+              OR ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND'
+                  AND COALESCE("targetVndEquivalent", "targetReceived", "vndReceived") > 0))
+            THEN CASE WHEN "mode" = 'RUB_TARGET'
+              THEN COALESCE("targetVndEquivalent", "targetReceived", "vndReceived")
+              ELSE "vndReceived" END ELSE 0 END), 0) AS "directVnd",
+          COALESCE(SUM(CASE
+            WHEN "rubSpent" > 0 AND "vndReceived" > 0 AND "mode" <> 'RUB_VND'
+              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
+            THEN "rubSpent" ELSE 0 END), 0) AS "actualRub",
+          COALESCE(SUM(CASE
+            WHEN "rubSpent" > 0 AND "vndReceived" > 0 AND "mode" <> 'RUB_VND'
+              AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
+            THEN "vndReceived" ELSE 0 END), 0) AS "actualVnd"
+        FROM "Exchange"
+        WHERE "userId" = ${req.user!.id}
+      `,
     ]);
 
     const totalVnd=Number(totalExpenseAggregate._sum.amountVnd ?? 0);
@@ -58,80 +137,41 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       ? [{amountVnd:observedVnd,usdtCharged:observedUsdt}]
       : [];
     const observedVndPerUsdt=calculateObservedVndPerUsdt(purchases);
-
-    // Weighted by USDT received, using the same RUB/USDT helper as expense saving.
-    const effectiveRubPerUsdt=calculateRubPerUsdt(
-      mapRubUsdtExchanges(exchanges.map(x => ({
-        mode: x.mode,
-        rubSpent: Number(x.rubSpent),
-        usdtReceived: x.usdtReceived == null ? null : Number(x.usdtReceived),
-        targetCurrency: x.targetCurrency,
-        targetReceived: x.targetReceived == null ? null : Number(x.targetReceived),
-      })))
-    );
-    const knownVndExchanges=mapActualVndUsdtExchanges(exchanges.map(x=>({
-      mode:x.mode,
-      usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),
-      vndReceived:x.vndReceived==null?null:Number(x.vndReceived),
-    })));
-    const exchangeVnd=knownVndExchanges.reduce((sum,x)=>sum+x.vndReceived,0);
-    const exchangeUsdt=knownVndExchanges.reduce((sum,x)=>sum+x.usdtReceived,0);
+    const exchangeSummary=exchangeSummaryRows[0];
+    const effectiveRubPerUsdt=Number(exchangeSummary.rubUsdtUsdt) > 0
+      ? Number(exchangeSummary.rubUsdtRub) / Number(exchangeSummary.rubUsdtUsdt)
+      : null;
+    const exchangeVnd=Number(exchangeSummary.actualVndUsdtVnd);
+    const exchangeUsdt=Number(exchangeSummary.actualVndUsdtUsdt);
     // Prefer actual card-purchase observations. Otherwise use only exchanges with a recorded VND outcome.
     const effectiveVndPerUsdt=observedVndPerUsdt!=null
       ? observedVndPerUsdt
       : exchangeUsdt>0 ? exchangeVnd/exchangeUsdt : null;
-    const plannedExchanges=exchanges.filter(x=>x.mode!=='RUB_VND'&&!isDirectVndTarget(x)&&x.vndReceived==null&&x.usdtReceived!=null&&x.planningVndPerUsdt!=null);
-    const plannedUsdt=plannedExchanges.reduce((sum,x)=>sum+Number(x.usdtReceived),0);
+    const plannedUsdt=Number(exchangeSummary.plannedUsdt);
     const planningVndPerUsdt=plannedUsdt>0
-      ? plannedExchanges.reduce((sum,x)=>sum+Number(x.usdtReceived)*Number(x.planningVndPerUsdt),0)/plannedUsdt
+      ? Number(exchangeSummary.plannedWeightedVnd)/plannedUsdt
       : null;
     const balanceRateVndPerUsdt=effectiveVndPerUsdt??planningVndPerUsdt;
-    const effectiveVndPerRub = calculateObservedVndPerRub({
-      directExchanges: [
-        ...exchanges.filter(x => x.mode === 'RUB_VND' && x.vndReceived != null).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-        ...exchanges.filter(x => isDirectVndTarget(x) && (x.targetVndEquivalent != null || x.targetReceived != null || x.vndReceived != null)).map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived) })),
-      ],
-      actualVndExchanges: exchanges
-        .filter(x => x.mode !== 'RUB_VND' && !isDirectVndTarget(x) && x.vndReceived != null)
-        .map(x => ({ rubSpent: Number(x.rubSpent), vndReceived: Number(x.vndReceived) })),
-      cardPurchases: purchases.map(x => ({
-        amountVnd: Number(x.amountVnd),
-        usdtCharged: Number(x.usdtCharged),
-      })),
-      rubPerUsdt: effectiveRubPerUsdt,
-    });
+    let effectiveVndPerRubNumerator=Number(exchangeSummary.directVnd)+Number(exchangeSummary.actualVnd);
+    let effectiveVndPerRubDenominator=Number(exchangeSummary.directRub)+Number(exchangeSummary.actualRub);
+    if (effectiveRubPerUsdt != null && Number.isFinite(effectiveRubPerUsdt) && effectiveRubPerUsdt > 0) {
+      effectiveVndPerRubNumerator += observedVnd;
+      effectiveVndPerRubDenominator += observedUsdt * effectiveRubPerUsdt;
+    }
+    const effectiveVndPerRub=effectiveVndPerRubDenominator>0 && effectiveVndPerRubNumerator>0
+      ? effectiveVndPerRubNumerator/effectiveVndPerRubDenominator
+      : null;
 
     // A budget balance is a planning estimate: actual VND received is counted as-is;
     // USDT-only top-ups are converted using the observed VND/USDT rate when available.
     // Only actual VND outcomes are confirmed. A non-VND target's VND equivalent
     // is a valuation estimate based on a manually supplied conversion rate.
-    const confirmedExchangeVnd = exchanges.reduce((sum, x) => {
-      // A direct RUB_TARGET → VND record may carry both the canonical target
-      // equivalent and a legacy vndReceived value. Count that transaction once.
-      if (isDirectVndTarget(x)) {
-        const directVnd = x.targetVndEquivalent ?? x.targetReceived ?? x.vndReceived;
-        return sum + (directVnd != null ? Number(directVnd) : 0);
-      }
-      return sum + (x.vndReceived != null ? Number(x.vndReceived) : 0);
-    }, 0);
-    const isUnpricedUsdtTopUp = (x: typeof exchanges[number]) =>
-      (x.mode === 'RUB_USDT_VND' && x.vndReceived == null && x.usdtReceived != null) ||
-      (isDirectUsdtTarget(x) && x.targetReceived != null && x.targetVndEquivalent == null);
-    const unpricedUsdtTopUps = exchanges.some(isUnpricedUsdtTopUp);
-    const estimatedTargetCurrencyVnd = exchanges.reduce((sum, x) =>
-      sum + (x.mode === 'RUB_TARGET' && !isDirectVndTarget(x) && x.targetVndEquivalent != null
-        ? Number(x.targetVndEquivalent) : 0), 0);
-    const estimatedUnconvertedVnd = estimatedTargetCurrencyVnd + (balanceRateVndPerUsdt == null ? 0 : exchanges
-      .filter(x => x.mode !== 'RUB_VND' && !isDirectVndTarget(x) && x.vndReceived == null &&
-        ((isDirectUsdtTarget(x) && x.targetReceived != null && x.targetVndEquivalent == null) ||
-         x.usdtReceived != null))
-      .reduce((sum, x) => {
-        const usdt = isDirectUsdtTarget(x)
-          ? Number(x.targetReceived)
-          : Number(x.usdtReceived);
-        return sum + usdt * balanceRateVndPerUsdt;
-      }, 0));
-    const balanceVnd = exchanges.length===0 || (unpricedUsdtTopUps && balanceRateVndPerUsdt == null)
+    const confirmedExchangeVnd=Number(exchangeSummary.confirmedExchangeVnd);
+    const unpricedUsdtTopUps=exchangeSummary.hasUnpricedUsdtTopUps===true;
+    const estimatedTargetCurrencyVnd=Number(exchangeSummary.estimatedTargetCurrencyVnd);
+    const estimatedUnconvertedVnd=estimatedTargetCurrencyVnd +
+      (balanceRateVndPerUsdt == null ? 0 : Number(exchangeSummary.estimatedUnpricedUsdt)*balanceRateVndPerUsdt);
+    const balanceVnd = totalExchangeCount===0 || (unpricedUsdtTopUps && balanceRateVndPerUsdt == null)
       ? null
       : confirmedExchangeVnd + estimatedUnconvertedVnd - totalVnd;
 
@@ -140,7 +180,7 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
       balanceIsEstimated: estimatedUnconvertedVnd > 0 || exchanges.some(x => x.mode === 'RUB_TARGET' && !isDirectVndTarget(x) && x.targetVndEquivalent != null),
       observedVnd,observedUsdt,observedVndPerUsdt,effectiveRubPerUsdt,effectiveVndPerUsdt,effectiveVndPerRub,
       expenses:expenses.map(x=>({...x,amount:Number(x.amount),amountVnd:x.amountVnd==null?null:Number(x.amountVnd),amountRub:x.amountRub==null?null:Number(x.amountRub),usdtCharged:x.usdtCharged==null?null:Number(x.usdtCharged)})),
-      exchanges:exchanges.slice(0,100).map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),planningVndPerUsdt:x.planningVndPerUsdt==null?null:Number(x.planningVndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),targetReceived:x.targetReceived==null?null:Number(x.targetReceived),targetToVndRate:x.targetToVndRate==null?null:Number(x.targetToVndRate),targetVndEquivalent:x.targetVndEquivalent==null?null:Number(x.targetVndEquivalent),targetCurrency:x.targetCurrency,effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:x.effectiveRubPerUsdt==null?null:Number(x.effectiveRubPerUsdt)}))
+      exchanges:exchanges.map(x=>({...x,rubSpent:Number(x.rubSpent),usdtReceived:x.usdtReceived==null?null:Number(x.usdtReceived),vndPerUsdt:x.vndPerUsdt==null?null:Number(x.vndPerUsdt),planningVndPerUsdt:x.planningVndPerUsdt==null?null:Number(x.planningVndPerUsdt),vndReceived:x.vndReceived==null?null:Number(x.vndReceived),targetReceived:x.targetReceived==null?null:Number(x.targetReceived),targetToVndRate:x.targetToVndRate==null?null:Number(x.targetToVndRate),targetVndEquivalent:x.targetVndEquivalent==null?null:Number(x.targetVndEquivalent),targetCurrency:x.targetCurrency,effectiveVndPerRub:x.effectiveVndPerRub==null?null:Number(x.effectiveVndPerRub),effectiveRubPerUsdt:x.effectiveRubPerUsdt==null?null:Number(x.effectiveRubPerUsdt)}))
     });
   } catch(e) { next(e); }
 });
