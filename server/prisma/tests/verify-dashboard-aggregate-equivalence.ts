@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { prisma } from '../../src/services/prisma.js';
+import { aggregateDashboardExchanges } from '../../src/lib/dashboard-exchange-aggregate.js';
 import {
   calculateObservedVndPerUsdt,
   calculateObservedVndPerRub,
@@ -291,6 +292,29 @@ try {
   assert.equal(Number(rubVndSql.directVnd), 835_000, 'direct VND total excludes stale legacy values and preserves canonical/fallback values');
   assert.equal(Number(rubVndSql.actualRub), 8_300, 'actual indirect VND cost basis excludes planning-only records');
   assert.equal(Number(rubVndSql.actualVnd), 2_300_000, 'actual indirect VND amount excludes planned values and direct target rows');
+
+  // Exercise the exact SQL helper used by the dashboard route against disposable PostgreSQL.
+  const runtimeAggregate = await aggregateDashboardExchanges(mainUserId);
+  near(runtimeAggregate.rubUsdtRub / runtimeAggregate.rubUsdtUsdt, helperRubUsdt, 'runtime SQL RUB/USDT aggregate matches legacy helper');
+  near(runtimeAggregate.actualVndUsdtVnd / runtimeAggregate.actualVndUsdtUsdt, helperObservedVndUsdt, 'runtime SQL actual VND/USDT aggregate matches legacy helper');
+  assert.equal(runtimeAggregate.planningUsdt, 10, 'runtime SQL planning denominator excludes actual and direct VND rows');
+  assert.equal(runtimeAggregate.planningWeightedVnd, 250_000, 'runtime SQL planning numerator remains separate from actual VND');
+  assert.equal(runtimeAggregate.directRub, 3_900, 'runtime SQL direct RUB cost basis includes only positive actual outcomes');
+  assert.equal(runtimeAggregate.directVnd, 835_000, 'runtime SQL direct VND cost basis preserves canonical/fallback precedence');
+  assert.equal(runtimeAggregate.indirectRub, 8_300, 'runtime SQL indirect RUB cost basis excludes planning-only rows');
+  assert.equal(runtimeAggregate.indirectVnd, 2_300_000, 'runtime SQL indirect VND cost basis excludes planning-only rows');
+  assert.equal(runtimeAggregate.confirmedVnd, 3_135_000, 'runtime SQL confirmed VND total matches the legacy budget formula');
+  assert.equal(runtimeAggregate.estimatedTargetVnd, 920_000, 'runtime SQL keeps non-VND target equivalents in estimates');
+  assert.equal(runtimeAggregate.estimatedUsdt, 66, 'runtime SQL estimates direct and indirect unconverted USDT');
+  assert.equal(runtimeAggregate.hasEstimatedTargetVnd, true);
+  assert.equal(runtimeAggregate.hasUnpricedUsdtTopUps, true);
+  const runtimeVndRub = (
+    runtimeAggregate.directVnd + runtimeAggregate.indirectVnd + cardRows.reduce((sum, x) => sum + x.amountVnd, 0)
+  ) / (
+    runtimeAggregate.directRub + runtimeAggregate.indirectRub +
+    cardRows.reduce((sum, x) => sum + x.usdtCharged * (helperRubUsdt ?? 0), 0)
+  );
+  near(runtimeVndRub, helperVndRub, 'runtime SQL VND/RUB cost basis matches the existing TypeScript helper');
 
   console.log('Dashboard aggregate fixture passed against disposable PostgreSQL: user scoping, weighted rates, actual-vs-planned VND, direct VND legacy fallback, card totals, and cross-user exclusion.');
 } finally {
