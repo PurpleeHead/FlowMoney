@@ -78,8 +78,16 @@ router.get('/',async(req:AuthedRequest,res,next)=>{
           COALESCE(SUM(CASE
             WHEN "mode" <> 'RUB_VND'
               AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
-              AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL AND "planningVndPerUsdt" IS NOT NULL
-              THEN "usdtReceived" ELSE 0 END), 0) AS "plannedUsdt",
+              AND "vndReceived" IS NULL
+              AND (
+                ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+                  AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+                OR (NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT')
+                  AND "usdtReceived" IS NOT NULL)
+              )
+              AND "planningVndPerUsdt" IS NOT NULL
+              THEN CASE WHEN "mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'USDT'
+                THEN "targetReceived" ELSE "usdtReceived" END ELSE 0 END), 0) AS "plannedUsdt",
           COALESCE(SUM(CASE
             WHEN "mode" <> 'RUB_VND'
               AND NOT ("mode" = 'RUB_TARGET' AND upper(trim(COALESCE("targetCurrency", ''))) = 'VND')
