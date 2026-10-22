@@ -254,14 +254,12 @@ try {
         ELSE 0
       END), 0) AS "directVnd",
       COALESCE(SUM(CASE
-        WHEN "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+        WHEN "mode" = 'RUB_USDT_VND'
           AND "rubSpent" > 0 AND "vndReceived" > 0
           THEN "rubSpent" ELSE 0
       END), 0) AS "actualRub",
       COALESCE(SUM(CASE
-        WHEN "mode" <> 'RUB_VND'
-          AND NOT ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'VND')
+        WHEN "mode" = 'RUB_USDT_VND'
           AND "rubSpent" > 0 AND "vndReceived" > 0
           THEN "vndReceived" ELSE 0
       END), 0) AS "actualVnd"
