@@ -68,7 +68,7 @@ export function dashboardExchangeAggregateQuery(userId: string): Prisma.Sql {
           COALESCE(bool_or(
             ("mode" = 'RUB_USDT_VND' AND "vndReceived" IS NULL AND "usdtReceived" IS NOT NULL)
             OR ("mode" = 'RUB_TARGET' AND upper(trim("targetCurrency")) = 'USDT'
-              AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
+              AND "vndReceived" IS NULL AND "targetReceived" IS NOT NULL AND "targetVndEquivalent" IS NULL)
           ), false) AS "hasUnpricedUsdtTopUps"
         FROM "Exchange"
         WHERE "userId" = ${userId}
