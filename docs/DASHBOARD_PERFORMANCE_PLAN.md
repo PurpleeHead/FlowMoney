@@ -138,3 +138,17 @@ Latest disposable CI sample (25,000 rows / 10 tenants, warm runner):
 - Bounded history: 100 rows, 3.518 ms query time, 34,879 serialized JSON bytes (exchange-history rows only, not the entire dashboard response).
 
 The exact aggregate plan is now recorded in CI output rather than inferred from a separate SUM-only query. This remains a synthetic, warm, disposable PostgreSQL measurement; it does not represent cold-cache behavior, hosted network latency, concurrency, production row distributions, or the full response payload. The latest application and PostgreSQL workflows are green, but hosted/production-like performance, final review/stabilization, and operational release gates remain open. PR #96 remains Draft and must not be merged or deployed without explicit authorization.
+
+
+## Full dashboard API benchmark — 2026-10-22 (head 2aa231df)
+
+The benchmark now also starts the real Express dashboard route against the disposable CI PostgreSQL database, authenticates a synthetic test user, and measures the complete `GET /api/dashboard` request and response. It asserts that the API returns HTTP 200, reports all 2,500 exchange records in `totalExchangeCount`, and includes only 100 exchange rows in the response. This complements the lower-level exact SQL plan and standalone history-query measurements.
+
+Latest CI sample on head `2aa231dff87a86e5353e441e4e1cd572a5793f52` (25,000 exchange rows across 10 tenants):
+- Full dashboard API latency: 50.404 ms; complete serialized response: 34,706 bytes.
+- Dashboard exchange aggregate helper median: 5.478 ms.
+- Exact runtime aggregate `EXPLAIN ANALYZE`: 4.985 ms execution time; selective tenant-only aggregate: 0.514 ms.
+- Standalone recent-history query: 4.054 ms for 100 rows; serialized history: 34,879 bytes.
+- Both application verification and PostgreSQL/migration verification passed: [application run](https://github.com/PurpleeHead/FlowMoney/actions/runs/39704742106), [PostgreSQL benchmark run](https://github.com/PurpleeHead/FlowMoney/actions/runs/39704745965).
+
+These timings are one warm, synthetic CI sample and include local loopback HTTP but not a hosted network hop. They are a repeatable baseline, not a production SLA or a cold/concurrent-load result. The end-to-end payload is for the complete dashboard response for a tenant with 2,500 exchanges and no seeded expenses; realistic user data and hosted measurements are still needed. The benchmark only writes disposable CI data and cleans up its users; no production database or deployment was touched.
