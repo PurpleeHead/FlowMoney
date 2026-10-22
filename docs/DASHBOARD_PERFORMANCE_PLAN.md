@@ -207,3 +207,19 @@ The concurrent dashboard smoke test now checks not just status/count/payload bou
 Both required CI workflows passed on head `06d4d78c1352d975bbf58fa873437ffaad48444e`: [application verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39705800156) and [PostgreSQL/migration/benchmark verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39705800156). In this workflow run the two jobs `verify` and `verify-migrations` both passed.
 
 Latest benchmark repeat (35,000 seeded rows): full dashboard API 65.851 ms and 248,835-byte response; 10-request concurrency p50 181.587 ms / p95 188.038 ms; exchange aggregate helper median 4.851 ms; 100-row history query 3.699 ms / 34,879 bytes; exact aggregate EXPLAIN ANALYZE 4.157 ms and selective tenant query 0.503 ms. The variance across warm CI samples reinforces that these are regression baselines, not production SLOs. Hosted performance, final financial review, and operational release gates remain open; PR #96 remains Draft, not merged or deployed.
+
+
+## Response-size regression budget — 2026-10-22 (head 953612c3)
+
+The disposable dashboard benchmark now enforces a 350,000-byte upper bound for the complete JSON response with 1,000 expenses and 100 exchange-history rows. The bound is checked for the single request and each of ten concurrent responses. The concurrent assertions also explicitly check the observed VND numerator, alongside the USDT denominator and weighted rate. The bound is intentionally a coarse regression guard for this fixed synthetic fixture, not a product-wide payload limit for arbitrary histories.
+
+Both CI jobs passed on head `953612c3371664128302f163d90aee845cdf97ee`: [application verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39706201021) and [PostgreSQL/migration/benchmark verification](https://github.com/PurpleeHead/FlowMoney/actions/runs/39706201021).
+
+Latest disposable CI sample with 35,000 seeded rows:
+- Full dashboard API: 50.773 ms; 248,835-byte complete response (under the 350,000-byte test budget).
+- Ten concurrent requests: p50 124.343 ms; p95 127.515 ms.
+- Runtime exchange aggregate median: 3.001 ms.
+- Bounded 100-row history: 2.697 ms; 34,879-byte history JSON.
+- Exact runtime aggregate EXPLAIN ANALYZE: 2.831 ms; selective tenant-only query: 0.328 ms.
+
+This is one warm, ephemeral CI sample, not a production SLA. Hosted measurements, cold-cache and longer-load tests remain necessary. PR #96 remains Draft and has not been merged or deployed.
