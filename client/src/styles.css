@@ -620,3 +620,6 @@ html,body,#root{max-width:100%}
  .detected-row{grid-template-columns:minmax(0,1fr) minmax(0,105px);gap:6px}
  .receipt-edit-price{width:62px}
 }
+
+
+.journal-pagination{display:flex;justify-content:center;padding:16px 0}
