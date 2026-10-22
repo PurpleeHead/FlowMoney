@@ -608,4 +608,83 @@ describe('expense API ledger synchronization', () => {
     });
   });
 
+
+  it('paginates expenses with a stable cursor while keeping every query user-scoped', async () => {
+    const timestamp = new Date('2026-10-19T10:30:00.000Z');
+    const records = [
+      { id: 'expense_a', userId: 'user-42', title: 'A', date: timestamp },
+      { id: 'expense_b', userId: 'user-42', title: 'B', date: timestamp },
+      { id: 'expense_c', userId: 'user-42', title: 'C', date: timestamp },
+    ];
+    const calls: any[] = [];
+    expenseModel.findMany = async (args: any) => {
+      calls.push(args);
+      return calls.length === 1 ? records : [records[2]];
+    };
+
+    await withApi(async baseUrl => {
+      const first = await fetch(`${baseUrl}/api/expenses?limit=2`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(first.status, 200);
+      const firstPage = await first.json() as {
+        items: Array<{ id: string }>; hasMore: boolean; nextCursor: string | null;
+      };
+      assert.deepEqual(firstPage.items.map(item => item.id), ['expense_a', 'expense_b']);
+      assert.equal(firstPage.hasMore, true);
+      assert.ok(firstPage.nextCursor);
+
+      const second = await fetch(
+        `${baseUrl}/api/expenses?limit=2&cursor=${encodeURIComponent(firstPage.nextCursor!)}`,
+        { headers: { authorization: bearer('user-42') } },
+      );
+      assert.equal(second.status, 200);
+      const secondPage = await second.json() as {
+        items: Array<{ id: string }>; hasMore: boolean; nextCursor: string | null;
+      };
+      assert.deepEqual(secondPage.items.map(item => item.id), ['expense_c']);
+      assert.equal(secondPage.hasMore, false);
+      assert.equal(secondPage.nextCursor, null);
+    });
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].where.userId, 'user-42');
+    assert.deepEqual(calls[0].orderBy, [{ date: 'desc' }, { id: 'asc' }]);
+    assert.equal(calls[0].take, 3);
+    assert.equal(calls[1].where.userId, 'user-42');
+    assert.deepEqual(calls[1].where.OR, [
+      { date: { lt: timestamp } },
+      { date: timestamp, id: { gt: 'expense_b' } },
+    ]);
+  });
+
+  it('preserves the legacy expense array response when pagination is omitted', async () => {
+    const legacyRows = [{ id: 'expense_legacy', title: 'Legacy', date: new Date('2026-10-19T10:30:00.000Z') }];
+    let args: any;
+    expenseModel.findMany = async (query: any) => { args = query; return legacyRows; };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), JSON.parse(JSON.stringify(legacyRows)));
+    });
+
+    assert.deepEqual(args.where, { userId: 'user-42' });
+    assert.equal(args.take, 500);
+  });
+
+  it('rejects malformed pagination cursors before querying the database', async () => {
+    expenseModel.findMany = async () => { throw new Error('database must not be queried'); };
+
+    await withApi(async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/expenses?limit=25&cursor=not-a-cursor`, {
+        headers: { authorization: bearer('user-42') },
+      });
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { message: 'Invalid pagination parameters.' });
+    });
+  });
+
 });
