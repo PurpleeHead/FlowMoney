@@ -39,6 +39,18 @@ function monthBounds() {
 function rub(value: number | string | null | undefined) {
   return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 }).format(Number(value ?? 0));
 }
+function categoryName(category: Category, lang: Lang) {
+  if (lang === 'en' || category.userId) return category.name;
+  const labels: Record<string, string> = {
+    groceries: 'Продукты', 'cafes-restaurants': 'Кафе и рестораны', coffee: 'Кофе',
+    'transport-taxi': 'Транспорт и такси', fuel: 'Топливо', 'car-repair': 'Ремонт авто',
+    'car-maintenance': 'ТО и обслуживание', 'housing-home': 'Дом и жильё', health: 'Здоровье',
+    entertainment: 'Развлечения', shopping: 'Покупки', subscriptions: 'Подписки',
+    education: 'Образование', travel: 'Путешествия', other: 'Другое',
+  };
+  return labels[category.slug] ?? category.name;
+}
+
 function dateLabel(value: string, lang: Lang) {
   const [year, month, day] = value.slice(0, 10).split('-').map(Number);
   return new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, day)));
@@ -245,14 +257,14 @@ export default function PersonalFinanceApp() {
             <label>{tr(lang, 'title')}<input required value={expenseTitle} onChange={e => setExpenseTitle(e.target.value)} placeholder={lang === 'ru' ? 'Например, продукты' : 'e.g. Groceries'}/></label>
             <label>{tr(lang, 'amount')}<input type="number" min="0.01" step="0.01" required value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)}/></label>
             <label>{tr(lang, 'date')}<input type="date" required value={expenseDate} onChange={e => setExpenseDate(e.target.value)}/></label>
-            <label>{tr(lang, 'category')}<select value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)}>{categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <label>{tr(lang, 'category')}<select value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)}>{categories.map(c=><option key={c.id} value={c.id}>{categoryName(c, lang)}</option>)}</select></label>
             <label>{tr(lang, 'member')}<select value={expenseMember} onChange={e => setExpenseMember(e.target.value)}>{memberOptions}</select></label>
             <div className="pf-form-actions">{editingExpenseId && <button type="button" className="pf-button ghost" onClick={() => { setEditingExpenseId(null); setExpenseTitle(''); setExpenseAmount(''); setExpenseDate(moscowToday()); }}>{tr(lang, 'cancel')}</button>}<button className="pf-button primary" disabled={busy}>{tr(lang, 'save')}</button></div>
           </form>
           <form className="pf-inline-form category-create" onSubmit={addCategory}><label>{tr(lang, 'addCategory')}<input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder={lang === 'ru' ? 'Например, Питомцы' : 'e.g. Pets'}/></label><button className="pf-button ghost" disabled={busy}>+</button></form>
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ИСТОРИЯ ОПЕРАЦИЙ' : 'TRANSACTION HISTORY'}</span><h2>{tr(lang, 'expenses')}</h2></div><span className="pf-count">{visibleExpenses.length}</span></div>
-          {visibleExpenses.length ? visibleExpenses.slice(0, 100).map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category?.name ?? (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label="Delete">×</button></div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
+          {visibleExpenses.length ? visibleExpenses.slice(0, 100).map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category ? categoryName(item.category, lang) : (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label="Delete">×</button></div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
         </section>
       </div>}
 
