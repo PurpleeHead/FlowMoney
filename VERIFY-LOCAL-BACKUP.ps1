@@ -22,8 +22,12 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "Docker was not found. Start Docker Desktop and try again."
 }
 
-$containerId = (& docker compose ps -q postgres).Trim()
-if ($LASTEXITCODE -ne 0 -or -not $containerId) {
+$containerOutput = & docker compose ps -q postgres
+if ($LASTEXITCODE -ne 0) {
+  throw "Could not inspect Docker Compose services."
+}
+$containerId = (@($containerOutput) -join "").Trim()
+if (-not $containerId) {
   throw "The local PostgreSQL container is not running. Start it with docker compose up -d postgres."
 }
 
@@ -52,13 +56,16 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "pg_restore failed. The temporary verification database will be removed." }
 
   $query = 'SELECT CASE WHEN to_regclass(''public."User"'') IS NOT NULL AND to_regclass(''public."HouseholdMember"'') IS NOT NULL AND to_regclass(''public."ObligationOccurrence"'') IS NOT NULL THEN ''RESTORE_OK'' ELSE ''RESTORE_INCOMPLETE'' END;'
-  $result = (& docker compose exec -T postgres psql -U flowmoney -d $verificationDb -Atqc $query).Trim()
-  if ($LASTEXITCODE -ne 0 -or $result -ne "RESTORE_OK") {
+  $resultOutput = & docker compose exec -T postgres psql -U flowmoney -d $verificationDb -Atqc $query
+  if ($LASTEXITCODE -ne 0) { throw "Could not inspect required tables in the restored database." }
+  $result = (@($resultOutput) -join "").Trim()
+  if ($result -ne "RESTORE_OK") {
     throw "The archive restored, but required personal-finance tables were not found."
   }
 
-  $tableCount = (& docker compose exec -T postgres psql -U flowmoney -d $verificationDb -Atqc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';").Trim()
+  $tableCountOutput = & docker compose exec -T postgres psql -U flowmoney -d $verificationDb -Atqc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';"
   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the restored database." }
+  $tableCount = (@($tableCountOutput) -join "").Trim()
 
   Write-Host ""
   Write-Host "BACKUP RESTORE VERIFIED" -ForegroundColor Green
