@@ -17,7 +17,7 @@ This migration is additive. It creates the personal-finance tables:
 - User preferences: IANA timezone (default `Europe/Moscow`) and locale (default `ru`)
 - Household opening balance (`openingBalance`), effective calendar date (`openingBalanceDate`) and explicit setup flag (`openingBalanceConfigured`, false until the user saves settings)
 
-It seeds shared default expense categories. Existing `Wallet`, `Exchange`, `Expense` and `Receipt` tables and their records are not dropped or rewritten.
+It seeds shared default expense categories. Existing `Wallet`, `Exchange`, `Expense` and `Receipt` tables and their records are not dropped or rewritten. It also adds a PostgreSQL expression-based unique index for budget scope, so shared budgets with nullable member/category fields cannot be duplicated by concurrent requests.
 
 ## Before applying to any persistent database
 
