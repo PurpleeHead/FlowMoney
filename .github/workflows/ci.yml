@@ -15,6 +15,22 @@ jobs:
   validate-and-test:
     name: Validate, build and test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flowmoney
+          POSTGRES_PASSWORD: flowmoney
+          POSTGRES_DB: flowmoney
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowmoney -d flowmoney"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://flowmoney:flowmoney@localhost:5432/flowmoney
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,10 +43,10 @@ jobs:
         run: npm ci
       - name: Validate Prisma schema
         run: npx prisma validate --schema server/prisma/schema.prisma
-        env:
-          DATABASE_URL: postgresql://flowmoney:flowmoney@localhost:5432/flowmoney
       - name: Generate Prisma Client
         run: npm run db:generate
+      - name: Apply committed migrations to ephemeral PostgreSQL
+        run: npx prisma migrate deploy --schema server/prisma/schema.prisma
       - name: Build server and client
         run: npm run build
       - name: Run server and client tests
