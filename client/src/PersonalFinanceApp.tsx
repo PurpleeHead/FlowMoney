@@ -81,6 +81,8 @@ export default function PersonalFinanceApp() {
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [filterMember, setFilterMember] = useState('all');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [expensePeriod, setExpensePeriod] = useState<'month' | 'all'>('month');
   const [categories, setCategories] = useState<Category[]>([]);
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
   const [obligationOccurrences, setObligationOccurrences] = useState<ObligationOccurrence[]>([]);
@@ -236,14 +238,15 @@ export default function PersonalFinanceApp() {
   const memberOptions = <><option value="">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</>;
   const matchesMember = (id?: string | null) => filterMember === 'all' || (filterMember === 'shared' ? !id : id === filterMember);
   const visibleIncome = incomeEntries.filter(entry => entry.status !== 'SKIPPED' && matchesMember(entry.memberId ?? entry.member?.id));
-  const visibleExpenses = expenses.filter(item => matchesMember(item.memberId ?? item.member?.id));
+  const memberExpenses = expenses.filter(item => matchesMember(item.memberId ?? item.member?.id));
+  const visibleExpenses = memberExpenses.filter(item => (filterCategory === 'all' || item.category?.id === filterCategory) && (expensePeriod === 'all' || (item.date >= ranges.from && item.date <= ranges.to)));
   const visibleObligations = obligationOccurrences.filter(item => matchesMember(item.obligation.memberId));
   const monthIncome = visibleIncome.filter(entry => entry.plannedDate >= ranges.from && entry.plannedDate <= ranges.to);
   const monthObligations = visibleObligations.filter(item => item.dueDate >= ranges.from && item.dueDate <= ranges.to);
   const visibleBudgets = budgets.filter(item => matchesMember(item.memberId));
   const calendarEvents = [
     ...visibleIncome.filter(x => x.plannedDate >= ranges.from && x.plannedDate <= ranges.to).map(x => ({ date: x.plannedDate.slice(0,10), title: x.source?.title ?? (lang === 'ru' ? 'Доход' : 'Income'), amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'income' as const, status: x.status })),
-    ...visibleExpenses.filter(x => !x.obligationOccurrence && x.date >= ranges.from && x.date <= ranges.to).map(x => ({ date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
+    ...memberExpenses.filter(x => !x.obligationOccurrence && x.date >= ranges.from && x.date <= ranges.to).map(x => ({ date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
     ...monthObligations.map(x => ({ date: x.dueDate.slice(0,10), title: x.obligation.title, amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'obligation' as const, status: x.status })),
   ].sort((a,b) => a.date.localeCompare(b.date));
   const monthParts = ranges.from.split('-').map(Number);
@@ -326,7 +329,7 @@ export default function PersonalFinanceApp() {
           </form>
           <form className="pf-inline-form category-create" onSubmit={addCategory}><label>{tr(lang, 'addCategory')}<input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder={lang === 'ru' ? 'Например, Питомцы' : 'e.g. Pets'}/></label><button className="pf-button ghost" disabled={busy}>+</button></form>{categories.filter(category=>Boolean(category.userId)).map(category=><div className="pf-category-manage" key={category.id}><span>{category.name}</span><div><button className="pf-edit" onClick={()=>renameCategory(category)}>✎</button><button className="pf-delete" onClick={()=>archiveCategory(category)}>×</button></div></div>}
         </section>
-        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ИСТОРИЯ ОПЕРАЦИЙ' : 'TRANSACTION HISTORY'}</span><h2>{tr(lang, 'expenses')}</h2></div><span className="pf-count">{visibleExpenses.length}</span></div>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ИСТОРИЯ ОПЕРАЦИЙ' : 'TRANSACTION HISTORY'}</span><h2>{tr(lang, 'expenses')}</h2></div><span className="pf-count">{visibleExpenses.length}</span></div><div className="pf-expense-filters"><select className="pf-member-filter" value={expensePeriod} onChange={e=>setExpensePeriod(e.target.value as 'month'|'all')}><option value="month">{lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}</option><option value="all">{lang === 'ru' ? 'Вся история' : 'All history'}</option></select><select className="pf-member-filter" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}><option value="all">{lang === 'ru' ? 'Все категории' : 'All categories'}</option>{categories.map(x=><option key={x.id} value={x.id}>{categoryName(x,lang)}</option>)}</select></div>
           {visibleExpenses.length ? visibleExpenses.slice(0, 100).map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category ? categoryName(item.category, lang) : (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label="Delete">×</button></div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
         </section>
       </div>}
@@ -387,7 +390,7 @@ export default function PersonalFinanceApp() {
             <label>{tr(lang,'member')}<select value={budgetMember} onChange={e=>setBudgetMember(e.target.value)}>{memberOptions}</select></label>
             <button className="pf-button primary" disabled={busy}>{tr(lang,'save')}</button>
           </form>
-          {visibleBudgets.map(item=>{const used=visibleExpenses.filter(x=>x.date>=ranges.from&&x.date<=ranges.to&&(!item.categoryId||x.category?.id===item.categoryId)&&(!item.memberId||x.memberId===item.memberId)).reduce((sum,x)=>sum+Number(x.amount),0);const limit=Number(item.limitAmount);const progress=limit>0?Math.min(100,used/limit*100):0;return <div className="pf-budget-item" key={item.id}><div className="pf-list-row"><div><strong>{item.category ? categoryName(item.category,lang) : (lang === 'ru' ? 'Общий бюджет' : 'Overall budget')}</strong><small>{item.member?.name ?? tr(lang,'shared')}</small></div><div className="pf-row-action"><b>{rub(used)} / {rub(limit)}</b><button className="pf-delete" onClick={()=>deleteBudget(item.id)}>×</button></div></div><div className="pf-coverage-track"><span style={{width:progress+'%',background:used>limit?'#ff8796':undefined}}/></div></div>})}
+          {visibleBudgets.map(item=>{const used=memberExpenses.filter(x=>x.date>=ranges.from&&x.date<=ranges.to&&(!item.categoryId||x.category?.id===item.categoryId)&&(!item.memberId||x.memberId===item.memberId)).reduce((sum,x)=>sum+Number(x.amount),0);const limit=Number(item.limitAmount);const progress=limit>0?Math.min(100,used/limit*100):0;return <div className="pf-budget-item" key={item.id}><div className="pf-list-row"><div><strong>{item.category ? categoryName(item.category,lang) : (lang === 'ru' ? 'Общий бюджет' : 'Overall budget')}</strong><small>{item.member?.name ?? tr(lang,'shared')}</small></div><div className="pf-row-action"><b>{rub(used)} / {rub(limit)}</b><button className="pf-delete" onClick={()=>deleteBudget(item.id)}>×</button></div></div><div className="pf-coverage-track"><span style={{width:progress+'%',background:used>limit?'#ff8796':undefined}}/></div></div>})}
           {!visibleBudgets.length && <p className="pf-empty">{tr(lang,'noData')}</p>}
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'НАКОПЛЕНИЯ' : 'SAVINGS'}</span><h2>{lang === 'ru' ? 'Финансовая цель' : 'Savings goal'}</h2></div></div>
