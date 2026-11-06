@@ -23,6 +23,11 @@ test('authentication works and household records stay isolated between accounts'
   const get = (path: string, token?: string) => fetch(baseUrl + path, {
     headers: token ? { authorization: `Bearer ${token}` } : {},
   });
+  const patch = (path: string, body: unknown, token: string) => fetch(baseUrl + path, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
 
   try {
     const unauthenticated = await get('/api/personal-finance/members');
@@ -43,6 +48,30 @@ test('authentication works and household records stay isolated between accounts'
 
     const createdMember = await post('/api/personal-finance/members', { name: 'First household member' }, first.token);
     assert.equal(createdMember.status, 201);
+
+    const todayParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const part = (name: string) => todayParts.find(item => item.type === name)?.value ?? '';
+    const today = new Date(`${part('year')}-${part('month')}-${part('day')}T00:00:00.000Z`);
+    const future = new Date(today);
+    future.setUTCDate(future.getUTCDate() + 7);
+    const futureDate = future.toISOString().slice(0, 10);
+    const settings = await patch('/api/personal-finance/settings', { openingBalance: 1000, openingBalanceDate: today.toISOString().slice(0, 10) }, first.token);
+    assert.equal(settings.status, 200);
+    const futureExpense = await post('/api/personal-finance/expenses', { title: 'Future test expense', amount: 500, date: futureDate }, first.token);
+    assert.equal(futureExpense.status, 201);
+    const dashboard = await get('/api/personal-finance/dashboard', first.token);
+    assert.equal(dashboard.status, 200);
+    const dashboardData = await dashboard.json() as { actual: { balance: number } };
+    assert.equal(Number(dashboardData.actual.balance), 1000);
+
+    const budgetPayload = { periodMonth: today.toISOString().slice(0, 7) + '-01', limitAmount: 10000 };
+    const budgetResponses = await Promise.all([
+      post('/api/personal-finance/budgets', budgetPayload, first.token),
+      post('/api/personal-finance/budgets', { ...budgetPayload, limitAmount: 12000 }, first.token),
+    ]);
+    assert.ok(budgetResponses.every(response => response.status === 200 || response.status === 201));
+    const budgets = await get('/api/personal-finance/budgets', first.token);
+    assert.equal((await budgets.json() as unknown[]).length, 1);
 
     const secondResponse = await post('/api/auth/register', { email: secondEmail, password: 'Another-safe-password-123!' });
     assert.equal(secondResponse.status, 201);
