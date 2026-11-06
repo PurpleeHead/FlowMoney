@@ -95,7 +95,9 @@ router.patch('/settings', async (req: AuthedRequest, res, next) => {
       try { new Intl.DateTimeFormat('en-US', { timeZone: parsed.data.timezone }); }
       catch { return res.status(400).json({ message: 'Unknown IANA timezone.' }); }
     }
-    return res.json(await prisma.user.update({ where: { id: uid(req) }, data: parsed.data, select: { timezone: true, locale: true } }));
+    const data: Record<string, unknown> = { ...parsed.data };
+    if (parsed.data.openingBalanceDate) data.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
+    return res.json(await prisma.user.update({ where: { id: uid(req) }, data: data as never, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true } }));
   } catch (error) { return next(error); }
 });
 
