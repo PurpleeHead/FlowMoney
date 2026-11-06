@@ -315,6 +315,12 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
   } catch (error) { next(error); }
 });
 
+router.get('/balance-adjustments', async (req: AuthedRequest, res, next) => {
+  try {
+    const records = await prisma.balanceAdjustment.findMany({ where: { userId: userId(req) }, include: { member: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] });
+    return res.json(records);
+  } catch (error) { next(error); }
+});
 router.post('/balance-adjustments', async (req: AuthedRequest, res, next) => {
   try {
     const parsed = z.object({ amount: z.number().finite().min(-1_000_000_000).max(1_000_000_000), date: dateSchema, reason: z.string().trim().min(1).max(160), memberId: optionalMember }).safeParse(req.body);
