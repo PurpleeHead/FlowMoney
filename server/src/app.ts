@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import authRoutes from './routes/auth.js';
 import exchangeRoutes from './routes/exchanges.js';
 import expenseRoutes from './routes/expenses.js';
@@ -30,7 +31,7 @@ export function createApp() {
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/personal-finance', personalFinanceRoutes);
 
-  const clientDist = resolve(process.cwd(), 'client', 'dist');
+  const clientDist = resolve(fileURLToPath(new URL('../../client/dist', import.meta.url)));
   if (existsSync(clientDist)) app.use(express.static(clientDist, { index: false, maxAge: '1h' }));
   app.use('/api', (_req, res) => res.status(404).json({ message: 'API route not found.' }));
   app.get('*', (_req, res, next) => {
