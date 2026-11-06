@@ -73,6 +73,7 @@ It does not use forced major upgrades and restores the previous lockfile if buil
 - `npm run db:migrate:dev` is for intentionally creating new migrations during development.
 - The personal-finance migration is additive. Existing Exchange, Expense and Receipt tables are retained; no legacy rows are deleted.
 - Before any production migration, create and verify a database backup and obtain explicit approval. Do not run production migrations or deploy as part of ordinary feature development.
+- Render startup intentionally does not run database migrations. A production migration must be a separate, approved release step after staging verification.
 
 See [docs/PERSONAL_FINANCE_MIGRATION.md](docs/PERSONAL_FINANCE_MIGRATION.md) for migration and rollback notes. The current npm audit snapshot and dependency remediation plan are in [docs/DEPENDENCY_SECURITY.md](docs/DEPENDENCY_SECURITY.md).
 
