@@ -83,7 +83,7 @@ Pull requests to `main` run:
 1. Prisma schema validation.
 2. Prisma Client generation.
 3. Server and client TypeScript/Vite builds.
-4. Server and client unit tests.
+4. Server unit and authenticated API integration tests, plus client unit tests.
 
 Workflow: `.github/workflows/ci.yml`.
 
