@@ -1,6 +1,8 @@
 name: FlowMoney CI
 
 on:
+  push:
+    branches: [feature/personal-finance-rework]
   pull_request:
     branches: [main]
 
