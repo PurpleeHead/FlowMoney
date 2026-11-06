@@ -7,12 +7,12 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 Set-Location $PSScriptRoot
 
-$envPath = Join-Path $PSScriptRoot "server\\.env"
+$envPath = Join-Path $PSScriptRoot "server\.env"
 if (-not (Test-Path $envPath)) {
   throw "server/.env was not found. Start the local setup first."
 }
-$databaseUrlLine = Get-Content $envPath | Where-Object { $_ -match "^\\s*DATABASE_URL=" } | Select-Object -First 1
-if (-not $databaseUrlLine -or $databaseUrlLine -notmatch "localhost:5433|127\\.0\\.1:5433") {
+$databaseUrlLine = Get-Content $envPath | Where-Object { $_ -match "^\s*DATABASE_URL=" } | Select-Object -First 1
+if (-not $databaseUrlLine -or $databaseUrlLine -notmatch "localhost:5433|127\.0\.0\.1:5433") {
   throw "Safety check stopped restore verification: DATABASE_URL must point to the local Docker database on port 5433."
 }
 if (-not (Test-Path -LiteralPath $BackupPath -PathType Leaf)) {
