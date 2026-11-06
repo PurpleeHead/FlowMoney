@@ -1,4 +1,6 @@
 -- Additive personal-finance schema. Legacy exchange/receipt tables remain untouched.
+ALTER TABLE "User" ADD COLUMN "timezone" TEXT NOT NULL DEFAULT 'Europe/Moscow';
+ALTER TABLE "User" ADD COLUMN "locale" TEXT NOT NULL DEFAULT 'ru';
 CREATE TABLE "HouseholdMember" (
   "id" TEXT NOT NULL, "userId" TEXT NOT NULL, "name" TEXT NOT NULL, "color" TEXT,
   "isArchived" BOOLEAN NOT NULL DEFAULT false, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
