@@ -65,6 +65,8 @@ function dateLabel(value: string, lang: Lang) {
 export default function PersonalFinanceApp() {
   const [lang, setLang] = useState<Lang>('ru');
   const [timezone, setTimezone] = useState('Europe/Moscow');
+  const [openingBalance, setOpeningBalance] = useState('0');
+  const [openingBalanceDate, setOpeningBalanceDate] = useState(moscowToday());
   const [selectedMonth, setSelectedMonth] = useState(moscowToday().slice(0, 7));
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -142,9 +144,9 @@ export default function PersonalFinanceApp() {
       api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
       api<SavingsGoal[]>(`${PF}/savings-goals`),
-      api<{ timezone: string; locale: Lang }>(`${PF}/settings`)
+      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string }>(`${PF}/settings`)
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale);
+    setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10));
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
   }, [ranges, expenseCategory, filterMember]);
 
@@ -154,6 +156,7 @@ export default function PersonalFinanceApp() {
     api<User>('/auth/me').then(async current => { setUser(current); await refresh(); }).catch(() => { setToken(null); }).finally(() => setLoading(false));
   }, [refresh]);
 
+  async function saveOpeningBalance() { const amount = Number(openingBalance); if (!Number.isFinite(amount)) { setError(lang === 'ru' ? 'Введите корректную сумму начального остатка.' : 'Enter a valid opening balance.'); return; } setBusy(true); setError(''); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ openingBalance: amount, openingBalanceDate }) }); await refresh(); setNotice(lang === 'ru' ? 'Начальный остаток сохранён.' : 'Opening balance saved.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function changeLanguage(next: Lang) { setLang(next); if (user) { try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ locale: next }) }); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } } }
   async function changeTimezone(next: string) { setTimezone(next); const today = todayInTimezone(next); setSelectedMonth(today.slice(0,7)); setIncomeStart(today); setExpenseDate(today); setObligationDate(today); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ timezone: next }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } }
   async function handleAuth(event: FormEvent) {
@@ -410,7 +413,7 @@ export default function PersonalFinanceApp() {
         <section className="pf-card pf-settings-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЕРСОНАЛИЗАЦИЯ' : 'PREFERENCES'}</span><h2>{tr(lang,'settings')}</h2></div></div>
           <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Язык интерфейса' : 'Interface language'}</strong><small>{lang === 'ru' ? 'Язык названий и подсказок' : 'Labels and helper text language'}</small></span><select value={lang} onChange={e=>changeLanguage(e.target.value as Lang)}><option value="ru">Русский</option><option value="en">English</option></select></label>
           <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Часовой пояс' : 'Time zone'}</strong><small>{lang === 'ru' ? 'Используется для текущей даты и календаря платежей' : 'Used for today and payment calendar dates'}</small></span><select value={timezone} onChange={e=>changeTimezone(e.target.value)}>{[['Europe/Moscow','Москва (UTC+3)'],['Europe/Minsk','Минск (UTC+3)'],['Europe/Warsaw','Варшава'],['Europe/Berlin','Берлин'],['Europe/London','Лондон'],['Asia/Dubai','Дубай'],['Asia/Bangkok','Бангкок'],['Asia/Ho_Chi_Minh','Хошимин'],['UTC','UTC']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
-          <p className="pf-muted">{lang === 'ru' ? 'Суммы хранятся в рублях. Смена часового пояса влияет на формирование будущих дат, но не пересчитывает уже записанные операции.' : 'Amounts are stored in RUB. Changing the timezone affects future date generation but does not rewrite existing transactions.'}</p>
+          <div className="pf-opening-balance"><div><strong>{lang === 'ru' ? 'Начальный остаток' : 'Opening balance'}</strong><small>{lang === 'ru' ? 'Сколько денег было на счетах и наличными на дату начала учёта' : 'Money held across accounts and cash on the start date'}</small></div><div className="pf-opening-fields"><label>{lang === 'ru' ? 'Сумма, ₽' : 'Amount, RUB'}<input type="number" step="0.01" value={openingBalance} onChange={e=>setOpeningBalance(e.target.value)}/></label><label>{lang === 'ru' ? 'Дата начала учёта' : 'Tracking start date'}<input type="date" value={openingBalanceDate} onChange={e=>setOpeningBalanceDate(e.target.value)}/></label></div><button className="pf-button" disabled={busy || !openingBalanceDate} onClick={saveOpeningBalance}>{lang === 'ru' ? 'Сохранить начальный остаток' : 'Save opening balance'}</button><p className="pf-muted">{lang === 'ru' ? 'Фактический баланс будет считать доходы, расходы и корректировки только начиная с этой даты, чтобы не учитывать старую историю повторно.' : 'The actual balance includes income, expenses and adjustments from this date onward, avoiding double-counting older history.'}</p></div><p className="pf-muted">{lang === 'ru' ? 'Суммы хранятся в рублях. Смена часового пояса влияет на формирование будущих дат, но не пересчитывает уже записанные операции.' : 'Amounts are stored in RUB. Changing the timezone affects future date generation but does not rewrite existing transactions.'}</p>
         </section>
       </div>}
 
