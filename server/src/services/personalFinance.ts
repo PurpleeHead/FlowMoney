@@ -136,7 +136,7 @@ export function calculateCoverage(income: number, obligations: number) {
 }
 
 export function sumMoney(values: Array<number | string | { toString(): string }>): number {
-  return roundMoney(values.reduce((sum, value) => sum + Number(value), 0));
+  return roundMoney(values.reduce<number>((sum, value) => sum + Number(value), 0));
 }
 
 function assertFinite(value: number, label: string) {
