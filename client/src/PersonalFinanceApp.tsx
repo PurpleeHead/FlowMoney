@@ -67,6 +67,7 @@ export default function PersonalFinanceApp() {
   const [timezone, setTimezone] = useState('Europe/Moscow');
   const [openingBalance, setOpeningBalance] = useState('0');
   const [openingBalanceDate, setOpeningBalanceDate] = useState(moscowToday());
+  const [openingBalanceConfigured, setOpeningBalanceConfigured] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(moscowToday().slice(0, 7));
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -144,9 +145,9 @@ export default function PersonalFinanceApp() {
       api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
       api<SavingsGoal[]>(`${PF}/savings-goals`),
-      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string }>(`${PF}/settings`)
+      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean }>(`${PF}/settings`)
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10));
+    setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
   }, [ranges, expenseCategory, filterMember]);
 
@@ -269,6 +270,7 @@ export default function PersonalFinanceApp() {
       <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions"><input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) setSelectedMonth(e.target.value); }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button className="pf-language" onClick={() => changeLanguage(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
       {error && <div className="pf-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
       {notice && <div className="pf-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
+      {!openingBalanceConfigured && <div className="pf-opening-reminder"><span>{lang === 'ru' ? 'Укажите начальный остаток и дату начала учёта — тогда фактический баланс будет рассчитан корректно.' : 'Set your opening balance and tracking start date so the actual balance is calculated correctly.'}</span><button onClick={() => setTab('settings')}>{lang === 'ru' ? 'Настроить' : 'Set up'}</button></div>}
 
       {tab === 'overview' && dashboard && <div className="pf-page">
         <section className="pf-balance-grid">
