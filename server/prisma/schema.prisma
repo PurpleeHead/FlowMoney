@@ -13,6 +13,8 @@ model User {
   passwordHash String
   timezone     String     @default("Europe/Moscow")
   locale       String     @default("ru")
+  openingBalance Decimal  @default(0) @db.Decimal(14, 2)
+  openingBalanceDate DateTime @default(now()) @db.Date
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   wallets      Wallet[]
