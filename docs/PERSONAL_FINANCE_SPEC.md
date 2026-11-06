@@ -63,7 +63,7 @@ Budgets/Goals are a later phase after core ledger correctness.
 Selected period defaults to current calendar month.
 
 Display:
-1. Actual cash balance: opening balance + received incomes - actual expenses.
+1. Actual cash balance: household opening balance as of the configured start date + received incomes after that date + signed balance adjustments after that date - actual expenses after that date. When filtering a single member, do not apply the household-wide opening balance to that member.
 2. Forecast balance at selected horizon: actual cash balance + planned incomes expected by horizon - unpaid obligations due by horizon - planned variable expenses (only if entered as plans; don't invent an estimate).
 3. Income: planned total, received total, remaining expected.
 4. Expenses: actual total and category breakdown.
@@ -71,7 +71,7 @@ Display:
 6. Coverage: received income vs total obligations due this month. If received income < obligations, show shortfall; otherwise show surplus. Also show planned-income coverage separately to avoid implying unreceived money is available.
 7. Period net: actual received income minus actual expenses.
 
-Opening balance must be explicitly entered during onboarding/settings; do not assume zero means user has no money without telling them. Support balance adjustment entries with date, amount and reason to preserve audit trail.
+Opening balance and its effective date must be explicitly visible and editable in settings; explain that ledger movements before the effective date are excluded to prevent double counting. New accounts default to zero on the account creation date, but the user should be prompted to set the real amount. Support signed balance adjustment entries with date, amount and reason to preserve an audit trail.
 
 Avoid double counting: paid obligation occurrence links to one expense; monthly obligation burden report includes the occurrence but dashboard actual expenses includes the linked expense once.
 
