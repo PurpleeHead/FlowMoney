@@ -353,7 +353,8 @@ router.delete('/obligations/:id', async (req: AuthedRequest, res, next) => {
     const userId = uid(req);
     const result = await prisma.obligation.updateMany({ where: { id: String(req.params.id), userId }, data: { isActive: false } });
     if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
-    await prisma.obligationOccurrence.updateMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: dateValue(dateString(new Date())) } }, data: { status: 'SKIPPED' } });
+    const today = await userToday(userId);
+    await prisma.obligationOccurrence.updateMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } }, data: { status: 'SKIPPED' } });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
@@ -538,7 +539,7 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
 
 router.get('/dashboard', async (req: AuthedRequest, res, next) => {
   try {
-    const userId = uid(req), now = new Date();
+    const userId = uid(req), now = await userToday(uid(req));
     const memberFilter = typeof req.query.memberId === 'string' ? req.query.memberId : '';
     if (memberFilter && memberFilter !== 'shared' && !(await validMember(memberFilter, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
     const memberWhere = memberFilter === 'shared' ? { memberId: null } : memberFilter ? { memberId: memberFilter } : {};
