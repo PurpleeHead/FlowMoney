@@ -28,7 +28,7 @@ It seeds shared default expense categories. Existing `Wallet`, `Exchange`, `Expe
 5. Run Prisma validation, API tests and a smoke test against that copy.
 6. Obtain explicit approval before applying to production.
 
-Do not run `prisma migrate dev` against production. The committed migration command is `npx prisma migrate deploy --schema server/prisma/schema.prisma`.
+Do not run `prisma migrate dev` against production. The committed migration command is `npx prisma migrate deploy --schema server/prisma/schema.prisma`. Render service startup is deliberately configured to run only the application; it does not apply migrations automatically. Apply the migration as a separate, approved release step after backup and staging verification.
 
 ## Rollback
 
