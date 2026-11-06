@@ -6,8 +6,8 @@ type Lang = 'ru' | 'en';
 type User = { id: string; email: string };
 type Member = { id: string; name: string; color?: string | null; isArchived: boolean };
 type Category = { id: string; name: string; slug: string; userId: string | null; isArchived: boolean };
-type IncomeEntry = { id: string; plannedDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; memberId?: string | null; member?: Member | null; source?: { title: string } | null };
-type ObligationOccurrence = { id: string; dueDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; obligation: { title: string; category: string; memberId?: string | null; member?: Member | null } };
+type IncomeEntry = { id: string; sourceId?: string | null; plannedDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; memberId?: string | null; member?: Member | null; source?: { title: string } | null };
+type ObligationOccurrence = { id: string; dueDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; obligation: { id: string; title: string; category: string; memberId?: string | null; member?: Member | null } };
 type Expense = { id: string; title: string; amount: number | string; date: string; memberId?: string | null; category?: Category | null; member?: Member | null; note?: string | null };
 type Dashboard = {
   actual: { income: number; expenses: number; balance: number };
@@ -85,6 +85,9 @@ export default function PersonalFinanceApp() {
   const [incomeDay2, setIncomeDay2] = useState('15');
   const [incomeWeekday, setIncomeWeekday] = useState('1');
   const [incomeMember, setIncomeMember] = useState('');
+  const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
+  const [incomeEditDate, setIncomeEditDate] = useState(moscowToday());
+  const [incomeEditAmount, setIncomeEditAmount] = useState('');
   const [expenseTitle, setExpenseTitle] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseDate, setExpenseDate] = useState(moscowToday());
@@ -98,6 +101,7 @@ export default function PersonalFinanceApp() {
   const [obligationDate, setObligationDate] = useState(moscowToday());
   const [obligationDay, setObligationDay] = useState('13');
   const [obligationMember, setObligationMember] = useState('');
+  const [editingObligationId, setEditingObligationId] = useState<string | null>(null);
   const [openingAmount, setOpeningAmount] = useState('');
   const [openingReason, setOpeningReason] = useState('Начальный остаток');
   const [newMemberName, setNewMemberName] = useState('');
@@ -141,6 +145,19 @@ export default function PersonalFinanceApp() {
     setBusy(true); setError('');
     try { await api(`${PF}/income-entries/${id}/receive`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); setNotice(lang === 'ru' ? 'Доход отмечен как полученный.' : 'Income marked as received.'); }
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function saveIncomeEdit(id: string) {
+    setBusy(true); setError('');
+    try { await api(`${PF}/income-entries/${id}`, { method: 'PATCH', body: JSON.stringify({ plannedDate: incomeEditDate, plannedAmount: Number(incomeEditAmount) }) }); setEditingIncomeId(null); await refresh(); setNotice(lang === 'ru' ? 'Плановый доход обновлён.' : 'Planned income updated.'); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function deleteIncomeSource(id: string) {
+    if (!window.confirm(lang === 'ru' ? 'Отключить этот источник дохода и отменить будущие поступления?' : 'Archive this income source and skip future entries?')) return;
+    setBusy(true); try { await api(`${PF}/income-sources/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function deleteObligation(id: string) {
+    if (!window.confirm(lang === 'ru' ? 'Отключить это обязательство?' : 'Archive this obligation?')) return;
+    setBusy(true); try { await api(`${PF}/obligations/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
   async function markPaid(id: string) {
     setBusy(true); setError('');
@@ -247,7 +264,7 @@ export default function PersonalFinanceApp() {
           </form>
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОЖИДАЕМЫЕ И ФАКТИЧЕСКИЕ' : 'PLANNED AND RECEIVED'}</span><h2>{tr(lang, 'income')}</h2></div><span className="pf-count">{monthIncome.length}</span></div>
-          {visibleIncome.length ? visibleIncome.map(entry => <div className="pf-list-row" key={entry.id}><div><strong>{entry.source?.title ?? (lang === 'ru' ? 'Разовый доход' : 'One-time income')}</strong><small>{dateLabel(entry.plannedDate, lang)} · {entry.member?.name ?? tr(lang, 'shared')}</small><small className={entry.status === 'RECEIVED' ? 'positive' : ''}>{entry.status === 'RECEIVED' ? tr(lang, 'actualStatus') : tr(lang, 'plannedStatus')}</small></div><div className="pf-row-action"><b>{rub(entry.actualAmount ?? entry.plannedAmount)}</b>{entry.status === 'PLANNED' && <button className="pf-button small" disabled={busy} onClick={() => markReceived(entry.id)}>{tr(lang, 'receivedAction')}</button>}</div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
+          {visibleIncome.length ? visibleIncome.map(entry => <div className="pf-list-row" key={entry.id}><div><strong>{entry.source?.title ?? (lang === 'ru' ? 'Разовый доход' : 'One-time income')}</strong><small>{dateLabel(entry.plannedDate, lang)} · {entry.member?.name ?? tr(lang, 'shared')}</small><small className={entry.status === 'RECEIVED' ? 'positive' : ''}>{entry.status === 'RECEIVED' ? tr(lang, 'actualStatus') : tr(lang, 'plannedStatus')}</small>{editingIncomeId === entry.id && <div className="pf-inline-edit"><input aria-label={tr(lang, 'date')} type="date" value={incomeEditDate} onChange={e => setIncomeEditDate(e.target.value)}/><input aria-label={tr(lang, 'amount')} type="number" min="0.01" step="0.01" value={incomeEditAmount} onChange={e => setIncomeEditAmount(e.target.value)}/><button className="pf-button small" disabled={busy} onClick={() => saveIncomeEdit(entry.id)}>{tr(lang, 'save')}</button></div>}</div><div className="pf-row-action"><b>{rub(entry.actualAmount ?? entry.plannedAmount)}</b>{entry.status === 'PLANNED' && <><button className="pf-edit" title={lang === 'ru' ? 'Изменить план' : 'Edit plan'} onClick={() => { setEditingIncomeId(entry.id); setIncomeEditDate(entry.plannedDate.slice(0,10)); setIncomeEditAmount(String(entry.plannedAmount)); }}>✎</button><button className="pf-button small" disabled={busy} onClick={() => markReceived(entry.id)}>{tr(lang, 'receivedAction')}</button>{entry.sourceId && <button className="pf-delete" title={lang === 'ru' ? 'Отключить источник' : 'Archive source'} onClick={() => deleteIncomeSource(entry.sourceId!)}>×</button>}</>}</div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
         </section>
       </div>}
 
@@ -269,8 +286,8 @@ export default function PersonalFinanceApp() {
       </div>}
 
       {tab === 'obligations' && <div className="pf-page pf-two-col">
-        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'РЕГУЛЯРНЫЕ ПЛАТЕЖИ' : 'RECURRING COMMITMENTS'}</span><h2>{tr(lang, 'addObligation')}</h2></div></div>
-          <form className="pf-form" onSubmit={e => perform(e, `${PF}/obligations`, { title: obligationTitle, category: obligationCategory, amount: Number(obligationAmount), recurrence: obligationRecurrence, recurrenceConfig: obligationRecurrence === 'MONTHLY' ? { day: Number(obligationDay) } : {}, startDate: obligationDate, memberId: obligationMember || null }, lang === 'ru' ? 'Обязательство добавлено.' : 'Obligation added.')}>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'РЕГУЛЯРНЫЕ ПЛАТЕЖИ' : 'RECURRING COMMITMENTS'}</span><h2>{editingObligationId ? (lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation') : tr(lang, 'addObligation')}</h2></div></div>
+          <form className="pf-form" onSubmit={e => perform(e, editingObligationId ? PF + '/obligations/' + editingObligationId : PF + '/obligations', editingObligationId ? { title: obligationTitle, category: obligationCategory, amount: Number(obligationAmount), memberId: obligationMember || null } : { title: obligationTitle, category: obligationCategory, amount: Number(obligationAmount), recurrence: obligationRecurrence, recurrenceConfig: obligationRecurrence === 'MONTHLY' ? { day: Number(obligationDay) } : {}, startDate: obligationDate, memberId: obligationMember || null }, editingObligationId ? (lang === 'ru' ? 'Обязательство обновлено.' : 'Obligation updated.') : (lang === 'ru' ? 'Обязательство добавлено.' : 'Obligation added.'), editingObligationId ? 'PATCH' : 'POST')}>
             <label>{tr(lang, 'title')}<input required value={obligationTitle} onChange={e => setObligationTitle(e.target.value)} placeholder={lang === 'ru' ? 'Например, автокредит' : 'e.g. Car loan'}/></label>
             <label>{tr(lang, 'category')}<select value={obligationCategory} onChange={e => setObligationCategory(e.target.value)}>{(lang === 'ru' ? ['Кредит','Автокредит','Ипотека','Аренда','Коммунальные услуги','Фитнес','Подписки','Другое'] : ['Loan','Car loan','Mortgage','Rent','Utilities','Fitness','Subscriptions','Other']).map(x=><option key={x}>{x}</option>)}</select></label>
             <label>{tr(lang, 'amount')}<input type="number" min="0.01" step="0.01" required value={obligationAmount} onChange={e => setObligationAmount(e.target.value)}/></label>
@@ -282,7 +299,7 @@ export default function PersonalFinanceApp() {
           </form>
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЛАН И ОПЛАТА' : 'DUE AND PAID'}</span><h2>{tr(lang, 'obligations')}</h2></div><span className="pf-count">{monthObligations.length}</span></div>
-          {visibleObligations.length ? visibleObligations.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.obligation.title}</strong><small>{item.obligation.category} · {dateLabel(item.dueDate, lang)}</small><small className={item.status === 'PAID' ? 'positive' : item.status === 'OVERDUE' ? 'negative' : ''}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : tr(lang, 'unpaid')}</small></div><div className="pf-row-action"><b>{rub(item.actualAmount ?? item.plannedAmount)}</b>{item.status !== 'PAID' && <button className="pf-button small" disabled={busy} onClick={() => markPaid(item.id)}>{tr(lang, 'paidAction')}</button>}</div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
+          {visibleObligations.length ? visibleObligations.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.obligation.title}</strong><small>{item.obligation.category} · {dateLabel(item.dueDate, lang)}</small><small className={item.status === 'PAID' ? 'positive' : item.status === 'OVERDUE' ? 'negative' : ''}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : tr(lang, 'unpaid')}</small></div><div className="pf-row-action"><b>{rub(item.actualAmount ?? item.plannedAmount)}</b>{item.status !== 'PAID' && <><button className="pf-edit" title={lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation'} onClick={() => { setEditingObligationId(item.obligation.id); setObligationTitle(item.obligation.title); setObligationCategory(item.obligation.category); setObligationAmount(String(item.plannedAmount)); setObligationMember(item.obligation.memberId ?? ''); }}>✎</button><button className="pf-button small" disabled={busy} onClick={() => markPaid(item.id)}>{tr(lang, 'paidAction')}</button><button className="pf-delete" title={lang === 'ru' ? 'Отключить обязательство' : 'Archive obligation'} onClick={() => deleteObligation(item.obligation.id)}>×</button></>}</div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
         </section>
       </div>}
 
