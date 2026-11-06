@@ -15,7 +15,7 @@ This migration is additive. It creates the personal-finance tables:
 - `Budget`
 - `SavingsGoal`
 - User preferences: IANA timezone (default `Europe/Moscow`) and locale (default `ru`)
-- Household opening balance (`openingBalance`) and its effective calendar date (`openingBalanceDate`, defaulting to migration date for existing accounts)
+- Household opening balance (`openingBalance`), effective calendar date (`openingBalanceDate`) and explicit setup flag (`openingBalanceConfigured`, false until the user saves settings)
 
 It seeds shared default expense categories. Existing `Wallet`, `Exchange`, `Expense` and `Receipt` tables and their records are not dropped or rewritten.
 
@@ -45,6 +45,7 @@ DROP TABLE IF EXISTS "ExpenseCategory";
 DROP TABLE IF EXISTS "IncomeEntry";
 DROP TABLE IF EXISTS "IncomeSource";
 DROP TABLE IF EXISTS "HouseholdMember";
+ALTER TABLE "User" DROP COLUMN IF EXISTS "openingBalanceConfigured";
 ALTER TABLE "User" DROP COLUMN IF EXISTS "openingBalanceDate";
 ALTER TABLE "User" DROP COLUMN IF EXISTS "openingBalance";
 ALTER TABLE "User" DROP COLUMN IF EXISTS "locale";
