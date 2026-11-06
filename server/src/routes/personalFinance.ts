@@ -99,7 +99,7 @@ router.patch('/settings', async (req: AuthedRequest, res, next) => {
     const data: Record<string, unknown> = { ...parsed.data };
     if (parsed.data.openingBalanceDate) data.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
     if (parsed.data.openingBalance !== undefined || parsed.data.openingBalanceDate !== undefined) data.openingBalanceConfigured = true;
-    return res.json(await prisma.user.update({ where: { id: uid(req) }, data: data as never, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true } }));
+    return res.json(await prisma.user.update({ where: { id: uid(req) }, data: data as never, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } }));
   } catch (error) { return next(error); }
 });
 
