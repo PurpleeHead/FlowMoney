@@ -16,6 +16,18 @@ The audit report indicated compatible fixes for `@prisma/config`, `prisma`, `bod
 
 No `npm audit fix --force` was run and no dependency major versions were changed as part of this feature. The CI audit step is informational and does not hide build or test failures.
 
+## Safe local remediation helper
+
+Run `UPDATE-DEPENDENCIES.ps1` from PowerShell after pulling this feature branch. It:
+- requires Node.js 22+ and the expected feature branch;
+- refuses to run with a dirty working tree;
+- backs up the root lockfile outside the repository;
+- runs `npm audit fix` without `--force`;
+- retains the lockfile update only if the server/client build and tests pass;
+- restores the original lockfile if verification fails.
+
+The script does not commit changes, run migrations, or deploy. Review the resulting `package-lock.json` diff and the remaining audit counts before committing. Major upgrades to Vitest or Zod still require separate compatibility work if the compatible update cannot clear them.
+
 ## Recommended remediation sequence
 
 1. Apply the compatible lockfile-only updates and rerun build, migration and tests.
