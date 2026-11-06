@@ -33,9 +33,9 @@ jobs:
       DATABASE_URL: postgresql://flowmoney:flowmoney@localhost:5432/flowmoney
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
