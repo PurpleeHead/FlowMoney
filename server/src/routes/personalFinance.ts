@@ -220,7 +220,7 @@ router.patch('/expenses/:id', async (req: AuthedRequest, res, next) => {
     if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, OR: [{ userId: uid }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
     const data: Record<string, unknown> = { ...input };
     if (input.date) data.date = dateValue(input.date);
-    const result = await prisma.ledgerExpense.updateMany({ where: { id: req.params.id, userId: uid, obligationOccurrence: null }, data: data as never });
+    const result = await prisma.ledgerExpense.updateMany({ where: { id: req.params.id, userId: uid, obligationOccurrence: { is: null } }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Editable expense not found.' });
     return res.json(await prisma.ledgerExpense.findFirst({ where: { id: req.params.id, userId: uid }, include: { category: true, member: true } }));
   } catch (error) { next(error); }
@@ -253,6 +253,8 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
     const uid = userId(req);
     const obligations = await prisma.obligation.findMany({ where: { userId: uid, isActive: true } });
     for (const obligation of obligations) await materializeObligation(obligation, from, to);
+    const today = dateValue(dateString(new Date()));
+    await prisma.obligationOccurrence.updateMany({ where: { userId: uid, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const occurrences = await prisma.obligationOccurrence.findMany({ where: { userId: uid, dueDate: { gte: from, lte: to } }, include: { obligation: true, expense: true }, orderBy: { dueDate: 'asc' } });
     return res.json({ obligations, occurrences });
   } catch (error) { next(error); }
@@ -301,7 +303,12 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
       if (occurrence.status === 'PAID' && occurrence.expenseId) return occurrence;
       const amount = parsed.data.actualAmount ?? Number(occurrence.plannedAmount);
       const expense = await tx.ledgerExpense.create({ data: { userId: uid, memberId: occurrence.obligation.memberId, title: occurrence.obligation.title, amount, date: dateValue(dateString(occurrence.dueDate)), note: 'Obligation payment' } });
-      return tx.obligationOccurrence.update({ where: { id: occurrence.id }, data: { status: 'PAID', paidAt: parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date(), actualAmount: amount, expenseId: expense.id }, include: { expense: true, obligation: true } });
+      const claimed = await tx.obligationOccurrence.updateMany({ where: { id: occurrence.id, userId: uid, status: { not: 'PAID' } }, data: { status: 'PAID', paidAt: parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date(), actualAmount: amount, expenseId: expense.id } });
+      if (!claimed.count) {
+        await tx.ledgerExpense.delete({ where: { id: expense.id } });
+        return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id, userId: uid }, include: { expense: true, obligation: true } });
+      }
+      return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id, userId: uid }, include: { expense: true, obligation: true } });
     });
     if (!paid) return res.status(404).json({ message: 'Obligation occurrence not found.' });
     return res.json(paid);
@@ -324,10 +331,11 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const to = dateValue(typeof req.query.to === 'string' && dateSchema.safeParse(req.query.to).success ? req.query.to : dateString(monthEnd(now)));
     const horizon = dateValue(typeof req.query.horizon === 'string' && dateSchema.safeParse(req.query.horizon).success ? req.query.horizon : dateString(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0))));
     const inclusiveTo = new Date(to.getTime() + 86400000 - 1);
-    const [receivedAll, receivedPeriod, planned, balanceExpenses, periodExpenses, forecastObligations, adjustments, monthlyObligations] = await Promise.all([
+    const [receivedAll, receivedPeriod, planned, plannedPeriod, balanceExpenses, periodExpenses, forecastObligations, adjustments, monthlyObligations] = await Promise.all([
       prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { lte: inclusiveTo } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { gte: from, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'PLANNED', plannedDate: { gte: from, lte: horizon } }, _sum: { plannedAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId: uid, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId: uid, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.aggregate({ where: { userId: uid, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
@@ -338,6 +346,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const actualExpenses = Number(balanceExpenses._sum.amount ?? 0);
     const actualBalance = Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenses;
     const plannedIncome = Number(planned._sum.plannedAmount ?? 0);
+    const plannedIncomeThisMonth = Number(plannedPeriod._sum.plannedAmount ?? 0);
     const unpaidObligations = Number(forecastObligations._sum.plannedAmount ?? 0);
     const dueTotal = monthlyObligations.reduce((sum, item) => sum + Number(item.plannedAmount), 0);
     const receivedMonthAmount = Number(receivedPeriod._sum.actualAmount ?? 0);
@@ -348,7 +357,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       period: { from: dateString(from), to: dateString(to), horizon: dateString(horizon) },
       actual: { income: receivedMonthAmount, expenses: Number(periodExpenses._sum.amount ?? 0), balance: actualBalance },
       forecast: { plannedIncome, unpaidObligations, balance: actualBalance + plannedIncome - unpaidObligations },
-      obligations: { due: dueTotal, paid: paidMonth, unpaid: unpaidMonth, coverage: { receivedIncome: receivedMonthAmount, shortfall: Math.max(0, dueTotal - receivedMonthAmount), surplus: Math.max(0, receivedMonthAmount - dueTotal) }, plannedCoverage: { income: receivedMonthAmount + plannedIncome, shortfall: Math.max(0, dueTotal - receivedMonthAmount - plannedIncome) } },
+      obligations: { due: dueTotal, paid: paidMonth, unpaid: unpaidMonth, coverage: { receivedIncome: receivedMonthAmount, shortfall: Math.max(0, dueTotal - receivedMonthAmount), surplus: Math.max(0, receivedMonthAmount - dueTotal) }, plannedCoverage: { income: receivedMonthAmount + plannedIncomeThisMonth, shortfall: Math.max(0, dueTotal - receivedMonthAmount - plannedIncomeThisMonth) } },
       nextPayments,
     });
   } catch (error) { next(error); }
