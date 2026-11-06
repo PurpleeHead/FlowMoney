@@ -20,7 +20,7 @@ A personal and family budget tracker focused on **RUB income, expenses and manda
 
 ## Balance rules
 
-- **Actual balance** = opening balance and signed adjustments + received income − recorded expenses.
+- **Actual balance** = opening balance as of the configured start date + signed balance adjustments and received income from that date onward − recorded expenses from that date onward. The household opening balance is not applied to a member-only filter.
 - Planned income does not affect actual balance until it is marked received.
 - **Forecast balance** = actual balance + planned income through the selected horizon − unpaid obligations due through that horizon.
 - No assumed variable spending is included unless explicitly recorded.
