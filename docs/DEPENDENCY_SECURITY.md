@@ -10,6 +10,15 @@ Source: `npm audit --json` from the pull-request CI run. This is a dependency-tr
 - The high advisories include `@prisma/config`, `prisma`, `body-parser`, `deepmerge-ts`, `vite` and `zod`.
 - Moderate advisories include `@vitest/mocker`, `esbuild`, `qs` and `vite-node`.
 
+## Supply-chain and authentication hardening
+
+- The lockfile's 415 package tarball references were changed from the third-party `registry.npmmirror.com` mirror to the canonical `registry.npmjs.org` registry. Package versions and integrity hashes were retained in that edit; this is a registry-source normalization, not a substitute for an npm audit remediation.
+- JWT middleware now explicitly accepts only HS256 session tokens and rejects missing, empty, or incorrectly typed identity claims.
+- Added middleware tests for HS256 acceptance, HS384 rejection, malformed identity claims and missing bearer credentials.
+- Expanded authenticated API integration coverage for concurrent obligation payment (one linked expense only), repeated income receipt (one actual ledger entry), and cross-household attempts to pay/receive or assign records.
+
+These new tests must pass in CI before this branch is considered verified.
+
 ## Upgrade implications
 
 The audit report indicated compatible fixes for `@prisma/config`, `prisma`, `body-parser`, `deepmerge-ts` and `qs`. The remaining reported fixes require major-version changes in the Vitest toolchain (to Vitest 5.1.0) or Zod (to 4.6.7).
