@@ -32,6 +32,12 @@ TRANSLATE_API_KEY=""
   Write-Host "Keeping existing server/.env settings." -ForegroundColor Yellow
 }
 
+# Never let the quick-start script point migrations at a remote or production database.
+$databaseUrlLine = Get-Content $envPath | Where-Object { $_ -match "^\\s*DATABASE_URL=" } | Select-Object -First 1
+if (-not $databaseUrlLine -or $databaseUrlLine -notmatch "localhost:5433|127\\.0\\.0\\.1:5433") {
+  throw "Safety check stopped setup: server/.env DATABASE_URL must point to localhost:5433 (the local Docker database). No migration was run."
+}
+
 Write-Host "`n[1/5] Starting PostgreSQL with Docker Compose..." -ForegroundColor Cyan
 docker compose up -d postgres
 if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start PostgreSQL. Check that Docker Desktop is running." }
