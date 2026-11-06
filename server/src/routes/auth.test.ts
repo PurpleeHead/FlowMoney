@@ -11,6 +11,7 @@ test('authentication works and household records stay isolated between accounts'
   const suffix = randomUUID();
   const firstEmail = `flowmoney-test-${suffix}@example.test`;
   const secondEmail = `flowmoney-test-other-${suffix}@example.test`;
+  const thirdEmail = `flowmoney-test-race-${suffix}@example.test`;
   const server = createApp().listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
   const address = server.address() as AddressInfo;
@@ -90,8 +91,14 @@ test('authentication works and household records stay isolated between accounts'
 
     const invalidLogin = await post('/api/auth/login', { email: firstEmail, password: 'incorrect-password' });
     assert.equal(invalidLogin.status, 401);
+
+    const concurrentRegistrations = await Promise.all([
+      post('/api/auth/register', { email: thirdEmail, password: 'Concurrent-safe-password-123!' }),
+      post('/api/auth/register', { email: thirdEmail.toUpperCase(), password: 'Concurrent-safe-password-123!' }),
+    ]);
+    assert.deepEqual(concurrentRegistrations.map(response => response.status).sort((a, b) => a - b), [201, 409]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-    await prisma.user.deleteMany({ where: { email: { in: [firstEmail, secondEmail] } } });
+    await prisma.user.deleteMany({ where: { email: { in: [firstEmail, secondEmail, thirdEmail] } } });
   }
 });
