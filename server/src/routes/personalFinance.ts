@@ -450,7 +450,16 @@ router.post('/budgets', async (req: AuthedRequest, res, next) => {
     if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
     const existing = await prisma.budget.findFirst({ where: { userId, periodMonth: month, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null } });
     if (existing) return res.json(await prisma.budget.update({ where: { id: existing.id }, data: { limitAmount: input.limitAmount }, include: { category: true, member: true } }));
-    return res.status(201).json(await prisma.budget.create({ data: { userId, periodMonth: month, limitAmount: input.limitAmount, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null }, include: { category: true, member: true } }));
+    try {
+      return res.status(201).json(await prisma.budget.create({ data: { userId, periodMonth: month, limitAmount: input.limitAmount, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null }, include: { category: true, member: true } }));
+    } catch (error) {
+      // A concurrent request may create the same nullable scope after the lookup above.
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+        const concurrent = await prisma.budget.findFirst({ where: { userId, periodMonth: month, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null } });
+        if (concurrent) return res.json(await prisma.budget.update({ where: { id: concurrent.id }, data: { limitAmount: input.limitAmount }, include: { category: true, member: true } }));
+      }
+      throw error;
+    }
   } catch (error) { return next(error); }
 });
 router.patch('/budgets/:id', async (req: AuthedRequest, res, next) => {
