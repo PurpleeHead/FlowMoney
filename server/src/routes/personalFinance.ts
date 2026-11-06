@@ -82,14 +82,14 @@ async function createObligationOccurrences(obligation: {
 
 router.get('/settings', async (req: AuthedRequest, res, next) => {
   try {
-    const settings = await prisma.user.findUnique({ where: { id: uid(req) }, select: { timezone: true, locale: true } });
+    const settings = await prisma.user.findUnique({ where: { id: uid(req) }, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true } });
     if (!settings) return res.status(404).json({ message: 'User settings not found.' });
     return res.json(settings);
   } catch (error) { return next(error); }
 });
 router.patch('/settings', async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = z.object({ timezone: z.string().trim().min(1).max(80).optional(), locale: z.enum(['ru', 'en']).optional() }).safeParse(req.body);
+    const parsed = z.object({ timezone: z.string().trim().min(1).max(80).optional(), locale: z.enum(['ru', 'en']).optional(), openingBalance: z.number().finite().min(-1_000_000_000).max(1_000_000_000).optional(), openingBalanceDate: dateSchema.optional() }).safeParse(req.body);
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid timezone or language.' });
     if (parsed.data.timezone) {
       try { new Intl.DateTimeFormat('en-US', { timeZone: parsed.data.timezone }); }
@@ -560,6 +560,8 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, monthEnd(now));
     const horizon = dateQuery(req.query.horizon, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)));
+    const openingSettings = await prisma.user.findUnique({ where: { id: userId }, select: { openingBalance: true, openingBalanceDate: true } });
+    const openingDate = openingSettings?.openingBalanceDate ?? new Date(0);
     const [sources, obligations] = await Promise.all([
       prisma.incomeSource.findMany({ where: { userId, isActive: true, ...memberWhere } }),
       prisma.obligation.findMany({ where: { userId, isActive: true, ...(memberFilter ? { memberId: memberFilter === 'shared' ? null : memberFilter } : {}) } }),
@@ -570,11 +572,11 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const inclusiveTo = new Date(to.getTime() + 86400000 - 1);
     const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
-      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { lte: inclusiveTo } }, _sum: { actualAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingDate, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: from, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
-      prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
+      prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
@@ -582,7 +584,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     ]);
     const actualIncome = Number(receivedAll._sum.actualAmount ?? 0);
     const actualExpenseTotal = Number(allExpenses._sum.amount ?? 0);
-    const actualBalance = Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenseTotal;
+    const actualBalance = Number(openingSettings?.openingBalance ?? 0) + Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenseTotal;
     const plannedIncome = Number(plannedHorizon._sum.plannedAmount ?? 0);
     const unpaidObligations = Number(forecastObligations._sum.plannedAmount ?? 0);
     const dueTotal = monthOccurrences.reduce((sum, item) => sum + Number(item.plannedAmount), 0);
