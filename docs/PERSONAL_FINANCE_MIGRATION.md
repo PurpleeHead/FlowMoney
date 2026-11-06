@@ -30,6 +30,16 @@ It seeds shared default expense categories. Existing `Wallet`, `Exchange`, `Expe
 
 Do not run `prisma migrate dev` against production. The committed migration command is `npx prisma migrate deploy --schema server/prisma/schema.prisma`. Render service startup is deliberately configured to run only the application; it does not apply migrations automatically. Apply the migration as a separate, approved release step after backup and staging verification.
 
+## Local backup and restore rehearsal
+
+For the local Docker database only, the repository includes two PowerShell helpers:
+
+1. Run `./BACKUP-LOCAL-FLOWMONEY.ps1` to create a PostgreSQL custom-format backup in `%USERPROFILE%\\FlowMoneyBackups`. The script checks that `server/.env` points to `localhost:5433`, creates the dump inside the local container, copies it to the host and verifies that PostgreSQL can read the archive.
+2. Run `./VERIFY-LOCAL-BACKUP.ps1 -BackupPath "C:\\path\\to\\flowmoney-local-YYYYMMDD-HHMMSS.dump"` with the exact path printed by the backup script.
+3. The verification script restores the archive into a disposable database named `flowmoney_restore_check`, checks for the core user and personal-finance tables, then removes the temporary database.
+
+The verification script does not overwrite the active local database. Both helpers refuse to run when `DATABASE_URL` is not a local address on port 5433. These scripts are not a substitute for provider-native production backups and do not access Render.
+
 ## Rollback
 
 There is no automatic down migration. The SQL below removes only the tables created by this migration, in dependency-safe order. **It permanently deletes every personal-finance record created after rollout.** Export the new data first and obtain explicit approval before running it.
