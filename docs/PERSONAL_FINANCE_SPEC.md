@@ -54,7 +54,7 @@ Each income, expense, income source, and obligation can be attributed to one mem
 Provide household aggregate and member-specific filters. A member is a simple profile/label, not a separate login in v1. Do not expose one household to other accounts.
 
 ### 2.5 Budgets and goals
-Monthly budgets can be set globally and per expense category, optionally per member.
+Monthly budgets can be set globally and per expense category, optionally per member. Each household/month/member/category scope must have at most one budget, including shared (unassigned) scopes.
 Savings goals have title, target amount, current amount (manual or derived from explicitly allocated contributions), target date and status.
 Budgets/Goals are a later phase after core ledger correctness.
 
