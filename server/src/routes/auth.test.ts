@@ -30,6 +30,10 @@ test('authentication works and household records stay isolated between accounts'
   });
 
   try {
+    const frontend = await get('/');
+    assert.equal(frontend.status, 200);
+    assert.match(await frontend.text(), /FLOWMONEY/i);
+
     const unauthenticated = await get('/api/personal-finance/members');
     assert.equal(unauthenticated.status, 401);
 
