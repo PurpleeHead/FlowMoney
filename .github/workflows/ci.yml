@@ -41,10 +41,6 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Apply non-breaking dependency security fixes
-        run: npm audit fix --package-lock-only
-      - name: Reinstall exact updated lockfile
-        run: npm ci
       - name: Report dependency audit
         run: |
           npm audit --json > npm-audit.json || true
@@ -59,9 +55,3 @@ jobs:
         run: npm run build
       - name: Run server and client tests
         run: npm test
-      - name: Upload reviewed lockfile candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-audit-package-lock
-          path: package-lock.json
-          if-no-files-found: error
