@@ -33,8 +33,8 @@ TRANSLATE_API_KEY=""
 }
 
 # Never let the quick-start script point migrations at a remote or production database.
-$databaseUrlLine = Get-Content $envPath | Where-Object { $_ -match "^\\s*DATABASE_URL=" } | Select-Object -First 1
-if (-not $databaseUrlLine -or $databaseUrlLine -notmatch "localhost:5433|127\\.0\\.0\\.1:5433") {
+$databaseUrlLine = Get-Content $envPath | Where-Object { $_ -match "^\s*DATABASE_URL=" } | Select-Object -First 1
+if (-not $databaseUrlLine -or $databaseUrlLine -notmatch "localhost:5433|127\.0\.0\.1:5433") {
   throw "Safety check stopped setup: server/.env DATABASE_URL must point to localhost:5433 (the local Docker database). No migration was run."
 }
 
