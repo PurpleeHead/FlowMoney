@@ -380,7 +380,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const memberFilter = typeof req.query.memberId === 'string' ? req.query.memberId : '';
     if (memberFilter && memberFilter !== 'shared' && !(await validMember(memberFilter, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
     const memberWhere = memberFilter === 'shared' ? { memberId: null } : memberFilter ? { memberId: memberFilter } : {};
-    const obligationMemberWhere = memberFilter ? { obligation: { memberId: memberFilter === 'shared' ? null : memberFilter } } : {};
+    const obligationMemberWhere = memberFilter ? { obligation: { is: { memberId: memberFilter === 'shared' ? null : memberFilter } } } : {};
     const from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, monthEnd(now));
     const horizon = dateQuery(req.query.horizon, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)));
