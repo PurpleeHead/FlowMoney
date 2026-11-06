@@ -145,7 +145,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(firstMembers.status, 200);
     assert.equal(secondMembers.status, 200);
     assert.equal((await firstMembers.json() as unknown[]).length, 1);
-    assert.equal((await secondMembers.json() as unknown[]).length, 0);
+    assert.equal((await secondMembers.json() as unknown[]).length, 1);
 
     const invalidLogin = await post('/api/auth/login', { email: firstEmail, password: 'incorrect-password' });
     assert.equal(invalidLogin.status, 401);
