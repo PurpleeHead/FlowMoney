@@ -123,15 +123,15 @@ export default function PersonalFinanceApp() {
   const ranges = useMemo(monthBounds, []);
   const refresh = useCallback(async () => {
     const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData] = await Promise.all([
-      api<Dashboard>(\`\${PF}/dashboard?from=\${ranges.from}&to=\${ranges.to}&horizon=\${ranges.horizon}\${filterMember !== 'all' ? \`&memberId=\${filterMember}\` : ''}\`),
-      api<{ entries: IncomeEntry[] }>(\`\${PF}/income-sources?from=\${ranges.from}&to=\${ranges.horizon}\`),
-      api<{ expenses: Expense[]; categories: Category[] }>(\`\${PF}/expenses\`),
-      api<{ occurrences: ObligationOccurrence[] }>(\`\${PF}/obligations?from=\${ranges.from}&to=\${ranges.horizon}\`),
-      api<Member[]>(\`\${PF}/members\`),
-      api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(\`\${PF}/balance-adjustments\`),
-      api<Analytics>(\`\${PF}/analytics?from=\${ranges.from}&to=\${ranges.to}\${filterMember !== 'all' ? \`&memberId=\${filterMember}\` : ''}\`),
-      api<BudgetRecord[]>(\`\${PF}/budgets?month=\${ranges.from}\`),
-      api<SavingsGoal[]>(\`\${PF}/savings-goals\`)
+      api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
+      api<{ entries: IncomeEntry[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}`),
+      api<{ expenses: Expense[]; categories: Category[] }>(`${PF}/expenses`),
+      api<{ occurrences: ObligationOccurrence[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}`),
+      api<Member[]>(`${PF}/members`),
+      api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`),
+      api<Analytics>(`${PF}/analytics?from=${ranges.from}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
+      api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
+      api<SavingsGoal[]>(`${PF}/savings-goals`)
     ]);
     setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData);
     if (!expenseCategory && expenseData.categories[0]) setExpenseCategory(expenseData.categories[0].id);
