@@ -82,7 +82,7 @@ async function createObligationOccurrences(obligation: {
 
 router.get('/settings', async (req: AuthedRequest, res, next) => {
   try {
-    const settings = await prisma.user.findUnique({ where: { id: uid(req) }, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true } });
+    const settings = await prisma.user.findUnique({ where: { id: uid(req) }, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } });
     if (!settings) return res.status(404).json({ message: 'User settings not found.' });
     return res.json(settings);
   } catch (error) { return next(error); }
@@ -98,6 +98,7 @@ router.patch('/settings', async (req: AuthedRequest, res, next) => {
     if (parsed.data.openingBalanceDate && parsed.data.openingBalanceDate > dateString(await userToday(uid(req)))) return res.status(400).json({ message: 'Opening balance date cannot be in the future.' });
     const data: Record<string, unknown> = { ...parsed.data };
     if (parsed.data.openingBalanceDate) data.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
+    if (parsed.data.openingBalance !== undefined || parsed.data.openingBalanceDate !== undefined) data.openingBalanceConfigured = true;
     return res.json(await prisma.user.update({ where: { id: uid(req) }, data: data as never, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true } }));
   } catch (error) { return next(error); }
 });
