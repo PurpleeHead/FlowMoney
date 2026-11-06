@@ -63,7 +63,7 @@ Set a unique `JWT_SECRET` of at least 32 characters in `server/.env`.
 - The personal-finance migration is additive. Existing Exchange, Expense and Receipt tables are retained; no legacy rows are deleted.
 - Before any production migration, create and verify a database backup and obtain explicit approval. Do not run production migrations or deploy as part of ordinary feature development.
 
-See [docs/PERSONAL_FINANCE_MIGRATION.md](docs/PERSONAL_FINANCE_MIGRATION.md) for the migration and rollback notes.
+See [docs/PERSONAL_FINANCE_MIGRATION.md](docs/PERSONAL_FINANCE_MIGRATION.md) for migration and rollback notes. The current npm audit snapshot and dependency remediation plan are in [docs/DEPENDENCY_SECURITY.md](docs/DEPENDENCY_SECURITY.md).
 
 ## CI
 
