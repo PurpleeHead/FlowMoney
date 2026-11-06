@@ -73,3 +73,5 @@ button{cursor:pointer}
 
 .pf-settings-card{max-width:850px}.pf-setting-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 0;border-bottom:1px solid rgba(255,255,255,.06)}.pf-setting-row>span{display:grid;gap:6px}.pf-setting-row strong{font-size:13px}.pf-setting-row small{font-size:10px;color:#918a9f}.pf-setting-row select{min-width:190px;max-width:50%;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#0f0d18;color:#f4efff;padding:11px;font-size:12px}
 @media(max-width:680px){.pf-setting-row{align-items:stretch;flex-direction:column}.pf-setting-row select{max-width:none;width:100%}}
+
+.pf-budget-item{padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)}.pf-budget-item .pf-list-row{padding:5px 0 10px;border:0}
