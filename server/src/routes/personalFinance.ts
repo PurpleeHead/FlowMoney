@@ -165,6 +165,25 @@ router.post('/income-entries/:id/receive', async (req: AuthedRequest, res, next)
   } catch (error) { next(error); }
 });
 
+const categorySchema = z.object({ name: z.string().trim().min(1).max(60), slug: z.string().trim().min(1).max(70).regex(/^[a-z0-9-]+$/) });
+router.post('/categories', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = categorySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a category name and a lowercase slug.' });
+    const category = await prisma.expenseCategory.create({ data: { ...parsed.data, userId: userId(req) } });
+    return res.status(201).json(category);
+  } catch (error) { next(error); }
+});
+router.patch('/categories/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ name: z.string().trim().min(1).max(60).optional(), isArchived: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid category update.' });
+    const result = await prisma.expenseCategory.updateMany({ where: { id: req.params.id, userId: userId(req) }, data: parsed.data });
+    if (!result.count) return res.status(404).json({ message: 'Custom category not found.' });
+    return res.json(await prisma.expenseCategory.findFirst({ where: { id: req.params.id, userId: userId(req) } }));
+  } catch (error) { next(error); }
+});
+
 const expenseSchema = z.object({
   title: z.string().trim().min(1).max(140), amount: money, date: dateSchema,
   categoryId: z.string().cuid().nullable().optional(), memberId: optionalMember,
@@ -304,29 +323,30 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const from = dateValue(typeof req.query.from === 'string' && dateSchema.safeParse(req.query.from).success ? req.query.from : dateString(monthStart(now)));
     const to = dateValue(typeof req.query.to === 'string' && dateSchema.safeParse(req.query.to).success ? req.query.to : dateString(monthEnd(now)));
     const horizon = dateValue(typeof req.query.horizon === 'string' && dateSchema.safeParse(req.query.horizon).success ? req.query.horizon : dateString(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0))));
-    const [received, planned, expenses, adjustments, monthlyObligations, periodExpenses] = await Promise.all([
-      prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { lte: new Date(to.getTime() + 86400000 - 1) } }, _sum: { actualAmount: true } }),
+    const inclusiveTo = new Date(to.getTime() + 86400000 - 1);
+    const [receivedAll, receivedPeriod, planned, balanceExpenses, periodExpenses, forecastObligations, adjustments, monthlyObligations] = await Promise.all([
+      prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { lte: inclusiveTo } }, _sum: { actualAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { gte: from, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'PLANNED', plannedDate: { gte: from, lte: horizon } }, _sum: { plannedAmount: true } }),
-      prisma.ledgerExpense.aggregate({ where: { userId: uid, date: { gte: from, lte: horizon } }, _sum: { amount: true } }),
+      prisma.ledgerExpense.aggregate({ where: { userId: uid, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
+      prisma.ledgerExpense.aggregate({ where: { userId: uid, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.aggregate({ where: { userId: uid, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
-      prisma.balanceAdjustment.aggregate({ where: { userId: uid, date: { lte: new Date(to.getTime() + 86400000 - 1) } }, _sum: { amount: true } }),
+      prisma.balanceAdjustment.aggregate({ where: { userId: uid, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId: uid, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, status: true } }),
     ]);
-    const actualIncome = Number(received._sum.actualAmount ?? 0);
-    const actualExpenses = Number(expenses._sum.amount ?? 0);\n    const periodExpenseTotal = Number(periodExpenses._sum.amount ?? 0);
-    const adjustmentsTotal = Number(adjustments._sum.amount ?? 0);
-    const actualBalance = adjustmentsTotal + actualIncome - actualExpenses;
+    const actualIncome = Number(receivedAll._sum.actualAmount ?? 0);
+    const actualExpenses = Number(balanceExpenses._sum.amount ?? 0);
+    const actualBalance = Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenses;
     const plannedIncome = Number(planned._sum.plannedAmount ?? 0);
-    const unpaidObligations = Number(obligations._sum.plannedAmount ?? 0);
+    const unpaidObligations = Number(forecastObligations._sum.plannedAmount ?? 0);
     const dueTotal = monthlyObligations.reduce((sum, item) => sum + Number(item.plannedAmount), 0);
-    const receivedThisMonth = await prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { gte: from, lte: new Date(to.getTime() + 86400000 - 1) } }, _sum: { actualAmount: true } });
-    const receivedMonthAmount = Number(receivedThisMonth._sum.actualAmount ?? 0);
+    const receivedMonthAmount = Number(receivedPeriod._sum.actualAmount ?? 0);
     const paidMonth = monthlyObligations.filter(x => x.status === 'PAID').reduce((sum, x) => sum + Number(x.plannedAmount), 0);
     const unpaidMonth = dueTotal - paidMonth;
     const nextPayments = await prisma.obligationOccurrence.findMany({ where: { userId: uid, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } }, include: { obligation: true }, orderBy: { dueDate: 'asc' }, take: 10 });
     return res.json({
       period: { from: dateString(from), to: dateString(to), horizon: dateString(horizon) },
-      actual: { income: actualIncome, expenses: periodExpenseTotal, balance: actualBalance },
+      actual: { income: receivedMonthAmount, expenses: Number(periodExpenses._sum.amount ?? 0), balance: actualBalance },
       forecast: { plannedIncome, unpaidObligations, balance: actualBalance + plannedIncome - unpaidObligations },
       obligations: { due: dueTotal, paid: paidMonth, unpaid: unpaidMonth, coverage: { receivedIncome: receivedMonthAmount, shortfall: Math.max(0, dueTotal - receivedMonthAmount), surplus: Math.max(0, receivedMonthAmount - dueTotal) }, plannedCoverage: { income: receivedMonthAmount + plannedIncome, shortfall: Math.max(0, dueTotal - receivedMonthAmount - plannedIncome) } },
       nextPayments,
