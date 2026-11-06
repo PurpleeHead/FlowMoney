@@ -8,7 +8,7 @@ type Member = { id: string; name: string; color?: string | null; isArchived: boo
 type Category = { id: string; name: string; slug: string; userId: string | null; isArchived: boolean };
 type IncomeEntry = { id: string; sourceId?: string | null; plannedDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; memberId?: string | null; member?: Member | null; source?: { title: string } | null };
 type ObligationOccurrence = { id: string; dueDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; obligation: { id: string; title: string; category: string; memberId?: string | null; member?: Member | null } };
-type Expense = { id: string; title: string; amount: number | string; date: string; memberId?: string | null; category?: Category | null; member?: Member | null; note?: string | null };
+type Expense = { id: string; title: string; amount: number | string; date: string; memberId?: string | null; category?: Category | null; member?: Member | null; obligationOccurrence?: { id: string } | null; note?: string | null };
 type Analytics = { totals: { income: number; expenses: number; obligations: number }; categories: Array<{ name: string; amount: number }>; members: Array<{ name: string; income: number; expenses: number; net: number }>; months: Array<{ month: string; income: number; expenses: number; net: number }> };
 type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | string; member?: Member | null; category?: Category | null; memberId?: string | null; categoryId?: string | null };
 type SavingsGoal = { id: string; title: string; targetAmount: number | string; currentAmount: number | string; targetDate?: string | null; status: string };
@@ -227,6 +227,7 @@ export default function PersonalFinanceApp() {
   const visibleObligations = obligationOccurrences.filter(item => matchesMember(item.obligation.memberId));
   const monthIncome = visibleIncome.filter(entry => entry.plannedDate >= ranges.from && entry.plannedDate <= ranges.to);
   const monthObligations = visibleObligations.filter(item => item.dueDate >= ranges.from && item.dueDate <= ranges.to);
+  const visibleBudgets = budgets.filter(item => matchesMember(item.memberId));
 
   return <div className="pf-shell">
     <aside className="pf-sidebar">
@@ -364,8 +365,8 @@ export default function PersonalFinanceApp() {
             <label>{tr(lang,'member')}<select value={budgetMember} onChange={e=>setBudgetMember(e.target.value)}>{memberOptions}</select></label>
             <button className="pf-button primary" disabled={busy}>{tr(lang,'save')}</button>
           </form>
-          {budgets.map(item=><div className="pf-list-row" key={item.id}><div><strong>{item.category ? categoryName(item.category,lang) : (lang === 'ru' ? 'Общий бюджет' : 'Overall budget')}</strong><small>{item.member?.name ?? tr(lang,'shared')}</small></div><div className="pf-row-action"><b>{rub(item.limitAmount)}</b><button className="pf-delete" onClick={()=>deleteBudget(item.id)}>×</button></div></div>)}
-          {!budgets.length && <p className="pf-empty">{tr(lang,'noData')}</p>}
+          {visibleBudgets.map(item=>{const used=visibleExpenses.filter(x=>x.date>=ranges.from&&x.date<=ranges.to&&(!item.categoryId||x.category?.id===item.categoryId)&&(!item.memberId||x.memberId===item.memberId)).reduce((sum,x)=>sum+Number(x.amount),0);const limit=Number(item.limitAmount);const progress=limit>0?Math.min(100,used/limit*100):0;return <div className="pf-budget-item" key={item.id}><div className="pf-list-row"><div><strong>{item.category ? categoryName(item.category,lang) : (lang === 'ru' ? 'Общий бюджет' : 'Overall budget')}</strong><small>{item.member?.name ?? tr(lang,'shared')}</small></div><div className="pf-row-action"><b>{rub(used)} / {rub(limit)}</b><button className="pf-delete" onClick={()=>deleteBudget(item.id)}>×</button></div></div><div className="pf-coverage-track"><span style={{width:progress+'%',background:used>limit?'#ff8796':undefined}}/></div></div>})}
+          {!visibleBudgets.length && <p className="pf-empty">{tr(lang,'noData')}</p>}
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'НАКОПЛЕНИЯ' : 'SAVINGS'}</span><h2>{lang === 'ru' ? 'Финансовая цель' : 'Savings goal'}</h2></div></div>
           <form className="pf-form" onSubmit={e=>perform(e,PF+'/savings-goals',{title:goalTitle,targetAmount:Number(goalTarget),currentAmount:Number(goalCurrent),targetDate:goalDate||null},lang === 'ru' ? 'Цель добавлена.' : 'Goal added.')}>
