@@ -72,11 +72,11 @@ It does not use forced major upgrades and restores the previous lockfile if buil
 From PowerShell in the repository root:
 
 ```powershell
-.\\BACKUP-LOCAL-FLOWMONEY.ps1
-.\\VERIFY-LOCAL-BACKUP.ps1 -BackupPath "C:\\path\\to\\flowmoney-local-YYYYMMDD-HHMMSS.dump"
+.\BACKUP-LOCAL-FLOWMONEY.ps1
+.\VERIFY-LOCAL-BACKUP.ps1 -BackupPath "C:\path\to\flowmoney-local-YYYYMMDD-HHMMSS.dump"
 ```
 
-The backup is stored outside the repository in `%USERPROFILE%\\FlowMoneyBackups`. The verification restores it into a temporary database and removes that database afterward; it does not overwrite the active local database. Both scripts refuse to run unless `server/.env` points to the local PostgreSQL port `5433`. See `docs/PERSONAL_FINANCE_MIGRATION.md` for details.
+The backup is stored outside the repository in `%USERPROFILE%\FlowMoneyBackups`. The verification restores it into a temporary database and removes that database afterward; it does not overwrite the active local database. Both scripts refuse to run unless `server/.env` points to the local PostgreSQL port `5433`. See `docs/PERSONAL_FINANCE_MIGRATION.md` for details.
 
 ## Database migrations
 
