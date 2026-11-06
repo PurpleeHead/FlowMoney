@@ -285,7 +285,7 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
     const today = dateValue(dateString(now));
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const occurrences = await prisma.obligationOccurrence.findMany({
-      where: { userId, dueDate: { gte: from, lte: to } }, include: { obligation: true, expense: true }, orderBy: { dueDate: 'asc' },
+      where: { userId, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, include: { obligation: true, expense: true }, orderBy: { dueDate: 'asc' },
     });
     return res.json({ obligations, occurrences });
   } catch (error) { return next(error); }
@@ -325,8 +325,10 @@ router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
 });
 router.delete('/obligations/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const result = await prisma.obligation.updateMany({ where: { id: req.params.id, userId: uid(req) }, data: { isActive: false } });
+    const userId = uid(req);
+    const result = await prisma.obligation.updateMany({ where: { id: req.params.id, userId }, data: { isActive: false } });
     if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
+    await prisma.obligationOccurrence.updateMany({ where: { obligationId: req.params.id, userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: dateValue(dateString(new Date())) } }, data: { status: 'SKIPPED' } });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
@@ -407,7 +409,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
-      prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, status: true } }),
+      prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, status: true } }),
     ]);
     const actualIncome = Number(receivedAll._sum.actualAmount ?? 0);
     const actualExpenseTotal = Number(allExpenses._sum.amount ?? 0);
