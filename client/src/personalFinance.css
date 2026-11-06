@@ -65,3 +65,5 @@ button{cursor:pointer}
 @media(max-width:680px){.pf-member-filter{max-width:118px;min-width:100px;padding:9px 7px;font-size:10px}}
 
 .pf-form-actions{display:flex;justify-content:flex-end;gap:9px}.pf-edit{border:0;background:transparent;color:#bba6ff;font-size:16px;padding:5px}.pf-edit:hover{color:#fff}
+
+.pf-inline-edit{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:9px}.pf-inline-edit input{min-width:110px;max-width:150px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:#0f0d18;color:#f4efff;padding:8px;font-size:11px}
