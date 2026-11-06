@@ -383,6 +383,133 @@ router.post('/balance-adjustments', async (req: AuthedRequest, res, next) => {
   } catch (error) { return next(error); }
 });
 
+
+const budgetSchema = z.object({
+  periodMonth: dateSchema, limitAmount: money, memberId: optionalMember,
+  categoryId: z.string().cuid().nullable().optional(),
+});
+router.get('/budgets', async (req: AuthedRequest, res, next) => {
+  try {
+    const month = typeof req.query.month === 'string' && dateSchema.safeParse(req.query.month).success ? dateValue(req.query.month) : monthStart(new Date());
+    return res.json(await prisma.budget.findMany({
+      where: { userId: uid(req), periodMonth: month }, include: { category: true, member: true },
+      orderBy: [{ memberId: 'asc' }, { categoryId: 'asc' }],
+    }));
+  } catch (error) { return next(error); }
+});
+router.post('/budgets', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = budgetSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid month and budget limit.' });
+    const input = parsed.data, userId = uid(req), month = monthStart(dateValue(input.periodMonth));
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    const existing = await prisma.budget.findFirst({ where: { userId, periodMonth: month, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null } });
+    if (existing) return res.json(await prisma.budget.update({ where: { id: existing.id }, data: { limitAmount: input.limitAmount }, include: { category: true, member: true } }));
+    return res.status(201).json(await prisma.budget.create({ data: { userId, periodMonth: month, limitAmount: input.limitAmount, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null }, include: { category: true, member: true } }));
+  } catch (error) { return next(error); }
+});
+router.patch('/budgets/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = budgetSchema.partial().safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid budget update.' });
+    const input = parsed.data, userId = uid(req);
+    if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    const data: Record<string, unknown> = { ...input };
+    if (input.periodMonth) data.periodMonth = monthStart(dateValue(input.periodMonth));
+    const result = await prisma.budget.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
+    if (!result.count) return res.status(404).json({ message: 'Budget not found.' });
+    return res.json(await prisma.budget.findFirst({ where: { id: String(req.params.id), userId }, include: { category: true, member: true } }));
+  } catch (error) { return next(error); }
+});
+router.delete('/budgets/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.budget.deleteMany({ where: { id: String(req.params.id), userId: uid(req) } });
+    if (!result.count) return res.status(404).json({ message: 'Budget not found.' });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+
+const goalSchema = z.object({
+  title: z.string().trim().min(1).max(120), targetAmount: money,
+  currentAmount: z.number().finite().min(0).max(1_000_000_000).optional(),
+  targetDate: dateSchema.nullable().optional(), status: z.enum(['ACTIVE', 'COMPLETED', 'ARCHIVED']).optional(),
+});
+router.get('/savings-goals', async (req: AuthedRequest, res, next) => {
+  try { return res.json(await prisma.savingsGoal.findMany({ where: { userId: uid(req) }, orderBy: [{ status: 'asc' }, { createdAt: 'desc' }] })); }
+  catch (error) { return next(error); }
+});
+router.post('/savings-goals', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = goalSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a goal title and target amount.' });
+    const input = parsed.data;
+    return res.status(201).json(await prisma.savingsGoal.create({
+      data: { ...input, userId: uid(req), targetDate: input.targetDate ? dateValue(input.targetDate) : null },
+    }));
+  } catch (error) { return next(error); }
+});
+router.patch('/savings-goals/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = goalSchema.partial().safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid goal update.' });
+    const input = parsed.data, data: Record<string, unknown> = { ...input };
+    if (input.targetDate !== undefined) data.targetDate = input.targetDate ? dateValue(input.targetDate) : null;
+    const result = await prisma.savingsGoal.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: data as never });
+    if (!result.count) return res.status(404).json({ message: 'Savings goal not found.' });
+    return res.json(await prisma.savingsGoal.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
+  } catch (error) { return next(error); }
+});
+router.delete('/savings-goals/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.savingsGoal.deleteMany({ where: { id: String(req.params.id), userId: uid(req) } });
+    if (!result.count) return res.status(404).json({ message: 'Savings goal not found.' });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+
+router.get('/analytics', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req), now = new Date();
+    const from = dateQuery(req.query.from, monthStart(now));
+    const to = dateQuery(req.query.to, monthEnd(now));
+    const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberId && memberId !== 'shared' && !(await validMember(memberId, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
+    const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const [expenses, incomes, obligations] = await Promise.all([
+      prisma.ledgerExpense.findMany({ where: { userId, ...memberWhere, date: { gte: from, lte: to } }, include: { category: true, member: true } }),
+      prisma.incomeEntry.findMany({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: from, lte: new Date(to.getTime() + 86400000 - 1) } }, include: { member: true } }),
+      prisma.obligationOccurrence.findMany({ where: { userId, ...(memberId ? { obligation: { is: { memberId: memberId === 'shared' ? null : memberId } } } : {}), dueDate: { gte: from, lte: to }, status: { not: 'SKIPPED' } }, include: { obligation: true } }),
+    ]);
+    const categoryTotals = new Map<string, number>();
+    const memberTotals = new Map<string, { income: number; expenses: number }>();
+    const monthTotals = new Map<string, { income: number; expenses: number }>();
+    for (const item of expenses) {
+      const category = item.category?.name ?? 'Uncategorized';
+      categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + Number(item.amount));
+      const name = item.member?.name ?? 'Shared';
+      const totals = memberTotals.get(name) ?? { income: 0, expenses: 0 };
+      totals.expenses += Number(item.amount); memberTotals.set(name, totals);
+      const month = dateString(item.date).slice(0, 7), monthTotal = monthTotals.get(month) ?? { income: 0, expenses: 0 };
+      monthTotal.expenses += Number(item.amount); monthTotals.set(month, monthTotal);
+    }
+    for (const item of incomes) {
+      const amount = Number(item.actualAmount ?? 0), name = item.member?.name ?? 'Shared';
+      const totals = memberTotals.get(name) ?? { income: 0, expenses: 0 };
+      totals.income += amount; memberTotals.set(name, totals);
+      const month = dateString(item.receivedAt ?? item.plannedDate).slice(0, 7), monthTotal = monthTotals.get(month) ?? { income: 0, expenses: 0 };
+      monthTotal.income += amount; monthTotals.set(month, monthTotal);
+    }
+    return res.json({
+      totals: { income: incomes.reduce((sum, item) => sum + Number(item.actualAmount ?? 0), 0), expenses: expenses.reduce((sum, item) => sum + Number(item.amount), 0), obligations: obligations.reduce((sum, item) => sum + Number(item.plannedAmount), 0) },
+      categories: [...categoryTotals].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
+      members: [...memberTotals].map(([name, totals]) => ({ name, ...totals, net: totals.income - totals.expenses })),
+      months: [...monthTotals].sort((a, b) => a[0].localeCompare(b[0])).map(([month, totals]) => ({ month, ...totals, net: totals.income - totals.expenses })),
+    });
+  } catch (error) { return next(error); }
+});
+
 router.get('/dashboard', async (req: AuthedRequest, res, next) => {
   try {
     const userId = uid(req), now = new Date();
