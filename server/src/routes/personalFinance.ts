@@ -377,12 +377,16 @@ router.post('/balance-adjustments', async (req: AuthedRequest, res, next) => {
 router.get('/dashboard', async (req: AuthedRequest, res, next) => {
   try {
     const userId = uid(req), now = new Date();
+    const memberFilter = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberFilter && memberFilter !== 'shared' && !(await validMember(memberFilter, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
+    const memberWhere = memberFilter === 'shared' ? { memberId: null } : memberFilter ? { memberId: memberFilter } : {};
+    const obligationMemberWhere = memberFilter ? { obligation: { memberId: memberFilter === 'shared' ? null : memberFilter } } : {};
     const from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, monthEnd(now));
     const horizon = dateQuery(req.query.horizon, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)));
     const [sources, obligations] = await Promise.all([
-      prisma.incomeSource.findMany({ where: { userId, isActive: true } }),
-      prisma.obligation.findMany({ where: { userId, isActive: true } }),
+      prisma.incomeSource.findMany({ where: { userId, isActive: true, ...memberWhere } }),
+      prisma.obligation.findMany({ where: { userId, isActive: true, ...(memberFilter ? { memberId: memberFilter === 'shared' ? null : memberFilter } : {}) } }),
     ]);
     for (const source of sources) await createIncomeOccurrences(source, from, horizon);
     for (const obligation of obligations) await createObligationOccurrences(obligation, from, horizon);
@@ -390,15 +394,15 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const inclusiveTo = new Date(to.getTime() + 86400000 - 1);
     const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
-      prisma.incomeEntry.aggregate({ where: { userId, status: 'RECEIVED', receivedAt: { lte: inclusiveTo } }, _sum: { actualAmount: true } }),
-      prisma.incomeEntry.aggregate({ where: { userId, status: 'RECEIVED', receivedAt: { gte: from, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
-      prisma.incomeEntry.aggregate({ where: { userId, status: 'PLANNED', plannedDate: { gte: from, lte: horizon } }, _sum: { plannedAmount: true } }),
-      prisma.incomeEntry.aggregate({ where: { userId, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
-      prisma.ledgerExpense.aggregate({ where: { userId, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
-      prisma.ledgerExpense.aggregate({ where: { userId, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
-      prisma.obligationOccurrence.aggregate({ where: { userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
-      prisma.balanceAdjustment.aggregate({ where: { userId, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
-      prisma.obligationOccurrence.findMany({ where: { userId, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, status: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { lte: inclusiveTo } }, _sum: { actualAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: from, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: horizon } }, _sum: { plannedAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
+      prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
+      prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
+      prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
+      prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
+      prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, status: true } }),
     ]);
     const actualIncome = Number(receivedAll._sum.actualAmount ?? 0);
     const actualExpenseTotal = Number(allExpenses._sum.amount ?? 0);
@@ -411,7 +415,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const paidMonth = monthOccurrences.filter(item => item.status === 'PAID').reduce((sum, item) => sum + Number(item.plannedAmount), 0);
     const unpaidMonth = dueTotal - paidMonth;
     const nextPayments = await prisma.obligationOccurrence.findMany({
-      where: { userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } },
+      where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } },
       include: { obligation: true }, orderBy: { dueDate: 'asc' }, take: 10,
     });
     return res.json({
