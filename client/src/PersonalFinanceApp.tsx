@@ -9,17 +9,20 @@ type Category = { id: string; name: string; slug: string; userId: string | null;
 type IncomeEntry = { id: string; sourceId?: string | null; plannedDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; memberId?: string | null; member?: Member | null; source?: { title: string } | null };
 type ObligationOccurrence = { id: string; dueDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; obligation: { id: string; title: string; category: string; memberId?: string | null; member?: Member | null } };
 type Expense = { id: string; title: string; amount: number | string; date: string; memberId?: string | null; category?: Category | null; member?: Member | null; note?: string | null };
+type Analytics = { totals: { income: number; expenses: number; obligations: number }; categories: Array<{ name: string; amount: number }>; members: Array<{ name: string; income: number; expenses: number; net: number }>; months: Array<{ month: string; income: number; expenses: number; net: number }> };
+type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | string; member?: Member | null; category?: Category | null; memberId?: string | null; categoryId?: string | null };
+type SavingsGoal = { id: string; title: string; targetAmount: number | string; currentAmount: number | string; targetDate?: string | null; status: string };
 type Dashboard = {
   actual: { income: number; expenses: number; balance: number };
   forecast: { plannedIncome: number; unpaidObligations: number; balance: number };
   obligations: { due: number; paid: number; unpaid: number; coverage: { receivedIncome: number; shortfall: number; surplus: number }; plannedCoverage: { income: number; shortfall: number } };
   nextPayments: ObligationOccurrence[];
 };
-type Tab = 'overview' | 'income' | 'expenses' | 'obligations' | 'family';
+type Tab = 'overview' | 'income' | 'expenses' | 'obligations' | 'calendar' | 'analytics' | 'budgets' | 'family';
 
 const PF = '/personal-finance';
 const translations: Record<string, { ru: string; en: string }> = {
-  overview: { ru: 'Обзор', en: 'Overview' }, income: { ru: 'Доходы', en: 'Income' }, expenses: { ru: 'Расходы', en: 'Expenses' }, obligations: { ru: 'Обязательства', en: 'Obligations' }, family: { ru: 'Семья', en: 'Family' },
+  overview: { ru: 'Обзор', en: 'Overview' }, income: { ru: 'Доходы', en: 'Income' }, expenses: { ru: 'Расходы', en: 'Expenses' }, obligations: { ru: 'Обязательства', en: 'Obligations' }, calendar: { ru: 'Календарь', en: 'Calendar' }, analytics: { ru: 'Аналитика', en: 'Analytics' }, budgets: { ru: 'Бюджеты и цели', en: 'Budgets & goals' }, family: { ru: 'Семья', en: 'Family' },
   actualBalance: { ru: 'Фактический остаток', en: 'Actual balance' }, forecastBalance: { ru: 'Прогнозный остаток', en: 'Forecast balance' }, received: { ru: 'Получено за месяц', en: 'Received this month' }, spent: { ru: 'Потрачено за месяц', en: 'Spent this month' },
   planned: { ru: 'Запланировано', en: 'Planned' }, add: { ru: 'Добавить', en: 'Add' }, date: { ru: 'Дата', en: 'Date' }, amount: { ru: 'Сумма, ₽', en: 'Amount, RUB' }, title: { ru: 'Название', en: 'Title' }, member: { ru: 'Кому', en: 'Member' }, shared: { ru: 'Общее', en: 'Shared' }, category: { ru: 'Категория', en: 'Category' }, note: { ru: 'Комментарий', en: 'Note' }, save: { ru: 'Сохранить', en: 'Save' }, cancel: { ru: 'Отмена', en: 'Cancel' }, loading: { ru: 'Загружаем ваши финансы…', en: 'Loading your finances…' }, logout: { ru: 'Выйти', en: 'Sign out' }, signIn: { ru: 'Войти', en: 'Sign in' }, signUp: { ru: 'Создать аккаунт', en: 'Create account' }, email: { ru: 'Электронная почта', en: 'Email' }, password: { ru: 'Пароль (не менее 8 символов)', en: 'Password (at least 8 characters)' },
   daily: { ru: 'Каждый день', en: 'Daily' }, weekly: { ru: 'Еженедельно', en: 'Weekly' }, twice: { ru: 'Два раза в месяц', en: 'Twice monthly' }, monthly: { ru: 'Ежемесячно', en: 'Monthly' }, yearly: { ru: 'Ежегодно', en: 'Yearly' }, once: { ru: 'Разово', en: 'One-time' }, frequency: { ru: 'Периодичность', en: 'Frequency' }, startDate: { ru: 'Начало', en: 'Start date' }, endDate: { ru: 'Окончание (необязательно)', en: 'End date (optional)' }, firstDay: { ru: 'Первое число', en: 'First day' }, secondDay: { ru: 'Второе число', en: 'Second day' }, day: { ru: 'Число месяца', en: 'Day of month' }, receivedAction: { ru: 'Отметить полученным', en: 'Mark received' }, paidAction: { ru: 'Оплатить', en: 'Mark paid' }, due: { ru: 'К оплате в этом месяце', en: 'Due this month' }, paid: { ru: 'Оплачено', en: 'Paid' }, unpaid: { ru: 'Не оплачено', en: 'Unpaid' }, shortfall: { ru: 'Не хватает', en: 'Shortfall' }, surplus: { ru: 'Остаток после обязательств', en: 'Surplus after obligations' }, upcoming: { ru: 'Ближайшие платежи', en: 'Upcoming payments' }, opening: { ru: 'Начальный остаток / корректировка', en: 'Opening balance / adjustment' }, openingHelp: { ru: 'Укажите сумму со знаком: положительную, если добавляете деньги, отрицательную — если уменьшаете остаток. Начальный остаток учитывается один раз.', en: 'Enter a signed amount: positive adds money, negative reduces it. The opening balance is recorded once as an adjustment.' }, reason: { ru: 'Причина корректировки', en: 'Adjustment reason' }, newMember: { ru: 'Имя участника семьи', en: 'Family member name' }, addMember: { ru: 'Добавить участника', en: 'Add member' }, addCategory: { ru: 'Новая категория', en: 'New category' }, noData: { ru: 'Пока нет записей', en: 'Nothing here yet' }, forecastInfo: { ru: 'Прогноз учитывает запланированные поступления и неоплаченные обязательства. Не полученные деньги не входят в фактический остаток.', en: 'Forecast includes planned income and unpaid obligations. Unreceived money is excluded from actual balance.' }, coverageInfo: { ru: 'Сравнение полученных доходов с суммой обязательств за выбранный месяц.', en: 'Received income compared with obligations due this month.' }, overdue: { ru: 'Просрочено', en: 'Overdue' }, plannedStatus: { ru: 'Ожидается', en: 'Planned' }, actualStatus: { ru: 'Получено', en: 'Received' }, paidStatus: { ru: 'Оплачено', en: 'Paid' }, addExpense: { ru: 'Новый расход', en: 'New expense' }, addIncome: { ru: 'Новый источник дохода', en: 'New income source' }, addObligation: { ru: 'Новое обязательство', en: 'New obligation' }, signInTitle: { ru: 'Ваш семейный бюджет', en: 'Your family budget' }, signInText: { ru: 'Доходы, расходы и обязательные платежи — в одном месте.', en: 'Income, expenses and recurring commitments in one place.' }, emptyTitle: { ru: 'Пока нет данных', en: 'No data yet' }, refresh: { ru: 'Обновить', en: 'Refresh' }
@@ -68,6 +71,9 @@ export default function PersonalFinanceApp() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [budgets, setBudgets] = useState<BudgetRecord[]>([]);
+  const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [filterMember, setFilterMember] = useState('all');
   const [categories, setCategories] = useState<Category[]>([]);
@@ -106,18 +112,28 @@ export default function PersonalFinanceApp() {
   const [openingReason, setOpeningReason] = useState('Начальный остаток');
   const [newMemberName, setNewMemberName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [budgetLimit, setBudgetLimit] = useState('');
+  const [budgetCategory, setBudgetCategory] = useState('');
+  const [budgetMember, setBudgetMember] = useState('');
+  const [goalTitle, setGoalTitle] = useState('');
+  const [goalTarget, setGoalTarget] = useState('');
+  const [goalCurrent, setGoalCurrent] = useState('0');
+  const [goalDate, setGoalDate] = useState('');
 
   const ranges = useMemo(monthBounds, []);
   const refresh = useCallback(async () => {
-    const [dash, income, expenseData, obligations, memberData, adjustmentData] = await Promise.all([
-      api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
-      api<{ entries: IncomeEntry[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}`),
-      api<{ expenses: Expense[]; categories: Category[] }>(`${PF}/expenses`),
-      api<{ occurrences: ObligationOccurrence[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}`),
-      api<Member[]>(`${PF}/members`),
-      api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`)
+    const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData] = await Promise.all([
+      api<Dashboard>(\`\${PF}/dashboard?from=\${ranges.from}&to=\${ranges.to}&horizon=\${ranges.horizon}\${filterMember !== 'all' ? \`&memberId=\${filterMember}\` : ''}\`),
+      api<{ entries: IncomeEntry[] }>(\`\${PF}/income-sources?from=\${ranges.from}&to=\${ranges.horizon}\`),
+      api<{ expenses: Expense[]; categories: Category[] }>(\`\${PF}/expenses\`),
+      api<{ occurrences: ObligationOccurrence[] }>(\`\${PF}/obligations?from=\${ranges.from}&to=\${ranges.horizon}\`),
+      api<Member[]>(\`\${PF}/members\`),
+      api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(\`\${PF}/balance-adjustments\`),
+      api<Analytics>(\`\${PF}/analytics?from=\${ranges.from}&to=\${ranges.to}\${filterMember !== 'all' ? \`&memberId=\${filterMember}\` : ''}\`),
+      api<BudgetRecord[]>(\`\${PF}/budgets?month=\${ranges.from}\`),
+      api<SavingsGoal[]>(\`\${PF}/savings-goals\`)
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData);
+    setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData);
     if (!expenseCategory && expenseData.categories[0]) setExpenseCategory(expenseData.categories[0].id);
   }, [ranges, expenseCategory, filterMember]);
 
@@ -209,7 +225,7 @@ export default function PersonalFinanceApp() {
     <aside className="pf-sidebar">
       <div className="pf-brand">FLOW<span>MONEY</span></div>
       <div className="pf-sidebar-caption">{lang === 'ru' ? 'СЕМЕЙНЫЕ ФИНАНСЫ' : 'HOUSEHOLD FINANCE'}</div>
-      <nav>{(['overview', 'income', 'expenses', 'obligations', 'family'] as Tab[]).map(item => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><span className="pf-nav-dot"/>{tr(lang, item)}</button>)}</nav>
+      <nav>{(['overview', 'income', 'expenses', 'obligations', 'calendar', 'analytics', 'budgets', 'family'] as Tab[]).map(item => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><span className="pf-nav-dot"/>{tr(lang, item)}</button>)}</nav>
       <div className="pf-sidebar-bottom"><div className="pf-avatar">{user.email[0].toUpperCase()}</div><div className="pf-user"><strong>{user.email.split('@')[0]}</strong><small>{user.email}</small></div><button className="pf-icon-button" title={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button></div>
     </aside>
     <main className="pf-main">
