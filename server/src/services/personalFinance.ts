@@ -73,7 +73,9 @@ export function generateOccurrences(
     return result;
   }
 
-  const monthCursor = new Date(Date.UTC(Math.max(from.getUTCFullYear(), anchor.getUTCFullYear()), from.getUTCFullYear() === anchor.getUTCFullYear() ? Math.max(from.getUTCMonth(), anchor.getUTCMonth()) : (from.getUTCFullYear() > anchor.getUTCFullYear() ? 0 : anchor.getUTCMonth()), 1));
+  const firstYear = Math.max(from.getUTCFullYear(), anchor.getUTCFullYear());
+  const firstMonth = firstYear === from.getUTCFullYear() && firstYear === anchor.getUTCFullYear() ? Math.max(from.getUTCMonth(), anchor.getUTCMonth()) : firstYear === from.getUTCFullYear() ? from.getUTCMonth() : anchor.getUTCMonth();
+  const monthCursor = new Date(Date.UTC(firstYear, firstMonth, 1));
   const lastMonth = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1));
 
   if (recurrence === 'TWICE_MONTHLY') {
