@@ -103,3 +103,22 @@ CREATE TABLE "SavingsGoal" (
 );
 CREATE INDEX "SavingsGoal_userId_status_idx" ON "SavingsGoal"("userId","status");
 ALTER TABLE "SavingsGoal" ADD CONSTRAINT "SavingsGoal_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+
+-- Shared default expense categories used by every household.
+INSERT INTO "ExpenseCategory" ("id", "userId", "name", "slug", "isArchived", "updatedAt") VALUES
+  ('system-category-groceries', NULL, 'Groceries', 'groceries', false, CURRENT_TIMESTAMP),
+  ('system-category-cafes', NULL, 'Cafes & restaurants', 'cafes-restaurants', false, CURRENT_TIMESTAMP),
+  ('system-category-coffee', NULL, 'Coffee', 'coffee', false, CURRENT_TIMESTAMP),
+  ('system-category-transport', NULL, 'Transport & taxi', 'transport-taxi', false, CURRENT_TIMESTAMP),
+  ('system-category-fuel', NULL, 'Fuel', 'fuel', false, CURRENT_TIMESTAMP),
+  ('system-category-car-repair', NULL, 'Car repair', 'car-repair', false, CURRENT_TIMESTAMP),
+  ('system-category-car-maintenance', NULL, 'Car maintenance', 'car-maintenance', false, CURRENT_TIMESTAMP),
+  ('system-category-housing', NULL, 'Housing & home', 'housing-home', false, CURRENT_TIMESTAMP),
+  ('system-category-health', NULL, 'Health', 'health', false, CURRENT_TIMESTAMP),
+  ('system-category-entertainment', NULL, 'Entertainment', 'entertainment', false, CURRENT_TIMESTAMP),
+  ('system-category-shopping', NULL, 'Shopping', 'shopping', false, CURRENT_TIMESTAMP),
+  ('system-category-subscriptions', NULL, 'Subscriptions', 'subscriptions', false, CURRENT_TIMESTAMP),
+  ('system-category-education', NULL, 'Education', 'education', false, CURRENT_TIMESTAMP),
+  ('system-category-travel', NULL, 'Travel', 'travel', false, CURRENT_TIMESTAMP),
+  ('system-category-other', NULL, 'Other', 'other', false, CURRENT_TIMESTAMP);
