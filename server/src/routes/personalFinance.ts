@@ -280,7 +280,7 @@ router.patch('/expenses/:id', async (req: AuthedRequest, res, next) => {
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid expense update.' });
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
-    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
     const data: Record<string, unknown> = { ...input };
     if (input.date) data.date = dateValue(input.date);
     const result = await prisma.ledgerExpense.updateMany({ where: { id: String(req.params.id), userId, obligationOccurrence: { is: null } }, data: data as never });
@@ -443,7 +443,7 @@ router.post('/budgets', async (req: AuthedRequest, res, next) => {
     if (!parsed.success) return res.status(400).json({ message: 'Enter a valid month and budget limit.' });
     const input = parsed.data, userId = uid(req), month = monthStart(dateValue(input.periodMonth));
     if (!(await validMember(input.memberId, userId))) return memberError(res);
-    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
     const existing = await prisma.budget.findFirst({ where: { userId, periodMonth: month, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null } });
     if (existing) return res.json(await prisma.budget.update({ where: { id: existing.id }, data: { limitAmount: input.limitAmount }, include: { category: true, member: true } }));
     return res.status(201).json(await prisma.budget.create({ data: { userId, periodMonth: month, limitAmount: input.limitAmount, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null }, include: { category: true, member: true } }));
@@ -584,7 +584,8 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     ]);
     const actualIncome = Number(receivedAll._sum.actualAmount ?? 0);
     const actualExpenseTotal = Number(allExpenses._sum.amount ?? 0);
-    const actualBalance = Number(openingSettings?.openingBalance ?? 0) + Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenseTotal;
+    const householdOpeningBalance = memberFilter ? 0 : Number(openingSettings?.openingBalance ?? 0);
+    const actualBalance = householdOpeningBalance + Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenseTotal;
     const plannedIncome = Number(plannedHorizon._sum.plannedAmount ?? 0);
     const unpaidObligations = Number(forecastObligations._sum.plannedAmount ?? 0);
     const dueTotal = monthOccurrences.reduce((sum, item) => sum + Number(item.plannedAmount), 0);
