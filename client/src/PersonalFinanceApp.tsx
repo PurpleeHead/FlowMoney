@@ -78,6 +78,7 @@ export default function PersonalFinanceApp() {
   const [expenseDate, setExpenseDate] = useState(moscowToday());
   const [expenseCategory, setExpenseCategory] = useState('');
   const [expenseMember, setExpenseMember] = useState('');
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [obligationTitle, setObligationTitle] = useState('');
   const [obligationCategory, setObligationCategory] = useState('Кредит');
   const [obligationAmount, setObligationAmount] = useState('');
@@ -118,9 +119,9 @@ export default function PersonalFinanceApp() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось выполнить вход.'); }
     finally { setBusy(false); setLoading(false); }
   }
-  async function perform(event: FormEvent, path: string, body: unknown, success: string) {
+  async function perform(event: FormEvent, path: string, body: unknown, success: string, method = 'POST') {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
-    try { await api(path, { method: 'POST', body: JSON.stringify(body) }); await refresh(); setNotice(success); }
+    try { await api(path, { method, body: JSON.stringify(body) }); await refresh(); setNotice(success); if (path.includes('/expenses/') && method === 'PATCH') setEditingExpenseId(null); }
     catch (e) { setError(e instanceof Error ? e.message : 'Не удалось сохранить данные.'); }
     finally { setBusy(false); }
   }
@@ -239,19 +240,19 @@ export default function PersonalFinanceApp() {
       </div>}
 
       {tab === 'expenses' && <div className="pf-page pf-two-col">
-        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'УЧЁТ ПОКУПОК' : 'TRANSACTION TRACKING'}</span><h2>{tr(lang, 'addExpense')}</h2></div></div>
-          <form className="pf-form" onSubmit={e => perform(e, `${PF}/expenses`, { title: expenseTitle, amount: Number(expenseAmount), date: expenseDate, categoryId: expenseCategory || null, memberId: expenseMember || null }, lang === 'ru' ? 'Расход добавлен.' : 'Expense added.')}>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'УЧЁТ ПОКУПОК' : 'TRANSACTION TRACKING'}</span><h2>{editingExpenseId ? (lang === 'ru' ? 'Изменить расход' : 'Edit expense') : tr(lang, 'addExpense')}</h2></div></div>
+          <form className="pf-form" onSubmit={e => perform(e, editingExpenseId ? `${PF}/expenses/${editingExpenseId}` : `${PF}/expenses`, { title: expenseTitle, amount: Number(expenseAmount), date: expenseDate, categoryId: expenseCategory || null, memberId: expenseMember || null }, editingExpenseId ? (lang === 'ru' ? 'Расход обновлён.' : 'Expense updated.') : (lang === 'ru' ? 'Расход добавлен.' : 'Expense added.'), editingExpenseId ? 'PATCH' : 'POST')}>
             <label>{tr(lang, 'title')}<input required value={expenseTitle} onChange={e => setExpenseTitle(e.target.value)} placeholder={lang === 'ru' ? 'Например, продукты' : 'e.g. Groceries'}/></label>
             <label>{tr(lang, 'amount')}<input type="number" min="0.01" step="0.01" required value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)}/></label>
             <label>{tr(lang, 'date')}<input type="date" required value={expenseDate} onChange={e => setExpenseDate(e.target.value)}/></label>
             <label>{tr(lang, 'category')}<select value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)}>{categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             <label>{tr(lang, 'member')}<select value={expenseMember} onChange={e => setExpenseMember(e.target.value)}>{memberOptions}</select></label>
-            <button className="pf-button primary" disabled={busy}>{tr(lang, 'save')}</button>
+            <div className="pf-form-actions">{editingExpenseId && <button type="button" className="pf-button ghost" onClick={() => { setEditingExpenseId(null); setExpenseTitle(''); setExpenseAmount(''); setExpenseDate(moscowToday()); }}>{tr(lang, 'cancel')}</button>}<button className="pf-button primary" disabled={busy}>{tr(lang, 'save')}</button></div>
           </form>
           <form className="pf-inline-form category-create" onSubmit={addCategory}><label>{tr(lang, 'addCategory')}<input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder={lang === 'ru' ? 'Например, Питомцы' : 'e.g. Pets'}/></label><button className="pf-button ghost" disabled={busy}>+</button></form>
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ИСТОРИЯ ОПЕРАЦИЙ' : 'TRANSACTION HISTORY'}</span><h2>{tr(lang, 'expenses')}</h2></div><span className="pf-count">{visibleExpenses.length}</span></div>
-          {visibleExpenses.length ? visibleExpenses.slice(0, 100).map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category?.name ?? (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label="Delete">×</button></div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
+          {visibleExpenses.length ? visibleExpenses.slice(0, 100).map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category?.name ?? (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label="Delete">×</button></div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
         </section>
       </div>}
 
