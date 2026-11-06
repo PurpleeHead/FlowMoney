@@ -575,15 +575,19 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const today = now;
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const inclusiveTo = new Date(to.getTime() + 86400000 - 1);
+    // Actual cash is always measured as of now, independently of the selected reporting period.
+    // Date-only ledger entries use the user's current calendar day; receivedAt is a timestamp.
+    const balanceDateCutoff = new Date(now.getTime() + 86400000 - 1);
+    const balanceTimestampCutoff = new Date();
     const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
-      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingDate, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingDate, lte: balanceTimestampCutoff } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: from, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
-      prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: inclusiveTo } }, _sum: { amount: true } }),
+      prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
-      prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: inclusiveTo } }, _sum: { amount: true } }),
+      prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, status: true } }),
     ]);
     const actualIncome = Number(receivedAll._sum.actualAmount ?? 0);
