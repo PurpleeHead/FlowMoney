@@ -149,8 +149,10 @@ router.patch('/income-sources/:id', async (req: AuthedRequest, res, next) => {
 });
 router.delete('/income-sources/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const result = await prisma.incomeSource.updateMany({ where: { id: req.params.id, userId: uid(req) }, data: { isActive: false } });
+    const userId = uid(req);
+    const result = await prisma.incomeSource.updateMany({ where: { id: req.params.id, userId }, data: { isActive: false } });
     if (!result.count) return res.status(404).json({ message: 'Income source not found.' });
+    await prisma.incomeEntry.updateMany({ where: { sourceId: req.params.id, userId, status: 'PLANNED', plannedDate: { gte: dateValue(dateString(new Date())) } }, data: { status: 'SKIPPED' } });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
@@ -315,6 +317,9 @@ router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
     if (input.recurrenceConfig) data.recurrenceConfig = JSON.parse(JSON.stringify(input.recurrenceConfig));
     const result = await prisma.obligation.updateMany({ where: { id: req.params.id, userId }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
+    if (input.amount !== undefined) {
+      await prisma.obligationOccurrence.updateMany({ where: { obligationId: req.params.id, userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: dateValue(dateString(new Date())) } }, data: { plannedAmount: input.amount } });
+    }
     return res.json(await prisma.obligation.findFirst({ where: { id: req.params.id, userId } }));
   } catch (error) { return next(error); }
 });
