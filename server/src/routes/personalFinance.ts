@@ -306,8 +306,8 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
     const to = dateQuery(req.query.to, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 4, 0)));
     const userId = uid(req);
     const obligations = await prisma.obligation.findMany({ where: { userId, isActive: true } });
-    for (const obligation of obligations) await createObligationOccurrences(obligation, from, to);
-    const today = dateValue(dateString(now));
+    for (const obligation of obligations) await createObligationOccurrences(obligation, from, to, now);
+    const today = now;
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const occurrences = await prisma.obligationOccurrence.findMany({
       where: { userId, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, include: { obligation: true, expense: true }, orderBy: { dueDate: 'asc' },
