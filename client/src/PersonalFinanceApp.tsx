@@ -34,8 +34,8 @@ function todayInTimezone(timeZone = 'Europe/Moscow') {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 const moscowToday = () => todayInTimezone();
-function monthBounds() {
-  const today = moscowToday(), [year, month] = today.split('-').map(Number);
+function monthBounds(timeZone = 'Europe/Moscow') {
+  const today = todayInTimezone(timeZone), [year, month] = today.split('-').map(Number);
   const last = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
   const horizon = new Date(Date.UTC(year, month + 3, 0)).toISOString().slice(0, 10);
   return { from: `${year}-${String(month).padStart(2, '0')}-01`, to: last, horizon };
@@ -122,7 +122,7 @@ export default function PersonalFinanceApp() {
   const [goalCurrent, setGoalCurrent] = useState('0');
   const [goalDate, setGoalDate] = useState('');
 
-  const ranges = useMemo(monthBounds, []);
+  const ranges = useMemo(() => monthBounds(timezone), [timezone]);
   const refresh = useCallback(async () => {
     const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData] = await Promise.all([
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
@@ -236,7 +236,7 @@ export default function PersonalFinanceApp() {
       <div className="pf-sidebar-bottom"><div className="pf-avatar">{user.email[0].toUpperCase()}</div><div className="pf-user"><strong>{user.email.split('@')[0]}</strong><small>{user.email}</small></div><button className="pf-icon-button" title={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button></div>
     </aside>
     <main className="pf-main">
-      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' }).format(new Date())}</p></div><div className="pf-top-actions"><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button className="pf-language" onClick={() => changeLanguage(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
+      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date())}</p></div><div className="pf-top-actions"><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button className="pf-language" onClick={() => changeLanguage(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
       {error && <div className="pf-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
       {notice && <div className="pf-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
 
