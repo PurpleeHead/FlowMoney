@@ -56,6 +56,17 @@ npm run dev
 
 Set a unique `JWT_SECRET` of at least 32 characters in `server/.env`.
 
+## Dependency security maintenance
+
+The current branch includes a guarded PowerShell helper for compatible npm security updates. After pulling the feature branch and ensuring your working tree is clean, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\UPDATE-DEPENDENCIES.ps1
+```
+
+It does not use forced major upgrades and restores the previous lockfile if build or tests fail. Review the lockfile diff and remaining audit report before committing.
+
 ## Database migrations
 
 - `npm run db:migrate` applies only committed migrations using `prisma migrate deploy`.
