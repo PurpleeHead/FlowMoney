@@ -64,6 +64,7 @@ Selected period defaults to current calendar month.
 
 Display:
 1. Actual cash balance: household opening balance as of the configured start date + received incomes after that date + signed balance adjustments after that date - actual expenses after that date. When filtering a single member, do not apply the household-wide opening balance to that member.
+   The actual balance is measured as of the current date/time and must never include future-dated ledger entries, regardless of the selected reporting period.
 2. Forecast balance at selected horizon: actual cash balance + planned incomes expected by horizon - unpaid obligations due by horizon - planned variable expenses (only if entered as plans; don't invent an estimate).
 3. Income: planned total, received total, remaining expected.
 4. Expenses: actual total and category breakdown.
