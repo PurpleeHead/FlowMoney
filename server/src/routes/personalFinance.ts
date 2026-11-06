@@ -359,6 +359,16 @@ router.delete('/obligations/:id', async (req: AuthedRequest, res, next) => {
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
+router.post('/obligation-occurrences/:id/skip', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.obligationOccurrence.updateMany({
+      where: { id: String(req.params.id), userId: uid(req), status: { in: ['UPCOMING', 'OVERDUE'] } },
+      data: { status: 'SKIPPED' },
+    });
+    if (!result.count) return res.status(404).json({ message: 'Skippable obligation occurrence not found.' });
+    return res.json(await prisma.obligationOccurrence.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
+  } catch (error) { return next(error); }
+});
 router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, next) => {
   try {
     const parsed = z.object({ actualAmount: money.optional(), paidAt: z.string().datetime().optional() }).safeParse(req.body);
