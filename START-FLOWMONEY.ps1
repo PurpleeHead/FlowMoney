@@ -8,7 +8,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   if (Get-Command npm.cmd -ErrorAction SilentlyContinue) { $npm = "npm.cmd" }
-  else { throw "Node.js/npm was not found. Install Node.js 20+ and reopen PowerShell." }
+  else { throw "Node.js/npm was not found. Install Node.js 22+ and reopen PowerShell." }
 } else { $npm = "npm" }
 
 # Create a local development environment file without overwriting existing settings.
@@ -45,8 +45,8 @@ for ($i = 0; $i -lt 30; $i++) {
 }
 if (-not $ready) { throw "PostgreSQL did not become ready in 60 seconds. Run 'docker compose logs postgres' to inspect the error." }
 
-Write-Host "`n[3/5] Installing npm dependencies..." -ForegroundColor Cyan
-& $npm install
+Write-Host "`n[3/5] Installing locked npm dependencies with npm ci..." -ForegroundColor Cyan
+& $npm ci
 if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
 
 Write-Host "`n[4/5] Generating Prisma Client..." -ForegroundColor Cyan
