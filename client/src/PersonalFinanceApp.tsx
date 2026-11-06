@@ -22,17 +22,18 @@ type Tab = 'overview' | 'income' | 'expenses' | 'obligations' | 'calendar' | 'an
 
 const PF = '/personal-finance';
 const translations: Record<string, { ru: string; en: string }> = {
-  overview: { ru: 'Обзор', en: 'Overview' }, income: { ru: 'Доходы', en: 'Income' }, expenses: { ru: 'Расходы', en: 'Expenses' }, obligations: { ru: 'Обязательства', en: 'Obligations' }, calendar: { ru: 'Календарь', en: 'Calendar' }, analytics: { ru: 'Аналитика', en: 'Analytics' }, budgets: { ru: 'Бюджеты и цели', en: 'Budgets & goals' }, family: { ru: 'Семья', en: 'Family' },
+  overview: { ru: 'Обзор', en: 'Overview' }, income: { ru: 'Доходы', en: 'Income' }, expenses: { ru: 'Расходы', en: 'Expenses' }, obligations: { ru: 'Обязательства', en: 'Obligations' }, calendar: { ru: 'Календарь', en: 'Calendar' }, analytics: { ru: 'Аналитика', en: 'Analytics' }, budgets: { ru: 'Бюджеты и цели', en: 'Budgets & goals' }, family: { ru: 'Семья', en: 'Family' }, settings: { ru: 'Настройки', en: 'Settings' },
   actualBalance: { ru: 'Фактический остаток', en: 'Actual balance' }, forecastBalance: { ru: 'Прогнозный остаток', en: 'Forecast balance' }, received: { ru: 'Получено за месяц', en: 'Received this month' }, spent: { ru: 'Потрачено за месяц', en: 'Spent this month' },
   planned: { ru: 'Запланировано', en: 'Planned' }, add: { ru: 'Добавить', en: 'Add' }, date: { ru: 'Дата', en: 'Date' }, amount: { ru: 'Сумма, ₽', en: 'Amount, RUB' }, title: { ru: 'Название', en: 'Title' }, member: { ru: 'Кому', en: 'Member' }, shared: { ru: 'Общее', en: 'Shared' }, category: { ru: 'Категория', en: 'Category' }, note: { ru: 'Комментарий', en: 'Note' }, save: { ru: 'Сохранить', en: 'Save' }, cancel: { ru: 'Отмена', en: 'Cancel' }, loading: { ru: 'Загружаем ваши финансы…', en: 'Loading your finances…' }, logout: { ru: 'Выйти', en: 'Sign out' }, signIn: { ru: 'Войти', en: 'Sign in' }, signUp: { ru: 'Создать аккаунт', en: 'Create account' }, email: { ru: 'Электронная почта', en: 'Email' }, password: { ru: 'Пароль (не менее 8 символов)', en: 'Password (at least 8 characters)' },
   daily: { ru: 'Каждый день', en: 'Daily' }, weekly: { ru: 'Еженедельно', en: 'Weekly' }, twice: { ru: 'Два раза в месяц', en: 'Twice monthly' }, monthly: { ru: 'Ежемесячно', en: 'Monthly' }, yearly: { ru: 'Ежегодно', en: 'Yearly' }, once: { ru: 'Разово', en: 'One-time' }, frequency: { ru: 'Периодичность', en: 'Frequency' }, startDate: { ru: 'Начало', en: 'Start date' }, endDate: { ru: 'Окончание (необязательно)', en: 'End date (optional)' }, firstDay: { ru: 'Первое число', en: 'First day' }, secondDay: { ru: 'Второе число', en: 'Second day' }, day: { ru: 'Число месяца', en: 'Day of month' }, receivedAction: { ru: 'Отметить полученным', en: 'Mark received' }, paidAction: { ru: 'Оплатить', en: 'Mark paid' }, due: { ru: 'К оплате в этом месяце', en: 'Due this month' }, paid: { ru: 'Оплачено', en: 'Paid' }, unpaid: { ru: 'Не оплачено', en: 'Unpaid' }, shortfall: { ru: 'Не хватает', en: 'Shortfall' }, surplus: { ru: 'Остаток после обязательств', en: 'Surplus after obligations' }, upcoming: { ru: 'Ближайшие платежи', en: 'Upcoming payments' }, opening: { ru: 'Начальный остаток / корректировка', en: 'Opening balance / adjustment' }, openingHelp: { ru: 'Укажите сумму со знаком: положительную, если добавляете деньги, отрицательную — если уменьшаете остаток. Начальный остаток учитывается один раз.', en: 'Enter a signed amount: positive adds money, negative reduces it. The opening balance is recorded once as an adjustment.' }, reason: { ru: 'Причина корректировки', en: 'Adjustment reason' }, newMember: { ru: 'Имя участника семьи', en: 'Family member name' }, addMember: { ru: 'Добавить участника', en: 'Add member' }, addCategory: { ru: 'Новая категория', en: 'New category' }, noData: { ru: 'Пока нет записей', en: 'Nothing here yet' }, forecastInfo: { ru: 'Прогноз учитывает запланированные поступления и неоплаченные обязательства. Не полученные деньги не входят в фактический остаток.', en: 'Forecast includes planned income and unpaid obligations. Unreceived money is excluded from actual balance.' }, coverageInfo: { ru: 'Сравнение полученных доходов с суммой обязательств за выбранный месяц.', en: 'Received income compared with obligations due this month.' }, overdue: { ru: 'Просрочено', en: 'Overdue' }, plannedStatus: { ru: 'Ожидается', en: 'Planned' }, actualStatus: { ru: 'Получено', en: 'Received' }, paidStatus: { ru: 'Оплачено', en: 'Paid' }, addExpense: { ru: 'Новый расход', en: 'New expense' }, addIncome: { ru: 'Новый источник дохода', en: 'New income source' }, addObligation: { ru: 'Новое обязательство', en: 'New obligation' }, signInTitle: { ru: 'Ваш семейный бюджет', en: 'Your family budget' }, signInText: { ru: 'Доходы, расходы и обязательные платежи — в одном месте.', en: 'Income, expenses and recurring commitments in one place.' }, emptyTitle: { ru: 'Пока нет данных', en: 'No data yet' }, refresh: { ru: 'Обновить', en: 'Refresh' }
 };
 function tr(lang: Lang, key: string) { return translations[key]?.[lang] ?? key; }
-function moscowToday() {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+function todayInTimezone(timeZone = 'Europe/Moscow') {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
   const get = (type: string) => parts.find(p => p.type === type)?.value ?? '';
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
+const moscowToday = () => todayInTimezone();
 function monthBounds() {
   const today = moscowToday(), [year, month] = today.split('-').map(Number);
   const last = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
@@ -61,6 +62,7 @@ function dateLabel(value: string, lang: Lang) {
 
 export default function PersonalFinanceApp() {
   const [lang, setLang] = useState<Lang>('ru');
+  const [timezone, setTimezone] = useState('Europe/Moscow');
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
@@ -122,7 +124,7 @@ export default function PersonalFinanceApp() {
 
   const ranges = useMemo(monthBounds, []);
   const refresh = useCallback(async () => {
-    const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData] = await Promise.all([
+    const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData] = await Promise.all([
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<{ entries: IncomeEntry[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}`),
       api<{ expenses: Expense[]; categories: Category[] }>(`${PF}/expenses`),
@@ -131,9 +133,10 @@ export default function PersonalFinanceApp() {
       api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`),
       api<Analytics>(`${PF}/analytics?from=${ranges.from}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
-      api<SavingsGoal[]>(`${PF}/savings-goals`)
+      api<SavingsGoal[]>(`${PF}/savings-goals`),
+      api<{ timezone: string; locale: Lang }>(`${PF}/settings`)
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData);
+    setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale);
     if (!expenseCategory && expenseData.categories[0]) setExpenseCategory(expenseData.categories[0].id);
   }, [ranges, expenseCategory, filterMember]);
 
@@ -143,6 +146,8 @@ export default function PersonalFinanceApp() {
     api<User>('/auth/me').then(async current => { setUser(current); await refresh(); }).catch(() => { setToken(null); }).finally(() => setLoading(false));
   }, [refresh]);
 
+  async function changeLanguage(next: Lang) { setLang(next); if (user) { try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ locale: next }) }); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } } }
+  async function changeTimezone(next: string) { setTimezone(next); const today = todayInTimezone(next); setIncomeStart(today); setExpenseDate(today); setObligationDate(today); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ timezone: next }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } }
   async function handleAuth(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
     try {
@@ -227,11 +232,11 @@ export default function PersonalFinanceApp() {
     <aside className="pf-sidebar">
       <div className="pf-brand">FLOW<span>MONEY</span></div>
       <div className="pf-sidebar-caption">{lang === 'ru' ? 'СЕМЕЙНЫЕ ФИНАНСЫ' : 'HOUSEHOLD FINANCE'}</div>
-      <nav>{(['overview', 'income', 'expenses', 'obligations', 'calendar', 'analytics', 'budgets', 'family'] as Tab[]).map(item => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><span className="pf-nav-dot"/>{tr(lang, item)}</button>)}</nav>
+      <nav>{(['overview', 'income', 'expenses', 'obligations', 'calendar', 'analytics', 'budgets', 'family', 'settings'] as Tab[]).map(item => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><span className="pf-nav-dot"/>{tr(lang, item)}</button>)}</nav>
       <div className="pf-sidebar-bottom"><div className="pf-avatar">{user.email[0].toUpperCase()}</div><div className="pf-user"><strong>{user.email.split('@')[0]}</strong><small>{user.email}</small></div><button className="pf-icon-button" title={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button></div>
     </aside>
     <main className="pf-main">
-      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' }).format(new Date())}</p></div><div className="pf-top-actions"><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button className="pf-language" onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
+      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' }).format(new Date())}</p></div><div className="pf-top-actions"><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button className="pf-language" onClick={() => changeLanguage(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
       {error && <div className="pf-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
       {notice && <div className="pf-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
 
@@ -371,6 +376,14 @@ export default function PersonalFinanceApp() {
           </form>
           {goals.map(goal=>{const progress=Math.min(100,Number(goal.currentAmount)/Number(goal.targetAmount)*100);return <div className="pf-goal" key={goal.id}><div><strong>{goal.title}</strong><b>{rub(goal.currentAmount)} / {rub(goal.targetAmount)}</b></div><div className="pf-coverage-track"><span style={{width: progress + '%'}}/></div><div className="pf-goal-bottom"><small>{Math.round(progress)}% {lang === 'ru' ? 'накоплено' : 'saved'}{goal.targetDate ? ' · '+dateLabel(goal.targetDate,lang) : ''}</small><button className="pf-delete" onClick={()=>deleteGoal(goal.id)}>×</button></div></div>})}
           {!goals.length && <p className="pf-empty">{tr(lang,'noData')}</p>}
+        </section>
+      </div>}
+
+      {tab === 'settings' && <div className="pf-page">
+        <section className="pf-card pf-settings-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЕРСОНАЛИЗАЦИЯ' : 'PREFERENCES'}</span><h2>{tr(lang,'settings')}</h2></div></div>
+          <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Язык интерфейса' : 'Interface language'}</strong><small>{lang === 'ru' ? 'Язык названий и подсказок' : 'Labels and helper text language'}</small></span><select value={lang} onChange={e=>changeLanguage(e.target.value as Lang)}><option value="ru">Русский</option><option value="en">English</option></select></label>
+          <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Часовой пояс' : 'Time zone'}</strong><small>{lang === 'ru' ? 'Используется для текущей даты и календаря платежей' : 'Used for today and payment calendar dates'}</small></span><select value={timezone} onChange={e=>changeTimezone(e.target.value)}>{[['Europe/Moscow','Москва (UTC+3)'],['Europe/Minsk','Минск (UTC+3)'],['Europe/Warsaw','Варшава'],['Europe/Berlin','Берлин'],['Europe/London','Лондон'],['Asia/Dubai','Дубай'],['Asia/Bangkok','Бангкок'],['Asia/Ho_Chi_Minh','Хошимин'],['UTC','UTC']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+          <p className="pf-muted">{lang === 'ru' ? 'Суммы хранятся в рублях. Смена часового пояса влияет на формирование будущих дат, но не пересчитывает уже записанные операции.' : 'Amounts are stored in RUB. Changing the timezone affects future date generation but does not rewrite existing transactions.'}</p>
         </section>
       </div>}
 
