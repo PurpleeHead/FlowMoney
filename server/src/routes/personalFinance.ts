@@ -303,7 +303,7 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
       if (occurrence.status === 'PAID' && occurrence.expenseId) return occurrence;
       const amount = parsed.data.actualAmount ?? Number(occurrence.plannedAmount);
       const expense = await tx.ledgerExpense.create({ data: { userId: uid, memberId: occurrence.obligation.memberId, title: occurrence.obligation.title, amount, date: dateValue(dateString(occurrence.dueDate)), note: 'Obligation payment' } });
-      const claimed = await tx.obligationOccurrence.updateMany({ where: { id: occurrence.id, userId: uid, status: { not: 'PAID' } }, data: { status: 'PAID', paidAt: parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date(), actualAmount: amount, expenseId: expense.id } });
+      const claimed = await tx.obligationOccurrence.updateMany({ where: { id: occurrence.id, userId: uid, status: { in: ['UPCOMING', 'OVERDUE'] } }, data: { status: 'PAID', paidAt: parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date(), actualAmount: amount, expenseId: expense.id } });
       if (!claimed.count) {
         await tx.ledgerExpense.delete({ where: { id: expense.id } });
         return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id, userId: uid }, include: { expense: true, obligation: true } });
@@ -330,7 +330,15 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const from = dateValue(typeof req.query.from === 'string' && dateSchema.safeParse(req.query.from).success ? req.query.from : dateString(monthStart(now)));
     const to = dateValue(typeof req.query.to === 'string' && dateSchema.safeParse(req.query.to).success ? req.query.to : dateString(monthEnd(now)));
     const horizon = dateValue(typeof req.query.horizon === 'string' && dateSchema.safeParse(req.query.horizon).success ? req.query.horizon : dateString(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0))));
+    const [activeSources, activeObligations] = await Promise.all([
+      prisma.incomeSource.findMany({ where: { userId: uid, isActive: true } }),
+      prisma.obligation.findMany({ where: { userId: uid, isActive: true } }),
+    ]);
+    for (const source of activeSources) await materializeIncome(source, from, horizon);
+    for (const obligation of activeObligations) await materializeObligation(obligation, from, horizon);
     const inclusiveTo = new Date(to.getTime() + 86400000 - 1);
+    const today = dateValue(dateString(now));
+    await prisma.obligationOccurrence.updateMany({ where: { userId: uid, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const [receivedAll, receivedPeriod, planned, plannedPeriod, balanceExpenses, periodExpenses, forecastObligations, adjustments, monthlyObligations] = await Promise.all([
       prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { lte: inclusiveTo } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { gte: from, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
