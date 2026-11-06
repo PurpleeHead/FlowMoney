@@ -417,7 +417,7 @@ const budgetSchema = z.object({
 router.get('/budgets', async (req: AuthedRequest, res, next) => {
   try {
     const today = await userToday(uid(req));
-    const month = typeof req.query.month === 'string' && dateSchema.safeParse(req.query.month).success ? dateValue(req.query.month) : monthStart(today);
+    const month = typeof req.query.month === 'string' && dateSchema.safeParse(req.query.month).success ? monthStart(dateValue(req.query.month)) : monthStart(today);
     return res.json(await prisma.budget.findMany({
       where: { userId: uid(req), periodMonth: month }, include: { category: true, member: true },
       orderBy: [{ memberId: 'asc' }, { categoryId: 'asc' }],
