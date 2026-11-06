@@ -8,7 +8,7 @@ import { generateOccurrences, type Recurrence, type RecurrenceConfig } from '../
 const router = Router();
 router.use(auth);
 
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const dateSchema = z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).refine(value => { const parsed = new Date(`${value}T00:00:00.000Z`); return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value; }, 'Invalid calendar date.');
 const money = z.number().finite().positive().max(1_000_000_000);
 const optionalMember = z.string().cuid().nullable().optional();
 const recurrence = z.enum(['ONCE', 'DAILY', 'WEEKLY', 'TWICE_MONTHLY', 'MONTHLY', 'YEARLY']);
