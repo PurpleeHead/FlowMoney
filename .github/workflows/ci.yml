@@ -3,14 +3,12 @@ name: FlowMoney CI
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [feature/personal-finance-rework]
 
 permissions:
   contents: read
 
 concurrency:
-  group: flowmoney-ci-${{ github.ref }}
+  group: flowmoney-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
