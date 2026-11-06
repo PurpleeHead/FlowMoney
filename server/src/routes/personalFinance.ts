@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
@@ -40,7 +40,7 @@ async function memberBelongsToUser(memberId: string | null | undefined, user: st
   if (!memberId) return true;
   return Boolean(await prisma.householdMember.findFirst({ where: { id: memberId, userId: user, isArchived: false }, select: { id: true } }));
 }
-function badMember(res: Parameters<Parameters<typeof router.post>[1]>[1]) {
+function badMember(res: Response) {
   res.status(400).json({ message: 'Selected household member was not found.' });
 }
 
@@ -304,16 +304,16 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const from = dateValue(typeof req.query.from === 'string' && dateSchema.safeParse(req.query.from).success ? req.query.from : dateString(monthStart(now)));
     const to = dateValue(typeof req.query.to === 'string' && dateSchema.safeParse(req.query.to).success ? req.query.to : dateString(monthEnd(now)));
     const horizon = dateValue(typeof req.query.horizon === 'string' && dateSchema.safeParse(req.query.horizon).success ? req.query.horizon : dateString(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0))));
-    const [received, planned, expenses, obligations, adjustments, monthlyObligations] = await Promise.all([
-      prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { gte: from, lte: new Date(to.getTime() + 86400000 - 1) } }, _sum: { actualAmount: true } }),
+    const [received, planned, expenses, adjustments, monthlyObligations, periodExpenses] = await Promise.all([
+      prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'RECEIVED', receivedAt: { lte: new Date(to.getTime() + 86400000 - 1) } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId: uid, status: 'PLANNED', plannedDate: { gte: from, lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId: uid, date: { gte: from, lte: horizon } }, _sum: { amount: true } }),
-      prisma.obligationOccurrence.aggregate({ where: { userId: uid, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } }, _sum: { plannedAmount: true } }),
-      prisma.balanceAdjustment.aggregate({ where: { userId: uid, date: { lte: to } }, _sum: { amount: true } }),
+      prisma.obligationOccurrence.aggregate({ where: { userId: uid, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
+      prisma.balanceAdjustment.aggregate({ where: { userId: uid, date: { lte: new Date(to.getTime() + 86400000 - 1) } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId: uid, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, status: true } }),
     ]);
     const actualIncome = Number(received._sum.actualAmount ?? 0);
-    const actualExpenses = Number(expenses._sum.amount ?? 0);
+    const actualExpenses = Number(expenses._sum.amount ?? 0);\n    const periodExpenseTotal = Number(periodExpenses._sum.amount ?? 0);
     const adjustmentsTotal = Number(adjustments._sum.amount ?? 0);
     const actualBalance = adjustmentsTotal + actualIncome - actualExpenses;
     const plannedIncome = Number(planned._sum.plannedAmount ?? 0);
@@ -326,7 +326,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const nextPayments = await prisma.obligationOccurrence.findMany({ where: { userId: uid, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } }, include: { obligation: true }, orderBy: { dueDate: 'asc' }, take: 10 });
     return res.json({
       period: { from: dateString(from), to: dateString(to), horizon: dateString(horizon) },
-      actual: { income: actualIncome, expenses: actualExpenses, balance: actualBalance },
+      actual: { income: actualIncome, expenses: periodExpenseTotal, balance: actualBalance },
       forecast: { plannedIncome, unpaidObligations, balance: actualBalance + plannedIncome - unpaidObligations },
       obligations: { due: dueTotal, paid: paidMonth, unpaid: unpaidMonth, coverage: { receivedIncome: receivedMonthAmount, shortfall: Math.max(0, dueTotal - receivedMonthAmount), surplus: Math.max(0, receivedMonthAmount - dueTotal) }, plannedCoverage: { income: receivedMonthAmount + plannedIncome, shortfall: Math.max(0, dueTotal - receivedMonthAmount - plannedIncome) } },
       nextPayments,
