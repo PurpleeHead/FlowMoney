@@ -10,7 +10,7 @@ import exchangeRoutes from './routes/exchanges.js';
 import expenseRoutes from './routes/expenses.js';
 import receiptRoutes from './routes/receipts.js';
 import translateRoutes from './routes/translate.js';
-import dashboardRoutes from './routes/dashboard.js';
+import dashboardRoutes from './routes/dashboard.js';\nimport personalFinanceRoutes from './routes/personalFinance.js';
 import { errorHandler } from './middleware/errors.js';
 import { prisma } from './services/prisma.js';
 
@@ -27,7 +27,7 @@ app.use('/api/exchanges', exchangeRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/receipts', receiptRoutes);
 app.use('/api/translate', translateRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/dashboard', dashboardRoutes);\napp.use('/api/personal-finance', personalFinanceRoutes);
 
 const clientDist = resolve(process.cwd(), 'client', 'dist');
 if (existsSync(clientDist)) {
