@@ -137,7 +137,7 @@ export default function PersonalFinanceApp() {
   }
   async function perform(event: FormEvent, path: string, body: unknown, success: string, method = 'POST') {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
-    try { await api(path, { method, body: JSON.stringify(body) }); await refresh(); setNotice(success); if (path.includes('/expenses/') && method === 'PATCH') setEditingExpenseId(null); }
+    try { await api(path, { method, body: JSON.stringify(body) }); await refresh(); setNotice(success); if (path.includes('/expenses/') && method === 'PATCH') setEditingExpenseId(null); if (path.includes('/obligations/') && method === 'PATCH') setEditingObligationId(null); }
     catch (e) { setError(e instanceof Error ? e.message : 'Не удалось сохранить данные.'); }
     finally { setBusy(false); }
   }
