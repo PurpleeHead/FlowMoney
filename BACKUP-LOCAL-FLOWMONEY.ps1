@@ -18,8 +18,12 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "Docker was not found. Start Docker Desktop and try again."
 }
 
-$containerId = (& docker compose ps -q postgres).Trim()
-if ($LASTEXITCODE -ne 0 -or -not $containerId) {
+$containerOutput = & docker compose ps -q postgres
+if ($LASTEXITCODE -ne 0) {
+  throw "Could not inspect Docker Compose services."
+}
+$containerId = (@($containerOutput) -join "").Trim()
+if (-not $containerId) {
   throw "The local PostgreSQL container is not running. Start it with docker compose up -d postgres."
 }
 
