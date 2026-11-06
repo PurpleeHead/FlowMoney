@@ -127,6 +127,19 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(secondResponse.status, 201);
     const second = await secondResponse.json() as { token: string };
 
+    const foreignPayment = await post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, {}, second.token);
+    assert.equal(foreignPayment.status, 404, 'another account must not be able to pay this household obligation');
+    const foreignReceipt = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, {}, second.token);
+    assert.equal(foreignReceipt.status, 404, 'another account must not be able to receive this household income');
+
+    const secondMemberResponse = await post('/api/personal-finance/members', { name: 'Second household member' }, second.token);
+    assert.equal(secondMemberResponse.status, 201);
+    const secondMember = await secondMemberResponse.json() as { id: string };
+    const foreignMemberExpense = await post('/api/personal-finance/expenses', {
+      title: 'Foreign member expense', amount: 100, date: todayString, memberId: secondMember.id,
+    }, first.token);
+    assert.equal(foreignMemberExpense.status, 400, 'a household cannot assign records to another account member');
+
     const firstMembers = await get('/api/personal-finance/members', first.token);
     const secondMembers = await get('/api/personal-finance/members', second.token);
     assert.equal(firstMembers.status, 200);
