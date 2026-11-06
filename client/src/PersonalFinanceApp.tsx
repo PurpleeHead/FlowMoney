@@ -244,6 +244,7 @@ export default function PersonalFinanceApp() {
   const monthIncome = visibleIncome.filter(entry => entry.plannedDate >= ranges.from && entry.plannedDate <= ranges.to);
   const monthObligations = visibleObligations.filter(item => item.dueDate >= ranges.from && item.dueDate <= ranges.to);
   const visibleBudgets = budgets.filter(item => matchesMember(item.memberId));
+  const analyticsMax = analytics ? Math.max(1, ...analytics.months.flatMap(item => [item.income, item.expenses])) : 1;
   const calendarEvents = [
     ...visibleIncome.filter(x => x.plannedDate >= ranges.from && x.plannedDate <= ranges.to).map(x => ({ date: x.plannedDate.slice(0,10), title: x.source?.title ?? (lang === 'ru' ? 'Доход' : 'Income'), amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'income' as const, status: x.status })),
     ...memberExpenses.filter(x => !x.obligationOccurrence && x.date >= ranges.from && x.date <= ranges.to).map(x => ({ date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
@@ -378,7 +379,7 @@ export default function PersonalFinanceApp() {
           </article>
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ДИНАМИКА' : 'TREND'}</span><h2>{lang === 'ru' ? 'Доходы и расходы по месяцам' : 'Monthly income and expenses'}</h2></div></div>
-          {analytics.months.length ? analytics.months.map(item=><div className="pf-list-row" key={item.month}><div><strong>{item.month}</strong><small>{lang === 'ru' ? 'Доходы' : 'Income'}: {rub(item.income)} · {lang === 'ru' ? 'Расходы' : 'Expenses'}: {rub(item.expenses)}</small></div><b className={item.net >= 0 ? 'positive' : 'negative'}>{rub(item.net)}</b></div>) : <p className="pf-empty">{tr(lang,'noData')}</p>}
+          {analytics.months.length ? <><div className="pf-trend-legend"><span><i className="income"/> {lang === 'ru' ? 'Доходы' : 'Income'}</span><span><i className="expense"/> {lang === 'ru' ? 'Расходы' : 'Expenses'}</span></div>{analytics.months.map(item=><div className="pf-trend-row" key={item.month}><div className="pf-trend-label"><strong>{item.month}</strong><b className={item.net >= 0 ? 'positive' : 'negative'}>{rub(item.net)}</b></div><div className="pf-trend-bar income"><span style={{width:(item.income/analyticsMax*100)+'%'}}/></div><div className="pf-trend-bar expense"><span style={{width:(item.expenses/analyticsMax*100)+'%'}}/></div><small>{lang === 'ru' ? 'Доходы' : 'Income'}: {rub(item.income)} · {lang === 'ru' ? 'Расходы' : 'Expenses'}: {rub(item.expenses)}</small></div>)}</> : <p className="pf-empty">{tr(lang,'noData')}</p>}
         </section>
       </div>}
 
