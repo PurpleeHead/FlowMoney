@@ -18,7 +18,7 @@ type Dashboard = {
   obligations: { due: number; paid: number; unpaid: number; coverage: { receivedIncome: number; shortfall: number; surplus: number }; plannedCoverage: { income: number; shortfall: number } };
   nextPayments: ObligationOccurrence[];
 };
-type Tab = 'overview' | 'income' | 'expenses' | 'obligations' | 'calendar' | 'analytics' | 'budgets' | 'family';
+type Tab = 'overview' | 'income' | 'expenses' | 'obligations' | 'calendar' | 'analytics' | 'budgets' | 'family' | 'settings';
 
 const PF = '/personal-finance';
 const translations: Record<string, { ru: string; en: string }> = {
@@ -229,6 +229,15 @@ export default function PersonalFinanceApp() {
   const monthIncome = visibleIncome.filter(entry => entry.plannedDate >= ranges.from && entry.plannedDate <= ranges.to);
   const monthObligations = visibleObligations.filter(item => item.dueDate >= ranges.from && item.dueDate <= ranges.to);
   const visibleBudgets = budgets.filter(item => matchesMember(item.memberId));
+  const calendarEvents = [
+    ...visibleIncome.filter(x => x.plannedDate >= ranges.from && x.plannedDate <= ranges.to).map(x => ({ date: x.plannedDate.slice(0,10), title: x.source?.title ?? (lang === 'ru' ? 'Доход' : 'Income'), amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'income' as const, status: x.status })),
+    ...visibleExpenses.filter(x => !x.obligationOccurrence && x.date >= ranges.from && x.date <= ranges.to).map(x => ({ date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
+    ...monthObligations.map(x => ({ date: x.dueDate.slice(0,10), title: x.obligation.title, amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'obligation' as const, status: x.status })),
+  ].sort((a,b) => a.date.localeCompare(b.date));
+  const monthParts = ranges.from.split('-').map(Number);
+  const calendarDayCount = new Date(Date.UTC(monthParts[0], monthParts[1], 0)).getUTCDate();
+  const calendarOffset = new Date(Date.UTC(monthParts[0], monthParts[1]-1, 1)).getUTCDay();
+  const calendarCells: Array<number | null> = [...Array(calendarOffset).fill(null), ...Array.from({ length: calendarDayCount }, (_, i) => i + 1)];
 
   return <div className="pf-shell">
     <aside className="pf-sidebar">
