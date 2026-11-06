@@ -89,9 +89,9 @@ router.patch('/members/:id', async (req: AuthedRequest, res, next) => {
   try {
     const parsed = z.object({ name: z.string().trim().min(1).max(60).optional(), color: z.string().max(24).nullable().optional(), isArchived: z.boolean().optional() }).safeParse(req.body);
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid member update.' });
-    const result = await prisma.householdMember.updateMany({ where: { id: req.params.id, userId: uid(req) }, data: parsed.data });
+    const result = await prisma.householdMember.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: parsed.data });
     if (!result.count) return res.status(404).json({ message: 'Household member not found.' });
-    return res.json(await prisma.householdMember.findFirst({ where: { id: req.params.id, userId: uid(req) } }));
+    return res.json(await prisma.householdMember.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
   } catch (error) { return next(error); }
 });
 
@@ -142,17 +142,17 @@ router.patch('/income-sources/:id', async (req: AuthedRequest, res, next) => {
     if (input.startDate) data.startDate = dateValue(input.startDate);
     if (input.endDate !== undefined) data.endDate = input.endDate ? dateValue(input.endDate) : null;
     if (input.recurrenceConfig) data.recurrenceConfig = JSON.parse(JSON.stringify(input.recurrenceConfig));
-    const result = await prisma.incomeSource.updateMany({ where: { id: req.params.id, userId }, data: data as never });
+    const result = await prisma.incomeSource.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Income source not found.' });
-    return res.json(await prisma.incomeSource.findFirst({ where: { id: req.params.id, userId } }));
+    return res.json(await prisma.incomeSource.findFirst({ where: { id: String(req.params.id), userId } }));
   } catch (error) { return next(error); }
 });
 router.delete('/income-sources/:id', async (req: AuthedRequest, res, next) => {
   try {
     const userId = uid(req);
-    const result = await prisma.incomeSource.updateMany({ where: { id: req.params.id, userId }, data: { isActive: false } });
+    const result = await prisma.incomeSource.updateMany({ where: { id: String(req.params.id), userId }, data: { isActive: false } });
     if (!result.count) return res.status(404).json({ message: 'Income source not found.' });
-    await prisma.incomeEntry.updateMany({ where: { sourceId: req.params.id, userId, status: 'PLANNED', plannedDate: { gte: dateValue(dateString(new Date())) } }, data: { status: 'SKIPPED' } });
+    await prisma.incomeEntry.updateMany({ where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: dateValue(dateString(new Date())) } }, data: { status: 'SKIPPED' } });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
@@ -167,9 +167,9 @@ router.patch('/income-entries/:id', async (req: AuthedRequest, res, next) => {
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
     const data: Record<string, unknown> = { ...input };
     if (input.plannedDate) data.plannedDate = dateValue(input.plannedDate);
-    const result = await prisma.incomeEntry.updateMany({ where: { id: req.params.id, userId, status: { not: 'RECEIVED' } }, data: data as never });
+    const result = await prisma.incomeEntry.updateMany({ where: { id: String(req.params.id), userId, status: { not: 'RECEIVED' } }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Editable planned income not found.' });
-    return res.json(await prisma.incomeEntry.findFirst({ where: { id: req.params.id, userId } }));
+    return res.json(await prisma.incomeEntry.findFirst({ where: { id: String(req.params.id), userId } }));
   } catch (error) { return next(error); }
 });
 router.post('/income-entries/:id/receive', async (req: AuthedRequest, res, next) => {
@@ -178,7 +178,7 @@ router.post('/income-entries/:id/receive', async (req: AuthedRequest, res, next)
     if (!parsed.success) return res.status(400).json({ message: 'Enter a valid received amount.' });
     const userId = uid(req);
     const entry = await prisma.$transaction(async tx => {
-      const current = await tx.incomeEntry.findFirst({ where: { id: req.params.id, userId } });
+      const current = await tx.incomeEntry.findFirst({ where: { id: String(req.params.id), userId } });
       if (!current || current.status === 'RECEIVED') return current;
       return tx.incomeEntry.update({
         where: { id: current.id },
@@ -231,9 +231,9 @@ router.patch('/categories/:id', async (req: AuthedRequest, res, next) => {
   try {
     const parsed = z.object({ name: z.string().trim().min(1).max(60).optional(), isArchived: z.boolean().optional() }).safeParse(req.body);
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid category update.' });
-    const result = await prisma.expenseCategory.updateMany({ where: { id: req.params.id, userId: uid(req) }, data: parsed.data });
+    const result = await prisma.expenseCategory.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: parsed.data });
     if (!result.count) return res.status(404).json({ message: 'Custom category not found.' });
-    return res.json(await prisma.expenseCategory.findFirst({ where: { id: req.params.id, userId: uid(req) } }));
+    return res.json(await prisma.expenseCategory.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
   } catch (error) { return next(error); }
 });
 router.post('/expenses', async (req: AuthedRequest, res, next) => {
@@ -257,14 +257,14 @@ router.patch('/expenses/:id', async (req: AuthedRequest, res, next) => {
     if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
     const data: Record<string, unknown> = { ...input };
     if (input.date) data.date = dateValue(input.date);
-    const result = await prisma.ledgerExpense.updateMany({ where: { id: req.params.id, userId, obligationOccurrence: { is: null } }, data: data as never });
+    const result = await prisma.ledgerExpense.updateMany({ where: { id: String(req.params.id), userId, obligationOccurrence: { is: null } }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Editable expense not found.' });
-    return res.json(await prisma.ledgerExpense.findFirst({ where: { id: req.params.id, userId }, include: { category: true, member: true } }));
+    return res.json(await prisma.ledgerExpense.findFirst({ where: { id: String(req.params.id), userId }, include: { category: true, member: true } }));
   } catch (error) { return next(error); }
 });
 router.delete('/expenses/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const result = await prisma.ledgerExpense.deleteMany({ where: { id: req.params.id, userId: uid(req), obligationOccurrence: { is: null } } });
+    const result = await prisma.ledgerExpense.deleteMany({ where: { id: String(req.params.id), userId: uid(req), obligationOccurrence: { is: null } } });
     if (!result.count) return res.status(404).json({ message: 'Editable expense not found.' });
     return res.status(204).end();
   } catch (error) { return next(error); }
@@ -315,20 +315,20 @@ router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
     if (input.startDate) data.startDate = dateValue(input.startDate);
     if (input.endDate !== undefined) data.endDate = input.endDate ? dateValue(input.endDate) : null;
     if (input.recurrenceConfig) data.recurrenceConfig = JSON.parse(JSON.stringify(input.recurrenceConfig));
-    const result = await prisma.obligation.updateMany({ where: { id: req.params.id, userId }, data: data as never });
+    const result = await prisma.obligation.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
     if (input.amount !== undefined) {
-      await prisma.obligationOccurrence.updateMany({ where: { obligationId: req.params.id, userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: dateValue(dateString(new Date())) } }, data: { plannedAmount: input.amount } });
+      await prisma.obligationOccurrence.updateMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: dateValue(dateString(new Date())) } }, data: { plannedAmount: input.amount } });
     }
-    return res.json(await prisma.obligation.findFirst({ where: { id: req.params.id, userId } }));
+    return res.json(await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } }));
   } catch (error) { return next(error); }
 });
 router.delete('/obligations/:id', async (req: AuthedRequest, res, next) => {
   try {
     const userId = uid(req);
-    const result = await prisma.obligation.updateMany({ where: { id: req.params.id, userId }, data: { isActive: false } });
+    const result = await prisma.obligation.updateMany({ where: { id: String(req.params.id), userId }, data: { isActive: false } });
     if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
-    await prisma.obligationOccurrence.updateMany({ where: { obligationId: req.params.id, userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: dateValue(dateString(new Date())) } }, data: { status: 'SKIPPED' } });
+    await prisma.obligationOccurrence.updateMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: dateValue(dateString(new Date())) } }, data: { status: 'SKIPPED' } });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
@@ -338,13 +338,15 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
     if (!parsed.success) return res.status(400).json({ message: 'Enter a valid payment amount.' });
     const userId = uid(req);
     const paid = await prisma.$transaction(async tx => {
-      const occurrence = await tx.obligationOccurrence.findFirst({ where: { id: req.params.id, userId }, include: { obligation: true } });
+      const occurrence = await tx.obligationOccurrence.findFirst({ where: { id: String(req.params.id), userId } });
       if (!occurrence) return null;
+      const obligation = await tx.obligation.findFirst({ where: { id: occurrence.obligationId, userId } });
+      if (!obligation) return null;
       if (occurrence.status === 'PAID') return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id }, include: { expense: true, obligation: true } });
       if (!['UPCOMING', 'OVERDUE'].includes(occurrence.status)) return null;
       const amount = parsed.data.actualAmount ?? Number(occurrence.plannedAmount);
       const expense = await tx.ledgerExpense.create({
-        data: { userId, memberId: occurrence.obligation.memberId, title: occurrence.obligation.title, amount, date: occurrence.dueDate, note: 'Obligation payment' },
+        data: { userId, memberId: obligation.memberId, title: obligation.title, amount, date: occurrence.dueDate, note: 'Obligation payment' },
       });
       const claimed = await tx.obligationOccurrence.updateMany({
         where: { id: occurrence.id, userId, status: { in: ['UPCOMING', 'OVERDUE'] } },
