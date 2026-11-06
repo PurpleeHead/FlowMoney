@@ -39,12 +39,13 @@ function memberError(res: Response) { return res.status(400).json({ message: 'Se
 function dateQuery(value: unknown, fallback: Date) {
   return typeof value === 'string' && dateSchema.safeParse(value).success ? dateValue(value) : fallback;
 }
-async function userToday(userId: string): Promise<Date> {
+async function userDateAt(userId: string, value: Date): Promise<Date> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: user?.timezone ?? 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: user?.timezone ?? 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value);
   const part = (name: string) => parts.find(item => item.type === name)?.value ?? '';
   return dateValue(part('year') + '-' + part('month') + '-' + part('day'));
 }
+async function userToday(userId: string): Promise<Date> { return userDateAt(userId, new Date()); }
 
 async function createIncomeOccurrences(source: {
   id: string; userId: string; memberId: string | null; amount: unknown; recurrence: string;
@@ -363,6 +364,8 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
     const parsed = z.object({ actualAmount: money.optional(), paidAt: z.string().datetime().optional() }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Enter a valid payment amount.' });
     const userId = uid(req);
+    const paidAt = parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date();
+    const paidDate = await userDateAt(userId, paidAt);
     const paid = await prisma.$transaction(async tx => {
       const occurrence = await tx.obligationOccurrence.findFirst({ where: { id: String(req.params.id), userId } });
       if (!occurrence) return null;
@@ -372,11 +375,11 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
       if (!['UPCOMING', 'OVERDUE'].includes(occurrence.status)) return null;
       const amount = parsed.data.actualAmount ?? Number(occurrence.plannedAmount);
       const expense = await tx.ledgerExpense.create({
-        data: { userId, memberId: obligation.memberId, title: obligation.title, amount, date: occurrence.dueDate, note: 'Obligation payment' },
+        data: { userId, memberId: obligation.memberId, title: obligation.title, amount, date: paidDate, note: 'Obligation payment' },
       });
       const claimed = await tx.obligationOccurrence.updateMany({
         where: { id: occurrence.id, userId, status: { in: ['UPCOMING', 'OVERDUE'] } },
-        data: { status: 'PAID', paidAt: parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date(), actualAmount: amount, expenseId: expense.id },
+        data: { status: 'PAID', paidAt, actualAmount: amount, expenseId: expense.id },
       });
       if (!claimed.count) {
         await tx.ledgerExpense.delete({ where: { id: expense.id } });
