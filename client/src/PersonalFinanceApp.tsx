@@ -34,11 +34,13 @@ function todayInTimezone(timeZone = 'Europe/Moscow') {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 const moscowToday = () => todayInTimezone();
-function monthBounds(timeZone = 'Europe/Moscow') {
-  const today = todayInTimezone(timeZone), [year, month] = today.split('-').map(Number);
+function monthBounds(timeZone = 'Europe/Moscow', selectedMonth = todayInTimezone(timeZone).slice(0, 7)) {
+  const [year, month] = selectedMonth.split('-').map(Number);
+  const from = `${year}-${String(month).padStart(2, '0')}-01`;
   const last = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
   const horizon = new Date(Date.UTC(year, month + 3, 0)).toISOString().slice(0, 10);
-  return { from: `${year}-${String(month).padStart(2, '0')}-01`, to: last, horizon };
+  const analyticsFrom = new Date(Date.UTC(year, month - 6, 1)).toISOString().slice(0, 10);
+  return { from, to: last, horizon, analyticsFrom };
 }
 function rub(value: number | string | null | undefined) {
   return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 }).format(Number(value ?? 0));
@@ -63,6 +65,7 @@ function dateLabel(value: string, lang: Lang) {
 export default function PersonalFinanceApp() {
   const [lang, setLang] = useState<Lang>('ru');
   const [timezone, setTimezone] = useState('Europe/Moscow');
+  const [selectedMonth, setSelectedMonth] = useState(moscowToday().slice(0, 7));
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
@@ -122,7 +125,7 @@ export default function PersonalFinanceApp() {
   const [goalCurrent, setGoalCurrent] = useState('0');
   const [goalDate, setGoalDate] = useState('');
 
-  const ranges = useMemo(() => monthBounds(timezone), [timezone]);
+  const ranges = useMemo(() => monthBounds(timezone, selectedMonth), [timezone, selectedMonth]);
   const refresh = useCallback(async () => {
     const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData] = await Promise.all([
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
@@ -131,7 +134,7 @@ export default function PersonalFinanceApp() {
       api<{ occurrences: ObligationOccurrence[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}`),
       api<Member[]>(`${PF}/members`),
       api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`),
-      api<Analytics>(`${PF}/analytics?from=${ranges.from}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
+      api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
       api<SavingsGoal[]>(`${PF}/savings-goals`),
       api<{ timezone: string; locale: Lang }>(`${PF}/settings`)
@@ -247,7 +250,7 @@ export default function PersonalFinanceApp() {
       <div className="pf-sidebar-bottom"><div className="pf-avatar">{user.email[0].toUpperCase()}</div><div className="pf-user"><strong>{user.email.split('@')[0]}</strong><small>{user.email}</small></div><button className="pf-icon-button" title={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button></div>
     </aside>
     <main className="pf-main">
-      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date())}</p></div><div className="pf-top-actions"><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button className="pf-language" onClick={() => changeLanguage(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
+      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions"><input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button className="pf-language" onClick={() => changeLanguage(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
       {error && <div className="pf-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
       {notice && <div className="pf-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
 
@@ -353,7 +356,7 @@ export default function PersonalFinanceApp() {
       </div>}
 
       {tab === 'analytics' && analytics && <div className="pf-page">
-        <section className="pf-metric-grid"><article><span>{tr(lang,'received')}</span><strong className="positive">{rub(analytics.totals.income)}</strong></article><article><span>{tr(lang,'spent')}</span><strong>{rub(analytics.totals.expenses)}</strong></article><article><span>{tr(lang,'due')}</span><strong>{rub(analytics.totals.obligations)}</strong></article><article><span>{lang === 'ru' ? 'Разница доходов и расходов' : 'Income minus expenses'}</span><strong>{rub(analytics.totals.income-analytics.totals.expenses)}</strong></article></section>
+        <section className="pf-metric-grid"><article><span>{lang === 'ru' ? 'Доходы за период' : 'Income for period'}</span><strong className="positive">{rub(analytics.totals.income)}</strong></article><article><span>{lang === 'ru' ? 'Расходы за период' : 'Expenses for period'}</span><strong>{rub(analytics.totals.expenses)}</strong></article><article><span>{tr(lang,'due')}</span><strong>{rub(analytics.totals.obligations)}</strong></article><article><span>{lang === 'ru' ? 'Разница доходов и расходов' : 'Income minus expenses'}</span><strong>{rub(analytics.totals.income-analytics.totals.expenses)}</strong></article></section>
         <section className="pf-two-col">
           <article className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'СТРУКТУРА РАСХОДОВ' : 'EXPENSE BREAKDOWN'}</span><h2>{lang === 'ru' ? 'По категориям' : 'By category'}</h2></div></div>
             {analytics.categories.length ? analytics.categories.map(item=><div className="pf-category-bar" key={item.name}><div><span>{item.name}</span><b>{rub(item.amount)}</b></div><div className="pf-coverage-track"><span style={{width: Math.max(2,item.amount/Math.max(...analytics.categories.map(x=>x.amount))*100) + '%'}}/></div></div>) : <p className="pf-empty">{tr(lang,'noData')}</p>}
