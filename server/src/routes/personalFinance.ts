@@ -455,7 +455,7 @@ router.patch('/budgets/:id', async (req: AuthedRequest, res, next) => {
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid budget update.' });
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
-    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
     const data: Record<string, unknown> = { ...input };
     if (input.periodMonth) data.periodMonth = monthStart(dateValue(input.periodMonth));
     const result = await prisma.budget.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
@@ -579,7 +579,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
-      prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { lte: inclusiveTo } }, _sum: { amount: true } }),
+      prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, status: true } }),
     ]);
     const actualIncome = Number(receivedAll._sum.actualAmount ?? 0);
