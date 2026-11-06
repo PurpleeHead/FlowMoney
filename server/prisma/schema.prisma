@@ -11,6 +11,8 @@ model User {
   id           String     @id @default(cuid())
   email        String     @unique
   passwordHash String
+  timezone     String     @default("Europe/Moscow")
+  locale       String     @default("ru")
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   wallets      Wallet[]
