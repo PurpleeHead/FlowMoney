@@ -69,6 +69,51 @@ test('authentication works and household records stay isolated between accounts'
     const dashboardData = await dashboard.json() as { actual: { balance: number } };
     assert.equal(Number(dashboardData.actual.balance), 1000);
 
+    const todayString = today.toISOString().slice(0, 10);
+    const obligationResponse = await post('/api/personal-finance/obligations', {
+      title: 'Concurrent rent payment', category: 'housing', amount: 700,
+      recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
+    }, first.token);
+    assert.equal(obligationResponse.status, 201);
+    const obligationsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
+    assert.equal(obligationsResponse.status, 200);
+    const obligationsData = await obligationsResponse.json() as { occurrences: Array<{ id: string; status: string }> };
+    const occurrence = obligationsData.occurrences.find(item => item.status === 'UPCOMING');
+    assert.ok(occurrence, 'one-time obligation occurrence should be generated');
+
+    const paymentResponses = await Promise.all([
+      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, {}, first.token),
+      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, {}, first.token),
+    ]);
+    assert.ok(paymentResponses.every(response => response.status === 200));
+    const paymentResults = await Promise.all(paymentResponses.map(response => response.json() as Promise<{ status: string; expenseId: string | null }>));
+    assert.ok(paymentResults.every(result => result.status === 'PAID'));
+    assert.equal(new Set(paymentResults.map(result => result.expenseId)).size, 1, 'concurrent payment requests must resolve to the same linked expense');
+
+    const expensesResponse = await get('/api/personal-finance/expenses', first.token);
+    const expensesData = await expensesResponse.json() as { expenses: Array<{ title: string }> };
+    assert.equal(expensesData.expenses.filter(item => item.title === 'Concurrent rent payment').length, 1);
+    const afterPaymentDashboard = await get('/api/personal-finance/dashboard', first.token);
+    const afterPaymentData = await afterPaymentDashboard.json() as { actual: { balance: number } };
+    assert.equal(Number(afterPaymentData.actual.balance), 300, 'paid obligation must reduce the actual balance exactly once');
+
+    const plannedIncomeResponse = await post('/api/personal-finance/income-entries', {
+      plannedDate: todayString, plannedAmount: 1000,
+    }, first.token);
+    assert.equal(plannedIncomeResponse.status, 201);
+    const plannedIncome = await plannedIncomeResponse.json() as { id: string };
+    const beforeReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
+    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 300,
+      'planned income must not affect the actual balance');
+
+    const receivedIncome = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 1200 }, first.token);
+    assert.equal(receivedIncome.status, 200);
+    const duplicateReceipt = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 9000 }, first.token);
+    assert.equal(duplicateReceipt.status, 200);
+    const afterReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
+    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1500,
+      'receiving the same income entry again must not count it twice or overwrite the first actual amount');
+
     const budgetPayload = { periodMonth: today.toISOString().slice(0, 7) + '-01', limitAmount: 10000 };
     const budgetResponses = await Promise.all([
       post('/api/personal-finance/budgets', budgetPayload, first.token),
