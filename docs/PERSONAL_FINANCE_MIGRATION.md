@@ -14,6 +14,7 @@ This migration is additive. It creates the personal-finance tables:
 - `BalanceAdjustment`
 - `Budget`
 - `SavingsGoal`
+- User preferences: IANA timezone (default `Europe/Moscow`) and locale (default `ru`)
 
 It seeds shared default expense categories. Existing `Wallet`, `Exchange`, `Expense` and `Receipt` tables and their records are not dropped or rewritten.
 
