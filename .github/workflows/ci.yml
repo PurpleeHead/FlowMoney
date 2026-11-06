@@ -57,3 +57,26 @@ jobs:
         run: npm run build
       - name: Run server and client tests
         run: npm test
+      - name: Validate PowerShell script syntax
+        shell: pwsh
+        run: |
+          $scripts = @(
+            "START-FLOWMONEY.ps1",
+            "UPDATE-DEPENDENCIES.ps1",
+            "BACKUP-LOCAL-FLOWMONEY.ps1",
+            "VERIFY-LOCAL-BACKUP.ps1"
+          )
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD $script),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | Format-List | Out-String | Write-Error
+              exit 1
+            }
+            Write-Host "Parsed $script"
+          }
