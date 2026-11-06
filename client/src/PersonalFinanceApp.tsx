@@ -143,7 +143,7 @@ export default function PersonalFinanceApp() {
       api<{ timezone: string; locale: Lang }>(`${PF}/settings`)
     ]);
     setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData.filter(x => !x.isArchived)); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale);
-    if (!expenseCategory && expenseData.categories[0]) setExpenseCategory(expenseData.categories[0].id);
+    if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
   }, [ranges, expenseCategory, filterMember]);
 
   useEffect(() => {
