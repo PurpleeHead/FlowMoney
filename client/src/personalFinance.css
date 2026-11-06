@@ -80,3 +80,5 @@ button{cursor:pointer}
 @media(max-width:680px){.pf-month-filter{max-width:132px;min-width:110px;padding:9px 7px;font-size:10px}}
 
 .pf-category-manage{display:flex;align-items:center;justify-content:space-between;padding:5px 2px;color:#aaa3b7;font-size:11px}.pf-category-manage>div{display:flex;gap:5px}
+
+.pf-expense-filters{display:flex;gap:8px;flex-wrap:wrap;margin:-8px 0 12px}.pf-expense-filters select{max-width:50%;min-width:120px}
