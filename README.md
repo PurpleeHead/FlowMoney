@@ -67,6 +67,17 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 It does not use forced major upgrades and restores the previous lockfile if build or tests fail. Review the lockfile diff and remaining audit report before committing.
 
+## Local database backup rehearsal
+
+From PowerShell in the repository root:
+
+```powershell
+.\\BACKUP-LOCAL-FLOWMONEY.ps1
+.\\VERIFY-LOCAL-BACKUP.ps1 -BackupPath "C:\\path\\to\\flowmoney-local-YYYYMMDD-HHMMSS.dump"
+```
+
+The backup is stored outside the repository in `%USERPROFILE%\\FlowMoneyBackups`. The verification restores it into a temporary database and removes that database afterward; it does not overwrite the active local database. Both scripts refuse to run unless `server/.env` points to the local PostgreSQL port `5433`. See `docs/PERSONAL_FINANCE_MIGRATION.md` for details.
+
 ## Database migrations
 
 - `npm run db:migrate` applies only committed migrations using `prisma migrate deploy`.
