@@ -63,3 +63,5 @@ button{cursor:pointer}
 
 .pf-member-filter{max-width:180px;min-width:120px;border:1px solid rgba(255,255,255,.12);background:#191625;color:#d9d3e9;border-radius:10px;padding:10px 12px;font-size:12px;outline:none}
 @media(max-width:680px){.pf-member-filter{max-width:118px;min-width:100px;padding:9px 7px;font-size:10px}}
+
+.pf-form-actions{display:flex;justify-content:flex-end;gap:9px}.pf-edit{border:0;background:transparent;color:#bba6ff;font-size:16px;padding:5px}.pf-edit:hover{color:#fff}
