@@ -39,6 +39,12 @@ function memberError(res: Response) { return res.status(400).json({ message: 'Se
 function dateQuery(value: unknown, fallback: Date) {
   return typeof value === 'string' && dateSchema.safeParse(value).success ? dateValue(value) : fallback;
 }
+async function userToday(userId: string): Promise<Date> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: user?.timezone ?? 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const part = (name: string) => parts.find(item => item.type === name)?.value ?? '';
+  return dateValue(part('year') + '-' + part('month') + '-' + part('day'));
+}
 
 async function createIncomeOccurrences(source: {
   id: string; userId: string; memberId: string | null; amount: unknown; recurrence: string;
@@ -59,12 +65,11 @@ async function createIncomeOccurrences(source: {
 async function createObligationOccurrences(obligation: {
   id: string; userId: string; amount: unknown; recurrence: string;
   recurrenceConfig: unknown; startDate: Date; endDate: Date | null;
-}, from: Date, to: Date) {
+}, from: Date, to: Date, today: Date) {
   const end = obligation.endDate && obligation.endDate < to ? obligation.endDate : to;
   if (end < from) return;
   const dates = generateOccurrences(obligation.recurrence as Recurrence, (obligation.recurrenceConfig ?? {}) as RecurrenceConfig, from, end, obligation.startDate);
   if (!dates.length) return;
-  const today = dateValue(dateString(new Date()));
   await prisma.obligationOccurrence.createMany({
     data: dates.map(dueDate => ({
       userId: obligation.userId, obligationId: obligation.id, dueDate,
@@ -73,6 +78,25 @@ async function createObligationOccurrences(obligation: {
     skipDuplicates: true,
   });
 }
+
+router.get('/settings', async (req: AuthedRequest, res, next) => {
+  try {
+    const settings = await prisma.user.findUnique({ where: { id: uid(req) }, select: { timezone: true, locale: true } });
+    if (!settings) return res.status(404).json({ message: 'User settings not found.' });
+    return res.json(settings);
+  } catch (error) { return next(error); }
+});
+router.patch('/settings', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ timezone: z.string().trim().min(1).max(80).optional(), locale: z.enum(['ru', 'en']).optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid timezone or language.' });
+    if (parsed.data.timezone) {
+      try { new Intl.DateTimeFormat('en-US', { timeZone: parsed.data.timezone }); }
+      catch { return res.status(400).json({ message: 'Unknown IANA timezone.' }); }
+    }
+    return res.json(await prisma.user.update({ where: { id: uid(req) }, data: parsed.data, select: { timezone: true, locale: true } }));
+  } catch (error) { return next(error); }
+});
 
 router.get('/members', async (req: AuthedRequest, res, next) => {
   try { return res.json(await prisma.householdMember.findMany({ where: { userId: uid(req) }, orderBy: { createdAt: 'asc' } })); }
@@ -102,7 +126,7 @@ const incomeSchema = z.object({
 });
 router.get('/income-sources', async (req: AuthedRequest, res, next) => {
   try {
-    const now = new Date(), from = dateQuery(req.query.from, monthStart(now));
+    const now = await userToday(uid(req)), from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 3, 0)));
     const sources = await prisma.incomeSource.findMany({ where: { userId: uid(req), isActive: true } });
     for (const source of sources) await createIncomeOccurrences(source, from, to);
@@ -150,9 +174,10 @@ router.patch('/income-sources/:id', async (req: AuthedRequest, res, next) => {
 router.delete('/income-sources/:id', async (req: AuthedRequest, res, next) => {
   try {
     const userId = uid(req);
+    const today = await userToday(userId);
     const result = await prisma.incomeSource.updateMany({ where: { id: String(req.params.id), userId }, data: { isActive: false } });
     if (!result.count) return res.status(404).json({ message: 'Income source not found.' });
-    await prisma.incomeEntry.updateMany({ where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: dateValue(dateString(new Date())) } }, data: { status: 'SKIPPED' } });
+    await prisma.incomeEntry.updateMany({ where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } }, data: { status: 'SKIPPED' } });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
@@ -277,7 +302,7 @@ const obligationSchema = z.object({
 });
 router.get('/obligations', async (req: AuthedRequest, res, next) => {
   try {
-    const now = new Date(), from = dateQuery(req.query.from, monthStart(now));
+    const now = await userToday(uid(req)), from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 4, 0)));
     const userId = uid(req);
     const obligations = await prisma.obligation.findMany({ where: { userId, isActive: true } });
@@ -300,7 +325,7 @@ router.post('/obligations', async (req: AuthedRequest, res, next) => {
     const obligation = await prisma.obligation.create({
       data: { ...input, userId, startDate: dateValue(input.startDate), endDate: input.endDate ? dateValue(input.endDate) : null, recurrenceConfig: JSON.parse(JSON.stringify(input.recurrenceConfig)) },
     });
-    await createObligationOccurrences(obligation, obligation.startDate, new Date(Date.UTC(obligation.startDate.getUTCFullYear(), obligation.startDate.getUTCMonth() + 4, 0)));
+    await createObligationOccurrences(obligation, obligation.startDate, new Date(Date.UTC(obligation.startDate.getUTCFullYear(), obligation.startDate.getUTCMonth() + 4, 0)), await userToday(userId));
     return res.status(201).json(obligation);
   } catch (error) { return next(error); }
 });
@@ -318,7 +343,7 @@ router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
     const result = await prisma.obligation.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
     if (input.amount !== undefined) {
-      await prisma.obligationOccurrence.updateMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: dateValue(dateString(new Date())) } }, data: { plannedAmount: input.amount } });
+      await prisma.obligationOccurrence.updateMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: await userToday(userId) } }, data: { plannedAmount: input.amount } });
     }
     return res.json(await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } }));
   } catch (error) { return next(error); }
@@ -390,7 +415,8 @@ const budgetSchema = z.object({
 });
 router.get('/budgets', async (req: AuthedRequest, res, next) => {
   try {
-    const month = typeof req.query.month === 'string' && dateSchema.safeParse(req.query.month).success ? dateValue(req.query.month) : monthStart(new Date());
+    const today = await userToday(uid(req));
+    const month = typeof req.query.month === 'string' && dateSchema.safeParse(req.query.month).success ? dateValue(req.query.month) : monthStart(today);
     return res.json(await prisma.budget.findMany({
       where: { userId: uid(req), periodMonth: month }, include: { category: true, member: true },
       orderBy: [{ memberId: 'asc' }, { categoryId: 'asc' }],
@@ -471,7 +497,7 @@ router.delete('/savings-goals/:id', async (req: AuthedRequest, res, next) => {
 
 router.get('/analytics', async (req: AuthedRequest, res, next) => {
   try {
-    const userId = uid(req), now = new Date();
+    const userId = uid(req), now = await userToday(uid(req));
     const from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, monthEnd(now));
     const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
@@ -525,8 +551,8 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.obligation.findMany({ where: { userId, isActive: true, ...(memberFilter ? { memberId: memberFilter === 'shared' ? null : memberFilter } : {}) } }),
     ]);
     for (const source of sources) await createIncomeOccurrences(source, from, horizon);
-    for (const obligation of obligations) await createObligationOccurrences(obligation, from, horizon);
-    const today = dateValue(dateString(now));
+    for (const obligation of obligations) await createObligationOccurrences(obligation, from, horizon, now);
+    const today = now;
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const inclusiveTo = new Date(to.getTime() + 86400000 - 1);
     const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
