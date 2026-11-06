@@ -158,7 +158,7 @@ Acceptance: migration validates; server/client build and tests pass.
 
 Phase 2 — API:
 - Implement authenticated CRUD and receive/pay flows with transactions.
-Acceptance: user isolation, validation, idempotency, and API tests pass.
+Acceptance: user isolation, validation, idempotency, and API tests pass. Integration coverage includes registration/login, unauthorized access, household isolation, future-dated transaction exclusion from actual balance, and duplicate budget creation.
 
 Phase 3 — UI:
 - Implement income, expense, obligations and dashboard screens.
