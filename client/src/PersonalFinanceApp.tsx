@@ -189,6 +189,8 @@ export default function PersonalFinanceApp() {
     try { await api(`${PF}/members`, { method: 'POST', body: JSON.stringify({ name: newMemberName.trim() }) }); setNewMemberName(''); await refresh(); }
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
+  async function deleteBudget(id: string) { setBusy(true); try { await api(`${PF}/budgets/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function deleteGoal(id: string) { setBusy(true); try { await api(`${PF}/savings-goals/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function addCategory(event: FormEvent) {
     event.preventDefault(); const name = newCategoryName.trim(); if (!name) return;
     const slug = name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `category-${Date.now()}`;
@@ -316,6 +318,59 @@ export default function PersonalFinanceApp() {
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЛАН И ОПЛАТА' : 'DUE AND PAID'}</span><h2>{tr(lang, 'obligations')}</h2></div><span className="pf-count">{monthObligations.length}</span></div>
           {visibleObligations.length ? visibleObligations.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.obligation.title}</strong><small>{item.obligation.category} · {dateLabel(item.dueDate, lang)}</small><small className={item.status === 'PAID' ? 'positive' : item.status === 'OVERDUE' ? 'negative' : ''}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : tr(lang, 'unpaid')}</small></div><div className="pf-row-action"><b>{rub(item.actualAmount ?? item.plannedAmount)}</b>{item.status !== 'PAID' && <><button className="pf-edit" title={lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation'} onClick={() => { setEditingObligationId(item.obligation.id); setObligationTitle(item.obligation.title); setObligationCategory(item.obligation.category); setObligationAmount(String(item.plannedAmount)); setObligationMember(item.obligation.memberId ?? ''); }}>✎</button><button className="pf-button small" disabled={busy} onClick={() => markPaid(item.id)}>{tr(lang, 'paidAction')}</button><button className="pf-delete" title={lang === 'ru' ? 'Отключить обязательство' : 'Archive obligation'} onClick={() => deleteObligation(item.obligation.id)}>×</button></>}</div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
+        </section>
+      </div>}
+
+
+      {tab === 'calendar' && <div className="pf-page pf-two-col">
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'КАЛЕНДАРЬ ДОМОХОЗЯЙСТВА' : 'HOUSEHOLD CALENDAR'}</span><h2>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' }).format(new Date())}</h2></div></div>
+          <div className="pf-calendar-grid pf-calendar-weekdays">{(lang === 'ru' ? ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'] : ['Su','Mo','Tu','We','Th','Fr','Sa']).map(day => <span key={day}>{day}</span>)}</div>
+          <div className="pf-calendar-grid">{calendarCells.map((day, index) => {
+            const date = day ? ranges.from.slice(0,8) + String(day).padStart(2,'0') : '';
+            const events = calendarEvents.filter(item => item.date === date);
+            return <div key={index} className={day ? 'pf-calendar-day' : 'pf-calendar-day blank'}><b>{day ?? ''}</b>{events.length > 0 && <span>{events.length} {lang === 'ru' ? 'событ.' : 'items'}</span>}<div className="pf-calendar-dots">{events.slice(0,3).map((item,i)=><i key={i} className={item.kind}/>)}</div></div>;
+          })}</div>
+        </section>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'СОБЫТИЯ МЕСЯЦА' : 'MONTH EVENTS'}</span><h2>{lang === 'ru' ? 'Доходы и платежи' : 'Income and payments'}</h2></div><span className="pf-count">{calendarEvents.length}</span></div>
+          {calendarEvents.length ? calendarEvents.map((item,index)=><div className="pf-list-row" key={item.date + item.title + index}><div><strong>{item.title}</strong><small>{dateLabel(item.date,lang)} · {item.kind === 'income' ? (item.status === 'RECEIVED' ? tr(lang,'actualStatus') : tr(lang,'plannedStatus')) : item.kind === 'expense' ? tr(lang,'expenses') : item.status === 'PAID' ? tr(lang,'paidStatus') : tr(lang,'unpaid')}</small></div><b className={item.kind === 'income' ? 'positive' : ''}>{item.kind === 'income' ? '+' : '−'}{rub(item.amount)}</b></div>) : <p className="pf-empty">{tr(lang,'noData')}</p>}
+        </section>
+      </div>}
+
+      {tab === 'analytics' && analytics && <div className="pf-page">
+        <section className="pf-metric-grid"><article><span>{tr(lang,'received')}</span><strong className="positive">{rub(analytics.totals.income)}</strong></article><article><span>{tr(lang,'spent')}</span><strong>{rub(analytics.totals.expenses)}</strong></article><article><span>{tr(lang,'due')}</span><strong>{rub(analytics.totals.obligations)}</strong></article><article><span>{lang === 'ru' ? 'Разница доходов и расходов' : 'Income minus expenses'}</span><strong>{rub(analytics.totals.income-analytics.totals.expenses)}</strong></article></section>
+        <section className="pf-two-col">
+          <article className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'СТРУКТУРА РАСХОДОВ' : 'EXPENSE BREAKDOWN'}</span><h2>{lang === 'ru' ? 'По категориям' : 'By category'}</h2></div></div>
+            {analytics.categories.length ? analytics.categories.map(item=><div className="pf-category-bar" key={item.name}><div><span>{item.name}</span><b>{rub(item.amount)}</b></div><div className="pf-coverage-track"><span style={{width: Math.max(2,item.amount/Math.max(...analytics.categories.map(x=>x.amount))*100) + '%'}}/></div></div>) : <p className="pf-empty">{tr(lang,'noData')}</p>}
+          </article>
+          <article className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'СЕМЕЙНЫЕ ДАННЫЕ' : 'HOUSEHOLD DATA'}</span><h2>{lang === 'ru' ? 'По участникам' : 'By member'}</h2></div></div>
+            {analytics.members.length ? analytics.members.map(item=><div className="pf-list-row" key={item.name}><div><strong>{item.name}</strong><small>{lang === 'ru' ? 'Доходы' : 'Income'}: {rub(item.income)} · {lang === 'ru' ? 'Расходы' : 'Expenses'}: {rub(item.expenses)}</small></div><b className={item.net >= 0 ? 'positive' : 'negative'}>{rub(item.net)}</b></div>) : <p className="pf-empty">{tr(lang,'noData')}</p>}
+          </article>
+        </section>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ДИНАМИКА' : 'TREND'}</span><h2>{lang === 'ru' ? 'Доходы и расходы по месяцам' : 'Monthly income and expenses'}</h2></div></div>
+          {analytics.months.length ? analytics.months.map(item=><div className="pf-list-row" key={item.month}><div><strong>{item.month}</strong><small>{lang === 'ru' ? 'Доходы' : 'Income'}: {rub(item.income)} · {lang === 'ru' ? 'Расходы' : 'Expenses'}: {rub(item.expenses)}</small></div><b className={item.net >= 0 ? 'positive' : 'negative'}>{rub(item.net)}</b></div>) : <p className="pf-empty">{tr(lang,'noData')}</p>}
+        </section>
+      </div>}
+
+      {tab === 'budgets' && <div className="pf-page pf-two-col">
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИМИТЫ РАСХОДОВ' : 'SPENDING LIMITS'}</span><h2>{lang === 'ru' ? 'Месячный бюджет' : 'Monthly budget'}</h2></div></div>
+          <form className="pf-form" onSubmit={e => perform(e, PF + '/budgets', { periodMonth: ranges.from, limitAmount: Number(budgetLimit), categoryId: budgetCategory || null, memberId: budgetMember || null }, lang === 'ru' ? 'Бюджет сохранён.' : 'Budget saved.')}>
+            <label>{tr(lang,'amount')}<input type="number" min="0.01" step="0.01" required value={budgetLimit} onChange={e=>setBudgetLimit(e.target.value)}/></label>
+            <label>{tr(lang,'category')}<select value={budgetCategory} onChange={e=>setBudgetCategory(e.target.value)}><option value="">{lang === 'ru' ? 'Все категории' : 'All categories'}</option>{categories.map(x=><option key={x.id} value={x.id}>{categoryName(x,lang)}</option>)}</select></label>
+            <label>{tr(lang,'member')}<select value={budgetMember} onChange={e=>setBudgetMember(e.target.value)}>{memberOptions}</select></label>
+            <button className="pf-button primary" disabled={busy}>{tr(lang,'save')}</button>
+          </form>
+          {budgets.map(item=><div className="pf-list-row" key={item.id}><div><strong>{item.category ? categoryName(item.category,lang) : (lang === 'ru' ? 'Общий бюджет' : 'Overall budget')}</strong><small>{item.member?.name ?? tr(lang,'shared')}</small></div><div className="pf-row-action"><b>{rub(item.limitAmount)}</b><button className="pf-delete" onClick={()=>deleteBudget(item.id)}>×</button></div></div>)}
+          {!budgets.length && <p className="pf-empty">{tr(lang,'noData')}</p>}
+        </section>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'НАКОПЛЕНИЯ' : 'SAVINGS'}</span><h2>{lang === 'ru' ? 'Финансовая цель' : 'Savings goal'}</h2></div></div>
+          <form className="pf-form" onSubmit={e=>perform(e,PF+'/savings-goals',{title:goalTitle,targetAmount:Number(goalTarget),currentAmount:Number(goalCurrent),targetDate:goalDate||null},lang === 'ru' ? 'Цель добавлена.' : 'Goal added.')}>
+            <label>{tr(lang,'title')}<input required value={goalTitle} onChange={e=>setGoalTitle(e.target.value)}/></label>
+            <div className="pf-field-row"><label>{lang === 'ru' ? 'Целевая сумма' : 'Target amount'}<input type="number" min="0.01" step="0.01" required value={goalTarget} onChange={e=>setGoalTarget(e.target.value)}/></label><label>{lang === 'ru' ? 'Уже накоплено' : 'Already saved'}<input type="number" min="0" step="0.01" value={goalCurrent} onChange={e=>setGoalCurrent(e.target.value)}/></label></div>
+            <label>{lang === 'ru' ? 'Желаемая дата' : 'Target date'}<input type="date" value={goalDate} onChange={e=>setGoalDate(e.target.value)}/></label>
+            <button className="pf-button primary" disabled={busy}>{tr(lang,'add')}</button>
+          </form>
+          {goals.map(goal=>{const progress=Math.min(100,Number(goal.currentAmount)/Number(goal.targetAmount)*100);return <div className="pf-goal" key={goal.id}><div><strong>{goal.title}</strong><b>{rub(goal.currentAmount)} / {rub(goal.targetAmount)}</b></div><div className="pf-coverage-track"><span style={{width: progress + '%'}}/></div><div className="pf-goal-bottom"><small>{Math.round(progress)}% {lang === 'ru' ? 'накоплено' : 'saved'}{goal.targetDate ? ' · '+dateLabel(goal.targetDate,lang) : ''}</small><button className="pf-delete" onClick={()=>deleteGoal(goal.id)}>×</button></div></div>})}
+          {!goals.length && <p className="pf-empty">{tr(lang,'noData')}</p>}
         </section>
       </div>}
 
