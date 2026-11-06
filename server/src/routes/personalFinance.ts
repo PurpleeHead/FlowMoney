@@ -268,7 +268,7 @@ router.post('/expenses', async (req: AuthedRequest, res, next) => {
     if (!parsed.success) return res.status(400).json({ message: 'Check the expense name, amount and date.', issues: parsed.error.flatten() });
     const input = parsed.data, userId = uid(req);
     if (!(await validMember(input.memberId, userId))) return memberError(res);
-    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
     return res.status(201).json(await prisma.ledgerExpense.create({
       data: { ...input, userId, date: dateValue(input.date) }, include: { category: true, member: true },
     }));
