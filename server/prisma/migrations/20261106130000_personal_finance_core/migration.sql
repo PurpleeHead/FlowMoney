@@ -96,6 +96,8 @@ CREATE TABLE "Budget" (
   "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Budget_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX "Budget_userId_periodMonth_idx" ON "Budget"("userId","periodMonth");
+-- PostgreSQL treats NULL values as distinct in ordinary unique indexes; normalize nullable scope fields.
+CREATE UNIQUE INDEX "Budget_scope_unique_idx" ON "Budget" ("userId", "periodMonth", (COALESCE("memberId", '')), (COALESCE("categoryId", '')));
 ALTER TABLE "Budget" ADD CONSTRAINT "Budget_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "Budget" ADD CONSTRAINT "Budget_memberId_fkey" FOREIGN KEY ("memberId") REFERENCES "HouseholdMember"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "Budget" ADD CONSTRAINT "Budget_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "ExpenseCategory"("id") ON DELETE CASCADE ON UPDATE CASCADE;
