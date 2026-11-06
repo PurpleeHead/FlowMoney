@@ -95,6 +95,7 @@ export default function PersonalFinanceApp() {
   const [incomeDay1, setIncomeDay1] = useState('1');
   const [incomeDay2, setIncomeDay2] = useState('15');
   const [incomeWeekday, setIncomeWeekday] = useState('1');
+  const [incomeIntervalWeeks, setIncomeIntervalWeeks] = useState('1');
   const [incomeMember, setIncomeMember] = useState('');
   const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
   const [incomeEditDate, setIncomeEditDate] = useState(moscowToday());
@@ -111,6 +112,8 @@ export default function PersonalFinanceApp() {
   const [obligationRecurrence, setObligationRecurrence] = useState('MONTHLY');
   const [obligationDate, setObligationDate] = useState(moscowToday());
   const [obligationDay, setObligationDay] = useState('13');
+  const [obligationWeekday, setObligationWeekday] = useState('1');
+  const [obligationIntervalWeeks, setObligationIntervalWeeks] = useState('1');
   const [obligationMember, setObligationMember] = useState('');
   const [editingObligationId, setEditingObligationId] = useState<string | null>(null);
   const [openingAmount, setOpeningAmount] = useState('');
@@ -289,11 +292,11 @@ export default function PersonalFinanceApp() {
 
       {tab === 'income' && <div className="pf-page pf-two-col">
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЛАНИРОВАНИЕ ПОСТУПЛЕНИЙ' : 'INCOME PLANNING'}</span><h2>{tr(lang, 'addIncome')}</h2></div></div>
-          <form className="pf-form" onSubmit={e => perform(e, `${PF}/income-sources`, { title: incomeTitle, amount: Number(incomeAmount), recurrence: incomeRecurrence, recurrenceConfig: incomeRecurrence === 'WEEKLY' ? { weekdays: [Number(incomeWeekday)] } : incomeRecurrence === 'TWICE_MONTHLY' ? { firstDay: Number(incomeDay1), secondDay: Number(incomeDay2) } : incomeRecurrence === 'MONTHLY' ? { day: Number(incomeDay1) } : {}, startDate: incomeStart, endDate: incomeEnd || null, memberId: incomeMember || null }, lang === 'ru' ? 'Источник дохода добавлен.' : 'Income source added.')}>
+          <form className="pf-form" onSubmit={e => perform(e, `${PF}/income-sources`, { title: incomeTitle, amount: Number(incomeAmount), recurrence: incomeRecurrence, recurrenceConfig: incomeRecurrence === 'WEEKLY' ? { weekdays: [Number(incomeWeekday)], intervalWeeks: Number(incomeIntervalWeeks) } : incomeRecurrence === 'TWICE_MONTHLY' ? { firstDay: Number(incomeDay1), secondDay: Number(incomeDay2) } : incomeRecurrence === 'MONTHLY' ? { day: Number(incomeDay1) } : {}, startDate: incomeStart, endDate: incomeEnd || null, memberId: incomeMember || null }, lang === 'ru' ? 'Источник дохода добавлен.' : 'Income source added.')}>
             <label>{tr(lang, 'title')}<input required value={incomeTitle} onChange={e => setIncomeTitle(e.target.value)}/></label>
             <label>{tr(lang, 'amount')}<input type="number" min="0.01" step="0.01" required value={incomeAmount} onChange={e => setIncomeAmount(e.target.value)}/></label>
             <label>{tr(lang, 'frequency')}<select value={incomeRecurrence} onChange={e => setIncomeRecurrence(e.target.value)}><option value="DAILY">{tr(lang, 'daily')}</option><option value="WEEKLY">{tr(lang, 'weekly')}</option><option value="TWICE_MONTHLY">{tr(lang, 'twice')}</option><option value="MONTHLY">{tr(lang, 'monthly')}</option><option value="YEARLY">{tr(lang, 'yearly')}</option><option value="ONCE">{tr(lang, 'once')}</option></select></label>
-            {incomeRecurrence === 'WEEKLY' && <label>{lang === 'ru' ? 'День недели' : 'Weekday'}<select value={incomeWeekday} onChange={e => setIncomeWeekday(e.target.value)}>{(lang === 'ru' ? ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'] : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']).map((d,i)=><option key={d} value={i}>{d}</option>)}</select></label>}
+            {incomeRecurrence === 'WEEKLY' && <div className="pf-field-row"><label>{lang === 'ru' ? 'День недели' : 'Weekday'}<select value={incomeWeekday} onChange={e => setIncomeWeekday(e.target.value)}>{(lang === 'ru' ? ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'] : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']).map((d,i)=><option key={d} value={i}>{d}</option>)}</select></label><label>{lang === 'ru' ? 'Каждые N недель' : 'Every N weeks'}<input type="number" min="1" max="52" value={incomeIntervalWeeks} onChange={e=>setIncomeIntervalWeeks(e.target.value)}/></label></div>}
             {['TWICE_MONTHLY','MONTHLY'].includes(incomeRecurrence) && <div className="pf-field-row"><label>{incomeRecurrence === 'MONTHLY' ? tr(lang, 'day') : tr(lang, 'firstDay')}<input type="number" min="1" max="31" value={incomeDay1} onChange={e => setIncomeDay1(e.target.value)}/></label>{incomeRecurrence === 'TWICE_MONTHLY' && <label>{tr(lang, 'secondDay')}<input type="number" min="1" max="31" value={incomeDay2} onChange={e => setIncomeDay2(e.target.value)}/></label>}</div>}
             <div className="pf-field-row"><label>{tr(lang, 'startDate')}<input type="date" required value={incomeStart} onChange={e => setIncomeStart(e.target.value)}/></label><label>{tr(lang, 'endDate')}<input type="date" value={incomeEnd} onChange={e => setIncomeEnd(e.target.value)}/></label></div>
             <label>{tr(lang, 'member')}<select value={incomeMember} onChange={e => setIncomeMember(e.target.value)}>{memberOptions}</select></label>
@@ -329,7 +332,7 @@ export default function PersonalFinanceApp() {
             <label>{tr(lang, 'category')}<select value={obligationCategory} onChange={e => setObligationCategory(e.target.value)}>{(lang === 'ru' ? ['Кредит','Автокредит','Ипотека','Аренда','Коммунальные услуги','Фитнес','Подписки','Другое'] : ['Loan','Car loan','Mortgage','Rent','Utilities','Fitness','Subscriptions','Other']).map(x=><option key={x}>{x}</option>)}</select></label>
             <label>{tr(lang, 'amount')}<input type="number" min="0.01" step="0.01" required value={obligationAmount} onChange={e => setObligationAmount(e.target.value)}/></label>
             <label>{tr(lang, 'frequency')}<select value={obligationRecurrence} onChange={e => setObligationRecurrence(e.target.value)}><option value="MONTHLY">{tr(lang, 'monthly')}</option><option value="ONCE">{tr(lang, 'once')}</option><option value="WEEKLY">{tr(lang, 'weekly')}</option><option value="YEARLY">{tr(lang, 'yearly')}</option></select></label>
-            {obligationRecurrence === 'MONTHLY' && <label>{tr(lang, 'day')}<input type="number" min="1" max="31" value={obligationDay} onChange={e => setObligationDay(e.target.value)}/></label>}
+            {obligationRecurrence === 'MONTHLY' && <label>{tr(lang, 'day')}<input type="number" min="1" max="31" value={obligationDay} onChange={e => setObligationDay(e.target.value)}/></label>}{obligationRecurrence === 'WEEKLY' && <div className="pf-field-row"><label>{lang === 'ru' ? 'День недели' : 'Weekday'}<select value={obligationWeekday} onChange={e=>setObligationWeekday(e.target.value)}>{(lang === 'ru' ? ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'] : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']).map((d,i)=><option key={d} value={i}>{d}</option>)}</select></label><label>{lang === 'ru' ? 'Каждые N недель' : 'Every N weeks'}<input type="number" min="1" max="52" value={obligationIntervalWeeks} onChange={e=>setObligationIntervalWeeks(e.target.value)}/></label></div>}
             <label>{tr(lang, 'startDate')}<input type="date" required value={obligationDate} onChange={e => setObligationDate(e.target.value)}/></label>
             <label>{tr(lang, 'member')}<select value={obligationMember} onChange={e => setObligationMember(e.target.value)}>{memberOptions}</select></label>
             <button className="pf-button primary" disabled={busy}>{tr(lang, 'add')}</button>
