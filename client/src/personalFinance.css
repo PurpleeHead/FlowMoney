@@ -78,3 +78,5 @@ button{cursor:pointer}
 
 .pf-month-filter{max-width:150px;min-width:125px;border:1px solid rgba(255,255,255,.12);background:#191625;color:#d9d3e9;border-radius:10px;padding:10px 11px;font-size:12px;color-scheme:dark}
 @media(max-width:680px){.pf-month-filter{max-width:132px;min-width:110px;padding:9px 7px;font-size:10px}}
+
+.pf-category-manage{display:flex;align-items:center;justify-content:space-between;padding:5px 2px;color:#aaa3b7;font-size:11px}.pf-category-manage>div{display:flex;gap:5px}
