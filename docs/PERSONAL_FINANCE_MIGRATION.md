@@ -44,6 +44,8 @@ DROP TABLE IF EXISTS "ExpenseCategory";
 DROP TABLE IF EXISTS "IncomeEntry";
 DROP TABLE IF EXISTS "IncomeSource";
 DROP TABLE IF EXISTS "HouseholdMember";
+ALTER TABLE "User" DROP COLUMN IF EXISTS "locale";
+ALTER TABLE "User" DROP COLUMN IF EXISTS "timezone";
 ```
 
 After rollback, Prisma's migration history must be reconciled deliberately for the target environment. Do not delete migration history rows blindly; restore the pre-migration snapshot if a fully consistent rollback is required.
