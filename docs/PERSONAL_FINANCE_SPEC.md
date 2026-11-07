@@ -51,7 +51,7 @@ Future obligations are displayed by month and in a payment calendar. Do not sum 
 ### 2.4 Household members
 Support a household with multiple members and a shared/unassigned category.
 Each income, expense, income source, and obligation can be attributed to one member.
-Provide household aggregate and member-specific filters. A member is a simple profile/label, not a separate login in v1. Do not expose one household to other accounts.
+Provide household aggregate and member-specific filters. Archived members cannot be assigned to new income sources, income entries, expenses, obligations, or adjustments, but remain available in historical filters and retain attribution on existing records. A member is a simple profile/label, not a separate login in v1. Do not expose one household to other accounts.
 
 ### 2.5 Budgets and goals
 Monthly budgets can be set globally and per expense category, optionally per member. Each household/month/member/category scope must have at most one budget, including shared (unassigned) scopes.
@@ -78,7 +78,7 @@ Avoid double counting: paid obligation occurrence links to one expense; monthly 
 
 ## 4. Dates and recurrence
 
-Store timestamps in UTC and calendar dates as date-only values where appropriate; interpret recurrence using the household/user timezone. Default timezone Europe/Moscow, editable in settings.
+Store timestamps in UTC and calendar dates as date-only values where appropriate; interpret recurrence using the household/user timezone. Default timezone Europe/Moscow, editable in settings. API report date parameters must be valid calendar dates (invalid or impossible dates return 400), and report ranges / forecast horizons are bounded to two years to prevent unbounded occurrence generation and expensive aggregate queries.
 Daily: every day from start to end.
 Weekly: selected weekday(s) or interval.
 Twice monthly: two selected day numbers; clamp invalid days to month end; if same date, reject.
