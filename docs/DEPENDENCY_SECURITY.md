@@ -1,14 +1,14 @@
 # Dependency security snapshot
 
-Snapshot date: 2026-11-06  
+Snapshot date: 2026-11-07  
 Source: `npm audit --json` from the pull-request CI run. This is a dependency-tree snapshot, not a runtime penetration test.
 
 ## Summary
 
-- 12 advisories: 4 moderate, 6 high, 2 critical.
-- The critical advisories are in the Vitest test-runner dependency tree (`vitest`, `tinypool`).
-- The high advisories include `@prisma/config`, `prisma`, `body-parser`, `deepmerge-ts`, `vite` and `zod`.
-- Moderate advisories include `@vitest/mocker`, `esbuild`, `qs` and `vite-node`.
+- Full repository audit: 12 advisories (4 moderate, 6 high, 2 critical). The critical findings are in the Vitest test-runner dependency tree (`vitest`, `tinypool`).
+- Server workspace audit using `npm audit --workspace=@flowmoney/server --omit=dev`: 6 advisories (1 moderate, 5 high, 0 critical). Reported packages: `@prisma/config`, `body-parser`, `deepmerge-ts`, `prisma`, `qs` and `zod`.
+- The server-workspace result still includes Prisma CLI/config packages marked `devOptional` in the lockfile; treat it as a workspace-scoped audit with dev dependencies omitted, not a definitive inventory of only deployed runtime files.
+- The full-repository high advisories also include `vite`; moderate advisories include `@vitest/mocker`, `esbuild`, `qs` and `vite-node`.
 
 ## Supply-chain and authentication hardening
 
