@@ -59,7 +59,8 @@ async function ownedMember(memberId: string, userId: string) {
 }
 function memberError(res: Response) { return res.status(400).json({ message: 'Selected household member was not found.' }); }
 function dateQuery(value: unknown, fallback: Date) {
-  return typeof value === 'string' && dateSchema.safeParse(value).success ? dateValue(value) : fallback;
+  if (value === undefined || value === null || value === '') return fallback;
+  return typeof value === 'string' && dateSchema.safeParse(value).success ? dateValue(value) : new Date(Number.NaN);
 }
 const MAX_QUERY_RANGE_DAYS = 366 * 2;
 function isSafeQueryRange(from: Date, to: Date) {
