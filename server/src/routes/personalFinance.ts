@@ -658,7 +658,7 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
       monthTotal.income += amount; monthTotals.set(month, monthTotal);
     }
     return res.json({
-      totals: { income: incomes.reduce((sum, item) => sum + Number(item.actualAmount ?? 0), 0), expenses: expenses.reduce((sum, item) => sum + Number(item.amount), 0), obligations: obligations.reduce((sum, item) => sum + Number(item.plannedAmount), 0) },
+      totals: { income: incomes.reduce((sum, item) => sum + Number(item.actualAmount ?? 0), 0), expenses: expenses.reduce((sum, item) => sum + Number(item.amount), 0), obligations: obligations.reduce((sum, item) => sum + Number(item.status === 'PAID' ? (item.actualAmount ?? item.plannedAmount) : item.plannedAmount), 0) },
       categories: [...categoryTotals].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
       members: [...memberTotals].map(([name, totals]) => ({ name, ...totals, net: totals.income - totals.expenses })),
       months: [...monthTotals].sort((a, b) => a[0].localeCompare(b[0])).map(([month, totals]) => ({ month, ...totals, net: totals.income - totals.expenses })),
