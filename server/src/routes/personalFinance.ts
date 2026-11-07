@@ -666,7 +666,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
-      prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, status: true } }),
+      prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, actualAmount: true, status: true } }),
     ]);
     const actualIncome = Number(receivedAll._sum.actualAmount ?? 0);
     const actualExpenseTotal = Number(allExpenses._sum.amount ?? 0);
@@ -677,7 +677,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const dueTotal = monthOccurrences.reduce((sum, item) => sum + Number(item.plannedAmount), 0);
     const receivedThisMonth = Number(receivedPeriod._sum.actualAmount ?? 0);
     const plannedThisMonth = Number(plannedPeriod._sum.plannedAmount ?? 0);
-    const paidMonth = monthOccurrences.filter(item => item.status === 'PAID').reduce((sum, item) => sum + Number(item.plannedAmount), 0);
+    const paidMonth = monthOccurrences.filter(item => item.status === 'PAID').reduce((sum, item) => sum + Number(item.actualAmount ?? item.plannedAmount), 0);
     const unpaidMonth = dueTotal - paidMonth;
     const nextPayments = await prisma.obligationOccurrence.findMany({
       where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } },
