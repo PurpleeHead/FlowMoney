@@ -54,6 +54,9 @@ async function validMember(memberId: string | null | undefined, userId: string) 
   if (!memberId) return true;
   return Boolean(await prisma.householdMember.findFirst({ where: { id: memberId, userId, isArchived: false }, select: { id: true } }));
 }
+async function ownedMember(memberId: string, userId: string) {
+  return Boolean(await prisma.householdMember.findFirst({ where: { id: memberId, userId }, select: { id: true } }));
+}
 function memberError(res: Response) { return res.status(400).json({ message: 'Selected household member was not found.' }); }
 function dateQuery(value: unknown, fallback: Date) {
   return typeof value === 'string' && dateSchema.safeParse(value).success ? dateValue(value) : fallback;
@@ -655,7 +658,7 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
     const to = dateQuery(req.query.to, monthEnd(now));
     if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an analytics date range no longer than two years.' });
     const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
-    if (memberId && memberId !== 'shared' && !(await validMember(memberId, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
+    if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
     const analyticsSettings = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
     const analyticsTimeZone = analyticsSettings?.timezone ?? 'Europe/Moscow';
@@ -697,7 +700,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
   try {
     const userId = uid(req), now = await userToday(uid(req));
     const memberFilter = typeof req.query.memberId === 'string' ? req.query.memberId : '';
-    if (memberFilter && memberFilter !== 'shared' && !(await validMember(memberFilter, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
+    if (memberFilter && memberFilter !== 'shared' && !(await ownedMember(memberFilter, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
     const memberWhere = memberFilter === 'shared' ? { memberId: null } : memberFilter ? { memberId: memberFilter } : {};
     const obligationMemberWhere = memberFilter ? { obligation: { is: { memberId: memberFilter === 'shared' ? null : memberFilter } } } : {};
     const from = dateQuery(req.query.from, monthStart(now));
