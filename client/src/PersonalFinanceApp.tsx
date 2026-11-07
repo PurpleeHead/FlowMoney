@@ -360,7 +360,7 @@ export default function PersonalFinanceApp() {
 
 
       {tab === 'calendar' && <div className="pf-page pf-two-col">
-        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'КАЛЕНДАРЬ ДОМОХОЗЯЙСТВА' : 'HOUSEHOLD CALENDAR'}</span><h2>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' }).format(new Date())}</h2></div></div>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'КАЛЕНДАРЬ ДОМОХОЗЯЙСТВА' : 'HOUSEHOLD CALENDAR'}</span><h2>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</h2></div></div>
           <div className="pf-calendar-grid pf-calendar-weekdays">{(lang === 'ru' ? ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'] : ['Su','Mo','Tu','We','Th','Fr','Sa']).map(day => <span key={day}>{day}</span>)}</div>
           <div className="pf-calendar-grid">{calendarCells.map((day, index) => {
             const date = day ? ranges.from.slice(0,8) + String(day).padStart(2,'0') : '';
