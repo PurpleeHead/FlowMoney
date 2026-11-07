@@ -47,6 +47,10 @@ jobs:
         run: |
           npm audit --json > npm-audit.json || true
           node -e "const a=require('./npm-audit.json'); console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
+      - name: Report production dependency audit
+        run: |
+          npm audit --omit=dev --json > npm-audit-production.json || true
+          node -e "const a=require('./npm-audit-production.json'); console.log(JSON.stringify({productionSummary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
       - name: Validate Prisma schema
         run: npx prisma validate --schema server/prisma/schema.prisma
       - name: Generate Prisma Client
