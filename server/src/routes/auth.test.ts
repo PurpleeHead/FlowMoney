@@ -69,6 +69,26 @@ test('authentication works and household records stay isolated between accounts'
     const dashboardData = await dashboard.json() as { actual: { balance: number } };
     assert.equal(Number(dashboardData.actual.balance), 1000);
 
+    // A member-specific balance must exclude the household opening balance while
+    // still including that member's own received income and actual expenses.
+    const member = await createdMember.json() as { id: string };
+    const memberIncome = await post('/api/personal-finance/income-entries', {
+      plannedDate: today.toISOString().slice(0, 10), plannedAmount: 200, memberId: member.id,
+    }, first.token);
+    assert.equal(memberIncome.status, 201);
+    const memberIncomeEntry = await memberIncome.json() as { id: string };
+    const receivedMemberIncome = await post(`/api/personal-finance/income-entries/${memberIncomeEntry.id}/receive`, {}, first.token);
+    assert.equal(receivedMemberIncome.status, 200);
+    const memberExpense = await post('/api/personal-finance/expenses', {
+      title: 'Member balance test expense', amount: 50, date: today.toISOString().slice(0, 10), memberId: member.id,
+    }, first.token);
+    assert.equal(memberExpense.status, 201);
+    const memberDashboard = await get(`/api/personal-finance/dashboard?memberId=${member.id}`, first.token);
+    assert.equal(memberDashboard.status, 200);
+    const memberDashboardData = await memberDashboard.json() as { actual: { balance: number } };
+    assert.equal(Number(memberDashboardData.actual.balance), 150,
+      'member balance must include member transactions but not the household opening balance');
+
     const todayString = today.toISOString().slice(0, 10);
 
     // Reject oversized report windows before generating recurring rows or running broad aggregates.
