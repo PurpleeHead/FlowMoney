@@ -89,6 +89,10 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(Number(memberDashboardData.actual.balance), 150,
       'member balance must include member transactions but not the household opening balance');
 
+    const householdDashboardAfterMemberTransactions = await get('/api/personal-finance/dashboard', first.token);
+    assert.equal(Number((await householdDashboardAfterMemberTransactions.json() as { actual: { balance: number } }).actual.balance), 1150,
+      'household balance must include the opening balance and all members’ actual transactions');
+
     const todayString = today.toISOString().slice(0, 10);
 
     // Reject oversized report windows before generating recurring rows or running broad aggregates.
@@ -235,7 +239,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(expensesData.expenses.filter(item => item.title === 'Concurrent rent payment').length, 1);
     const afterPaymentDashboard = await get('/api/personal-finance/dashboard', first.token);
     const afterPaymentData = await afterPaymentDashboard.json() as { actual: { balance: number }; obligations: { paid: number; unpaid: number } };
-    assert.equal(Number(afterPaymentData.actual.balance), 250, 'the actual payment amount must reduce the actual balance exactly once');
+    assert.equal(Number(afterPaymentData.actual.balance), 400, 'the actual payment amount must reduce the household balance exactly once while retaining prior member transactions');
     assert.equal(Number(afterPaymentData.obligations.paid), 750, 'paid obligation reporting must use the actual amount, not the planned amount');
     assert.equal(Number(afterPaymentData.obligations.unpaid), 0, 'overpaying a planned obligation must not create a negative unpaid balance');
     const paidObligationAnalytics = await get(`/api/personal-finance/analytics?from=${todayString}&to=${todayString}`, first.token);
@@ -250,7 +254,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(plannedIncomeResponse.status, 201);
     const plannedIncome = await plannedIncomeResponse.json() as { id: string };
     const beforeReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 250,
+    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 400,
       'planned income must not affect the actual balance');
 
     const receivedIncome = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 1200 }, first.token);
@@ -258,7 +262,7 @@ test('authentication works and household records stay isolated between accounts'
     const duplicateReceipt = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 9000 }, first.token);
     assert.equal(duplicateReceipt.status, 200);
     const afterReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1450,
+    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1600,
       'receiving the same income entry again must not count it twice or overwrite the first actual amount');
 
     // A future selected report month must not hide planned income and obligations due before that month.
