@@ -251,10 +251,13 @@ router.post('/income-entries/:id/receive', async (req: AuthedRequest, res, next)
     const entry = await prisma.$transaction(async tx => {
       const current = await tx.incomeEntry.findFirst({ where: { id: String(req.params.id), userId } });
       if (!current || current.status === 'RECEIVED') return current;
-      return tx.incomeEntry.update({
-        where: { id: current.id },
+      const claimed = await tx.incomeEntry.updateMany({
+        where: { id: current.id, userId, status: { not: 'RECEIVED' } },
         data: { status: 'RECEIVED', actualAmount: parsed.data.actualAmount ?? current.plannedAmount, receivedAt: parsed.data.receivedAt ? new Date(parsed.data.receivedAt) : new Date() },
       });
+      // The conditional update is the atomic claim: only one concurrent request may set the received amount.
+      if (!claimed.count) return tx.incomeEntry.findFirst({ where: { id: current.id, userId } });
+      return tx.incomeEntry.findFirst({ where: { id: current.id, userId } });
     });
     if (!entry) return res.status(404).json({ message: 'Income entry not found.' });
     return res.json(entry);
