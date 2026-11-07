@@ -212,15 +212,17 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(timezoneIncomeResponse.status, 201);
     const timezoneIncome = await timezoneIncomeResponse.json() as { id: string };
     const timezoneReceipt = await post(`/api/personal-finance/income-entries/${timezoneIncome.id}/receive`, {
-      actualAmount: 250, receivedAt: '2026-11-06T06:30:00.000Z',
+      actualAmount: 250, receivedAt: '2026-11-01T06:30:00.000Z',
     }, first.token);
     assert.equal(timezoneReceipt.status, 200);
-    const localDayAnalytics = await get('/api/personal-finance/analytics?from=2026-11-05&to=2026-11-05', first.token);
+    const localDayAnalytics = await get('/api/personal-finance/analytics?from=2026-10-31&to=2026-10-31', first.token);
     assert.equal(localDayAnalytics.status, 200);
-    const localDayAnalyticsData = await localDayAnalytics.json() as { totals: { income: number } };
+    const localDayAnalyticsData = await localDayAnalytics.json() as { totals: { income: number }; months: Array<{ month: string; income: number }> };
     assert.equal(Number(localDayAnalyticsData.totals.income), 250,
-      'a receipt at 22:30 on November 5 in Los Angeles must belong to November 5, not November 6 UTC');
-    const localDayDashboard = await get('/api/personal-finance/dashboard?from=2026-11-05&to=2026-11-05', first.token);
+      'a receipt at 23:30 on October 31 in Los Angeles must belong to October 31, not November 1 UTC');
+    assert.equal(localDayAnalyticsData.months[0]?.month, '2026-10',
+      'monthly analytics must use the receipt local date when assigning the month');
+    const localDayDashboard = await get('/api/personal-finance/dashboard?from=2026-10-31&to=2026-10-31', first.token);
     assert.equal(localDayDashboard.status, 200);
     const localDayDashboardData = await localDayDashboard.json() as { actual: { income: number } };
     assert.equal(Number(localDayDashboardData.actual.income), 250);
