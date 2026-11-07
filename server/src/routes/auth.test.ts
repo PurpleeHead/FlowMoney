@@ -319,6 +319,14 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(conflictingBudgetUpdate.status, 409,
       'changing a budget into an existing month/scope must return a conflict instead of a server error');
 
+    const archiveBudgetMember = await patch(`/api/personal-finance/members/${budgetMember.id}`, { isArchived: true }, first.token);
+    assert.equal(archiveBudgetMember.status, 200);
+    const assignArchivedMember = await post('/api/personal-finance/income-sources', {
+      title: 'Archived member income', amount: 1000, recurrence: 'ONCE', startDate: today.toISOString().slice(0, 10), memberId: budgetMember.id,
+    }, first.token);
+    assert.equal(assignArchivedMember.status, 400,
+      'archived household members must not be assignable to new income sources');
+
     const secondResponse = await post('/api/auth/register', { email: secondEmail, password: 'Another-safe-password-123!' });
     assert.equal(secondResponse.status, 201);
     const second = await secondResponse.json() as { token: string };
