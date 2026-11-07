@@ -197,6 +197,23 @@ router.patch('/income-sources/:id', async (req: AuthedRequest, res, next) => {
     if (input.recurrenceConfig) data.recurrenceConfig = JSON.parse(JSON.stringify(input.recurrenceConfig));
     const result = await prisma.incomeSource.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Income source not found.' });
+    const today = await userToday(userId);
+    const scheduleChanged = ['amount', 'recurrence', 'recurrenceConfig', 'startDate', 'endDate', 'memberId'].some(key => key in input);
+    if (input.isActive === false) {
+      await prisma.incomeEntry.updateMany({
+        where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } },
+        data: { status: 'SKIPPED' },
+      });
+    } else if (scheduleChanged) {
+      await prisma.incomeEntry.deleteMany({
+        where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } },
+      });
+      const updatedSource = await prisma.incomeSource.findFirst({ where: { id: String(req.params.id), userId } });
+      if (updatedSource?.isActive) {
+        const horizon = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 3, 0));
+        await createIncomeOccurrences(updatedSource, today, horizon);
+      }
+    }
     return res.json(await prisma.incomeSource.findFirst({ where: { id: String(req.params.id), userId } }));
   } catch (error) { return next(error); }
 });
@@ -381,8 +398,22 @@ router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
     if (input.recurrenceConfig) data.recurrenceConfig = JSON.parse(JSON.stringify(input.recurrenceConfig));
     const result = await prisma.obligation.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
-    if (input.amount !== undefined) {
-      await prisma.obligationOccurrence.updateMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: await userToday(userId) } }, data: { plannedAmount: input.amount } });
+    const today = await userToday(userId);
+    const scheduleChanged = ['amount', 'recurrence', 'recurrenceConfig', 'startDate', 'endDate', 'memberId'].some(key => key in input);
+    if (input.isActive === false) {
+      await prisma.obligationOccurrence.updateMany({
+        where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } },
+        data: { status: 'SKIPPED' },
+      });
+    } else if (scheduleChanged) {
+      await prisma.obligationOccurrence.deleteMany({
+        where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } },
+      });
+      const updatedObligation = await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } });
+      if (updatedObligation?.isActive) {
+        const horizon = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 4, 0));
+        await createObligationOccurrences(updatedObligation, today, horizon, today);
+      }
     }
     return res.json(await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } }));
   } catch (error) { return next(error); }
