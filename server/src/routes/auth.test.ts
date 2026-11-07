@@ -352,6 +352,13 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(assignArchivedObligation.status, 400,
       'archived household members must not be assignable to new obligations');
 
+    const archivedMemberDashboard = await get(`/api/personal-finance/dashboard?memberId=${budgetMember.id}`, first.token);
+    assert.equal(archivedMemberDashboard.status, 200,
+      'archived household members must remain selectable in historical dashboard reports');
+    const archivedMemberAnalytics = await get(`/api/personal-finance/analytics?from=${todayString}&to=${todayString}&memberId=${budgetMember.id}`, first.token);
+    assert.equal(archivedMemberAnalytics.status, 200,
+      'archived household members must remain selectable in historical analytics');
+
     const secondResponse = await post('/api/auth/register', { email: secondEmail, password: 'Another-safe-password-123!' });
     assert.equal(secondResponse.status, 201);
     const second = await secondResponse.json() as { token: string };
