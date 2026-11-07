@@ -203,6 +203,30 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(historicalData.period.horizon, todayString);
 
     // Concurrent receipt requests must atomically preserve exactly one actual amount.
+    // Income reporting follows the configured local calendar day, not UTC date boundaries.
+    const timezoneUpdate = await patch('/api/personal-finance/settings', { timezone: 'America/Los_Angeles' }, first.token);
+    assert.equal(timezoneUpdate.status, 200);
+    const timezoneIncomeResponse = await post('/api/personal-finance/income-entries', {
+      plannedDate: todayString, plannedAmount: 250,
+    }, first.token);
+    assert.equal(timezoneIncomeResponse.status, 201);
+    const timezoneIncome = await timezoneIncomeResponse.json() as { id: string };
+    const timezoneReceipt = await post(`/api/personal-finance/income-entries/${timezoneIncome.id}/receive`, {
+      actualAmount: 250, receivedAt: '2026-11-06T06:30:00.000Z',
+    }, first.token);
+    assert.equal(timezoneReceipt.status, 200);
+    const localDayAnalytics = await get('/api/personal-finance/analytics?from=2026-11-05&to=2026-11-05', first.token);
+    assert.equal(localDayAnalytics.status, 200);
+    const localDayAnalyticsData = await localDayAnalytics.json() as { totals: { income: number } };
+    assert.equal(Number(localDayAnalyticsData.totals.income), 250,
+      'a receipt at 22:30 on November 5 in Los Angeles must belong to November 5, not November 6 UTC');
+    const localDayDashboard = await get('/api/personal-finance/dashboard?from=2026-11-05&to=2026-11-05', first.token);
+    assert.equal(localDayDashboard.status, 200);
+    const localDayDashboardData = await localDayDashboard.json() as { actual: { income: number } };
+    assert.equal(Number(localDayDashboardData.actual.income), 250);
+    const restoreTimezone = await patch('/api/personal-finance/settings', { timezone: 'Europe/Moscow' }, first.token);
+    assert.equal(restoreTimezone.status, 200);
+
     const concurrentIncomeResponse = await post('/api/personal-finance/income-entries', {
       plannedDate: todayString, plannedAmount: 1100,
     }, first.token);
