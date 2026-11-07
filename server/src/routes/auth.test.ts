@@ -121,11 +121,49 @@ test('authentication works and household records stay isolated between accounts'
     const skipScheduleObligation = await post(`/api/personal-finance/obligation-occurrences/${updatedObligationOccurrence.id}/skip`, {}, first.token);
     assert.equal(skipScheduleObligation.status, 200);
 
+    // Deactivating and reactivating a recurring income source must restore its future schedule.
+    const reactivationIncome = await post('/api/personal-finance/income-sources', {
+      title: 'Reactivation income test', amount: 300, recurrence: 'MONTHLY',
+      recurrenceConfig: { day: Number(todayString.slice(-2)) }, startDate: todayString,
+    }, first.token);
+    assert.equal(reactivationIncome.status, 201);
+    const reactivationIncomeSource = await reactivationIncome.json() as { id: string };
+    const deactivateIncome = await patch(`/api/personal-finance/income-sources/${reactivationIncomeSource.id}`, { isActive: false }, first.token);
+    assert.equal(deactivateIncome.status, 200);
+    const inactiveIncomeRows = await get(`/api/personal-finance/income-sources?from=${todayString}`, first.token);
+    const inactiveIncomeData = await inactiveIncomeRows.json() as { entries: Array<{ sourceId: string }> };
+    assert.equal(inactiveIncomeData.entries.filter(item => item.sourceId === reactivationIncomeSource.id).length, 0);
+    const reactivateIncome = await patch(`/api/personal-finance/income-sources/${reactivationIncomeSource.id}`, { isActive: true }, first.token);
+    assert.equal(reactivateIncome.status, 200);
+    const restoredIncomeRows = await get(`/api/personal-finance/income-sources?from=${todayString}`, first.token);
+    const restoredIncomeData = await restoredIncomeRows.json() as { entries: Array<{ sourceId: string; status: string }> };
+    assert.ok(restoredIncomeData.entries.some(item => item.sourceId === reactivationIncomeSource.id && item.status === 'PLANNED'),
+      'reactivating an income source must regenerate its future planned entries');
+
     const obligationResponse = await post('/api/personal-finance/obligations', {
       title: 'Concurrent rent payment', category: 'housing', amount: 700,
       recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
     }, first.token);
     assert.equal(obligationResponse.status, 201);
+    // Deactivating and reactivating an obligation must restore unpaid future occurrences.
+    const reactivationObligation = await post('/api/personal-finance/obligations', {
+      title: 'Reactivation obligation test', category: 'housing', amount: 450,
+      recurrence: 'MONTHLY', recurrenceConfig: { day: Number(todayString.slice(-2)) }, startDate: todayString,
+    }, first.token);
+    assert.equal(reactivationObligation.status, 201);
+    const reactivationObligationRecord = await reactivationObligation.json() as { id: string };
+    const deactivateObligation = await patch(`/api/personal-finance/obligations/${reactivationObligationRecord.id}`, { isActive: false }, first.token);
+    assert.equal(deactivateObligation.status, 200);
+    const inactiveObligationRows = await get(`/api/personal-finance/obligations?from=${todayString}`, first.token);
+    const inactiveObligationData = await inactiveObligationRows.json() as { occurrences: Array<{ obligationId: string }> };
+    assert.equal(inactiveObligationData.occurrences.filter(item => item.obligationId === reactivationObligationRecord.id).length, 0);
+    const reactivateObligation = await patch(`/api/personal-finance/obligations/${reactivationObligationRecord.id}`, { isActive: true }, first.token);
+    assert.equal(reactivateObligation.status, 200);
+    const restoredObligationRows = await get(`/api/personal-finance/obligations?from=${todayString}`, first.token);
+    const restoredObligationData = await restoredObligationRows.json() as { occurrences: Array<{ obligationId: string; status: string }> };
+    assert.ok(restoredObligationData.occurrences.some(item => item.obligationId === reactivationObligationRecord.id && ['UPCOMING', 'OVERDUE'].includes(item.status)),
+      'reactivating an obligation must regenerate its unpaid future occurrences');
+
     const obligationsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
     assert.equal(obligationsResponse.status, 200);
     const obligationsData = await obligationsResponse.json() as { occurrences: Array<{ id: string; status: string }> };
