@@ -26,6 +26,20 @@ const configSchema = z.object({
   month: z.number().int().min(1).max(12).optional(),
 }).default({});
 
+function recurrenceConfigError(value: string, config: RecurrenceConfig): string | null {
+  if (value === 'WEEKLY') {
+    const weekdays = config.weekdays;
+    if (weekdays && (!weekdays.length || new Set(weekdays).size !== weekdays.length)) {
+      return 'Choose at least one unique weekday for a weekly schedule.';
+    }
+  }
+  if (value === 'TWICE_MONTHLY') {
+    const firstDay = config.firstDay ?? 1;
+    const secondDay = config.secondDay ?? 15;
+    if (firstDay === secondDay) return 'Twice-monthly dates must be different.';
+  }
+  return null;
+}
 function dateValue(value: string) { return new Date(value + 'T00:00:00.000Z'); }
 function dateString(value: Date) { return value.toISOString().slice(0, 10); }
 function monthStart(value: Date) { return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1)); }
@@ -147,6 +161,8 @@ router.post('/income-sources', async (req: AuthedRequest, res, next) => {
     const parsed = incomeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Check the income name, amount, recurrence and dates.', issues: parsed.error.flatten() });
     const input = parsed.data, userId = uid(req);
+    const recurrenceError = recurrenceConfigError(input.recurrence, input.recurrenceConfig);
+    if (recurrenceError) return res.status(400).json({ message: recurrenceError });
     if (input.endDate && input.endDate < input.startDate) return res.status(400).json({ message: 'End date cannot be before start date.' });
     if (!(await validMember(input.memberId, userId))) return memberError(res);
     const source = await prisma.incomeSource.create({
@@ -166,7 +182,15 @@ router.patch('/income-sources/:id', async (req: AuthedRequest, res, next) => {
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid income source update.' });
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
-    if (input.startDate && input.endDate && input.endDate < input.startDate) return res.status(400).json({ message: 'End date cannot be before start date.' });
+    const existing = await prisma.incomeSource.findFirst({ where: { id: String(req.params.id), userId } });
+    if (!existing) return res.status(404).json({ message: 'Income source not found.' });
+    const effectiveRecurrence = input.recurrence ?? existing.recurrence;
+    const effectiveConfig = input.recurrenceConfig ?? existing.recurrenceConfig as RecurrenceConfig;
+    const recurrenceError = recurrenceConfigError(effectiveRecurrence, effectiveConfig);
+    if (recurrenceError) return res.status(400).json({ message: recurrenceError });
+    const effectiveStart = input.startDate ?? dateString(existing.startDate);
+    const effectiveEnd = input.endDate === undefined ? (existing.endDate ? dateString(existing.endDate) : null) : input.endDate;
+    if (effectiveEnd && effectiveEnd < effectiveStart) return res.status(400).json({ message: 'End date cannot be before start date.' });
     const data: Record<string, unknown> = { ...input };
     if (input.startDate) data.startDate = dateValue(input.startDate);
     if (input.endDate !== undefined) data.endDate = input.endDate ? dateValue(input.endDate) : null;
@@ -325,6 +349,8 @@ router.post('/obligations', async (req: AuthedRequest, res, next) => {
     const parsed = obligationSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Check the obligation title, amount, recurrence and dates.', issues: parsed.error.flatten() });
     const input = parsed.data, userId = uid(req);
+    const recurrenceError = recurrenceConfigError(input.recurrence, input.recurrenceConfig);
+    if (recurrenceError) return res.status(400).json({ message: recurrenceError });
     if (input.endDate && input.endDate < input.startDate) return res.status(400).json({ message: 'End date cannot be before start date.' });
     if (!(await validMember(input.memberId, userId))) return memberError(res);
     const obligation = await prisma.obligation.create({
@@ -340,7 +366,15 @@ router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid obligation update.' });
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
-    if (input.startDate && input.endDate && input.endDate < input.startDate) return res.status(400).json({ message: 'End date cannot be before start date.' });
+    const existing = await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } });
+    if (!existing) return res.status(404).json({ message: 'Obligation not found.' });
+    const effectiveRecurrence = input.recurrence ?? existing.recurrence;
+    const effectiveConfig = input.recurrenceConfig ?? existing.recurrenceConfig as RecurrenceConfig;
+    const recurrenceError = recurrenceConfigError(effectiveRecurrence, effectiveConfig);
+    if (recurrenceError) return res.status(400).json({ message: recurrenceError });
+    const effectiveStart = input.startDate ?? dateString(existing.startDate);
+    const effectiveEnd = input.endDate === undefined ? (existing.endDate ? dateString(existing.endDate) : null) : input.endDate;
+    if (effectiveEnd && effectiveEnd < effectiveStart) return res.status(400).json({ message: 'End date cannot be before start date.' });
     const data: Record<string, unknown> = { ...input };
     if (input.startDate) data.startDate = dateValue(input.startDate);
     if (input.endDate !== undefined) data.endDate = input.endDate ? dateValue(input.endDate) : null;
