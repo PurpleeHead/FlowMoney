@@ -58,6 +58,13 @@ function memberError(res: Response) { return res.status(400).json({ message: 'Se
 function dateQuery(value: unknown, fallback: Date) {
   return typeof value === 'string' && dateSchema.safeParse(value).success ? dateValue(value) : fallback;
 }
+const MAX_QUERY_RANGE_DAYS = 366 * 2;
+function isSafeQueryRange(from: Date, to: Date) {
+  return from <= to && to.getTime() - from.getTime() <= MAX_QUERY_RANGE_DAYS * 86400000;
+}
+function isSafeForecastHorizon(today: Date, horizon: Date) {
+  return horizon.getTime() - today.getTime() <= MAX_QUERY_RANGE_DAYS * 86400000;
+}
 async function userDateAt(userId: string, value: Date): Promise<Date> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: user?.timezone ?? 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value);
@@ -177,6 +184,7 @@ router.get('/income-sources', async (req: AuthedRequest, res, next) => {
   try {
     const now = await userToday(uid(req)), from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 3, 0)));
+    if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an income date range no longer than two years.' });
     const sources = await prisma.incomeSource.findMany({ where: { userId: uid(req), isActive: true } });
     for (const source of sources) await createIncomeOccurrences(source, from, to);
     const entries = await prisma.incomeEntry.findMany({
@@ -384,6 +392,7 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
   try {
     const now = await userToday(uid(req)), from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 4, 0)));
+    if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an obligations date range no longer than two years.' });
     const userId = uid(req);
     const obligations = await prisma.obligation.findMany({ where: { userId, isActive: true } });
     for (const obligation of obligations) await createObligationOccurrences(obligation, from, to, now);
@@ -644,6 +653,7 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
     const userId = uid(req), now = await userToday(uid(req));
     const from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, monthEnd(now));
+    if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an analytics date range no longer than two years.' });
     const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
     if (memberId && memberId !== 'shared' && !(await validMember(memberId, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
@@ -695,6 +705,9 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const requestedHorizon = dateQuery(req.query.horizon, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)));
     // A historical report period must not move the live forecast horizon backwards in time.
     const horizon = requestedHorizon < now ? now : requestedHorizon;
+    if (!isSafeQueryRange(from, to) || !isSafeForecastHorizon(now, horizon)) {
+      return res.status(400).json({ message: 'Choose a reporting range and forecast horizon no longer than two years.' });
+    }
     const openingSettings = await prisma.user.findUnique({ where: { id: userId }, select: { openingBalance: true, openingBalanceDate: true } });
     const openingDate = openingSettings?.openingBalanceDate ?? new Date(0);
     const receivedPeriodRange = await userDateTimeRange(userId, from, to);
