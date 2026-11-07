@@ -579,8 +579,11 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.incomeSource.findMany({ where: { userId, isActive: true, ...memberWhere } }),
       prisma.obligation.findMany({ where: { userId, isActive: true, ...(memberFilter ? { memberId: memberFilter === 'shared' ? null : memberFilter } : {}) } }),
     ]);
-    for (const source of sources) await createIncomeOccurrences(source, from, horizon);
-    for (const obligation of obligations) await createObligationOccurrences(obligation, from, horizon, now);
+    // Forecast schedules must be generated from today, even when the selected report month is in the future.
+    // Keep the earlier report start as well so historical period reporting can still find its occurrences.
+    const generationFrom = from < now ? from : now;
+    for (const source of sources) await createIncomeOccurrences(source, generationFrom, horizon);
+    for (const obligation of obligations) await createObligationOccurrences(obligation, generationFrom, horizon, now);
     const today = now;
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const inclusiveTo = new Date(to.getTime() + 86400000 - 1);
@@ -591,7 +594,8 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingDate, lte: balanceTimestampCutoff } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: from, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
-      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: horizon } }, _sum: { plannedAmount: true } }),
+      // The forecast starts at today, not at the selected reporting period's first day.
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: today, lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
