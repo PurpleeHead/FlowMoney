@@ -304,6 +304,19 @@ test('authentication works and household records stay isolated between accounts'
     assert.ok(budgetResponses.every(response => response.status === 200 || response.status === 201));
     const budgets = await get('/api/personal-finance/budgets', first.token);
     assert.equal((await budgets.json() as unknown[]).length, 1);
+    const budgetMemberResponse = await post('/api/personal-finance/members', { name: 'Budget scope test' }, first.token);
+    assert.equal(budgetMemberResponse.status, 201);
+    const budgetMember = await budgetMemberResponse.json() as { id: string };
+    const memberBudgetResponse = await post('/api/personal-finance/budgets', {
+      ...budgetPayload, memberId: budgetMember.id,
+    }, first.token);
+    assert.equal(memberBudgetResponse.status, 201);
+    const memberBudget = await memberBudgetResponse.json() as { id: string };
+    const conflictingBudgetUpdate = await patch(`/api/personal-finance/budgets/${memberBudget.id}`, {
+      memberId: null,
+    }, first.token);
+    assert.equal(conflictingBudgetUpdate.status, 409,
+      'changing a budget into an existing month/scope must return a conflict instead of a server error');
 
     const secondResponse = await post('/api/auth/register', { email: secondEmail, password: 'Another-safe-password-123!' });
     assert.equal(secondResponse.status, 201);
