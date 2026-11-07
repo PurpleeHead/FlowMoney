@@ -85,6 +85,17 @@ test('authentication works and household records stay isolated between accounts'
     const distantForecast = await get('/api/personal-finance/dashboard?from=' + todayString + '&to=' + todayString + '&horizon=2030-01-01', first.token);
     assert.equal(distantForecast.status, 400, 'forecast horizons beyond two years must be rejected');
 
+    for (const path of [
+      `/api/personal-finance/income-sources?from=not-a-date&to=${todayString}`,
+      `/api/personal-finance/obligations?from=not-a-date&to=${todayString}`,
+      `/api/personal-finance/analytics?from=not-a-date&to=${todayString}`,
+      `/api/personal-finance/dashboard?from=not-a-date&to=${todayString}`,
+      `/api/personal-finance/dashboard?from=${todayString}&to=${todayString}&horizon=not-a-date`,
+    ]) {
+      const response = await get(path, first.token);
+      assert.equal(response.status, 400, `malformed date parameters must be rejected: ${path}`);
+    }
+
     const invalidWeeklyIncome = await post('/api/personal-finance/income-sources', {
       title: 'Invalid weekly income', amount: 100, recurrence: 'WEEKLY',
       recurrenceConfig: { weekdays: [] }, startDate: todayString,
