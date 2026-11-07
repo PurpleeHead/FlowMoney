@@ -60,6 +60,31 @@ async function userDateAt(userId: string, value: Date): Promise<Date> {
   return dateValue(part('year') + '-' + part('month') + '-' + part('day'));
 }
 async function userToday(userId: string): Promise<Date> { return userDateAt(userId, new Date()); }
+function localMidnightUtc(date: Date, timeZone: string): Date {
+  const year = date.getUTCFullYear(), month = date.getUTCMonth(), day = date.getUTCDate();
+  const target = Date.UTC(year, month, day);
+  let candidate = target;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const parts = formatter.formatToParts(new Date(candidate));
+    const part = (name: string) => Number(parts.find(item => item.type === name)?.value ?? 0);
+    const represented = Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second'));
+    const adjustment = target - represented;
+    candidate += adjustment;
+    if (adjustment === 0) break;
+  }
+  return new Date(candidate);
+}
+async function userDateTimeRange(userId: string, from: Date, to: Date): Promise<{ from: Date; toExclusive: Date }> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+  const timeZone = user?.timezone ?? 'Europe/Moscow';
+  const nextDay = new Date(to);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  return { from: localMidnightUtc(from, timeZone), toExclusive: localMidnightUtc(nextDay, timeZone) };
+}
 
 async function createIncomeOccurrences(source: {
   id: string; userId: string; memberId: string | null; amount: unknown; recurrence: string;
@@ -598,9 +623,10 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
     const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
     if (memberId && memberId !== 'shared' && !(await validMember(memberId, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const receivedRange = await userDateTimeRange(userId, from, to);
     const [expenses, incomes, obligations] = await Promise.all([
       prisma.ledgerExpense.findMany({ where: { userId, ...memberWhere, date: { gte: from, lte: to } }, include: { category: true, member: true } }),
-      prisma.incomeEntry.findMany({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: from, lte: new Date(to.getTime() + 86400000 - 1) } }, include: { member: true } }),
+      prisma.incomeEntry.findMany({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedRange.from, lt: receivedRange.toExclusive } }, include: { member: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...(memberId ? { obligation: { is: { memberId: memberId === 'shared' ? null : memberId } } } : {}), dueDate: { gte: from, lte: to }, status: { not: 'SKIPPED' } }, include: { obligation: true } }),
     ]);
     const categoryTotals = new Map<string, number>();
@@ -645,6 +671,8 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const horizon = requestedHorizon < now ? now : requestedHorizon;
     const openingSettings = await prisma.user.findUnique({ where: { id: userId }, select: { openingBalance: true, openingBalanceDate: true } });
     const openingDate = openingSettings?.openingBalanceDate ?? new Date(0);
+    const receivedPeriodRange = await userDateTimeRange(userId, from, to);
+    const openingIncomeRange = await userDateTimeRange(userId, openingDate, now);
     const [sources, obligations] = await Promise.all([
       prisma.incomeSource.findMany({ where: { userId, isActive: true, ...memberWhere } }),
       prisma.obligation.findMany({ where: { userId, isActive: true, ...(memberFilter ? { memberId: memberFilter === 'shared' ? null : memberFilter } : {}) } }),
@@ -662,8 +690,8 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const balanceDateCutoff = new Date(now.getTime() + 86400000 - 1);
     const balanceTimestampCutoff = new Date();
     const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
-      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingDate, lte: balanceTimestampCutoff } }, _sum: { actualAmount: true } }),
-      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: from, lte: inclusiveTo } }, _sum: { actualAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingIncomeRange.from, lte: balanceTimestampCutoff } }, _sum: { actualAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } }, _sum: { actualAmount: true } }),
       // The forecast starts at today, not at the selected reporting period's first day.
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: today, lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
