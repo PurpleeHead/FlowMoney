@@ -569,11 +569,28 @@ router.patch('/budgets/:id', async (req: AuthedRequest, res, next) => {
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
     if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
-    const data: Record<string, unknown> = { ...input };
-    if (input.periodMonth) data.periodMonth = monthStart(dateValue(input.periodMonth));
-    const result = await prisma.budget.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
-    if (!result.count) return res.status(404).json({ message: 'Budget not found.' });
-    return res.json(await prisma.budget.findFirst({ where: { id: String(req.params.id), userId }, include: { category: true, member: true } }));
+    const budgetId = String(req.params.id);
+    const existing = await prisma.budget.findFirst({ where: { id: budgetId, userId } });
+    if (!existing) return res.status(404).json({ message: 'Budget not found.' });
+    const periodMonth = input.periodMonth ? monthStart(dateValue(input.periodMonth)) : existing.periodMonth;
+    const memberId = input.memberId !== undefined ? input.memberId : existing.memberId;
+    const categoryId = input.categoryId !== undefined ? input.categoryId : existing.categoryId;
+    const conflicting = await prisma.budget.findFirst({
+      where: { id: { not: budgetId }, userId, periodMonth, memberId, categoryId },
+      select: { id: true },
+    });
+    if (conflicting) return res.status(409).json({ message: 'A budget already exists for this month and scope. Update that budget instead.' });
+    const data: Record<string, unknown> = { ...input, periodMonth, memberId, categoryId };
+    try {
+      await prisma.budget.update({ where: { id: budgetId }, data: data as never });
+    } catch (error) {
+      // Another request may claim the same month/member/category scope after the preflight lookup.
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+        return res.status(409).json({ message: 'A budget already exists for this month and scope. Update that budget instead.' });
+      }
+      throw error;
+    }
+    return res.json(await prisma.budget.findFirst({ where: { id: budgetId, userId }, include: { category: true, member: true } }));
   } catch (error) { return next(error); }
 });
 router.delete('/budgets/:id', async (req: AuthedRequest, res, next) => {
