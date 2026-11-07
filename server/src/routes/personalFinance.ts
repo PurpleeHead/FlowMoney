@@ -42,6 +42,11 @@ function recurrenceConfigError(value: string, config: RecurrenceConfig): string 
 }
 function dateValue(value: string) { return new Date(value + 'T00:00:00.000Z'); }
 function dateString(value: Date) { return value.toISOString().slice(0, 10); }
+function dateStringInTimezone(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value);
+  const part = (name: string) => parts.find(item => item.type === name)?.value ?? '';
+  return part('year') + '-' + part('month') + '-' + part('day');
+}
 function monthStart(value: Date) { return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1)); }
 function monthEnd(value: Date) { return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 0)); }
 function uid(req: AuthedRequest) { return req.user!.id; }
@@ -623,6 +628,8 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
     const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
     if (memberId && memberId !== 'shared' && !(await validMember(memberId, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const analyticsSettings = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+    const analyticsTimeZone = analyticsSettings?.timezone ?? 'Europe/Moscow';
     const receivedRange = await userDateTimeRange(userId, from, to);
     const [expenses, incomes, obligations] = await Promise.all([
       prisma.ledgerExpense.findMany({ where: { userId, ...memberWhere, date: { gte: from, lte: to } }, include: { category: true, member: true } }),
@@ -645,7 +652,7 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
       const amount = Number(item.actualAmount ?? 0), name = item.member?.name ?? 'Shared';
       const totals = memberTotals.get(name) ?? { income: 0, expenses: 0 };
       totals.income += amount; memberTotals.set(name, totals);
-      const month = dateString(item.receivedAt ?? item.plannedDate).slice(0, 7), monthTotal = monthTotals.get(month) ?? { income: 0, expenses: 0 };
+      const month = dateStringInTimezone(item.receivedAt ?? item.plannedDate, analyticsTimeZone).slice(0, 7), monthTotal = monthTotals.get(month) ?? { income: 0, expenses: 0 };
       monthTotal.income += amount; monthTotals.set(month, monthTotal);
     }
     return res.json({
