@@ -190,6 +190,11 @@ test('authentication works and household records stay isolated between accounts'
     const afterPaymentData = await afterPaymentDashboard.json() as { actual: { balance: number }; obligations: { paid: number } };
     assert.equal(Number(afterPaymentData.actual.balance), 250, 'the actual payment amount must reduce the actual balance exactly once');
     assert.equal(Number(afterPaymentData.obligations.paid), 750, 'paid obligation reporting must use the actual amount, not the planned amount');
+    const paidObligationAnalytics = await get(`/api/personal-finance/analytics?from=${todayString}&to=${todayString}`, first.token);
+    assert.equal(paidObligationAnalytics.status, 200);
+    const paidObligationAnalyticsData = await paidObligationAnalytics.json() as { totals: { obligations: number } };
+    assert.equal(Number(paidObligationAnalyticsData.totals.obligations), 750,
+      'analytics obligation totals must use the actual amount paid, not the planned amount');
 
     const plannedIncomeResponse = await post('/api/personal-finance/income-entries', {
       plannedDate: todayString, plannedAmount: 1000,
