@@ -1,0 +1,86 @@
+name: FlowMoney CI
+
+on:
+  push:
+    branches: [feature/personal-finance-rework]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flowmoney-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-test:
+    name: Validate, build and test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flowmoney
+          POSTGRES_PASSWORD: flowmoney
+          POSTGRES_DB: flowmoney
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowmoney -d flowmoney"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://flowmoney:flowmoney@localhost:5432/flowmoney
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Report dependency audit
+        run: |
+          npm audit --json > npm-audit.json || true
+          node -e "const a=require('./npm-audit.json'); console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
+      - name: Report server workspace audit (omit dev)
+        run: |
+          npm audit --workspace=@flowmoney/server --omit=dev --json > npm-audit-server-runtime.json || true
+          node -e "const a=require('./npm-audit-server-runtime.json'); console.log(JSON.stringify({serverWorkspaceOmitDevSummary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
+      - name: Validate Prisma schema
+        run: npx prisma validate --schema server/prisma/schema.prisma
+      - name: Generate Prisma Client
+        run: npm run db:generate
+      - name: Apply committed migrations to ephemeral PostgreSQL
+        run: npx prisma migrate deploy --schema server/prisma/schema.prisma
+      - name: Build server and client
+        run: npm run build
+      - name: Run server and client tests
+        run: npm test
+      - name: Validate PowerShell script syntax
+        shell: pwsh
+        run: |
+          $scripts = @(
+            "START-FLOWMONEY.ps1",
+            "UPDATE-DEPENDENCIES.ps1",
+            "BACKUP-LOCAL-FLOWMONEY.ps1",
+            "VERIFY-LOCAL-BACKUP.ps1"
+          )
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD $script),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | Format-List | Out-String | Write-Error
+              exit 1
+            }
+            Write-Host "Parsed $script"
+          }

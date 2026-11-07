@@ -5,7 +5,8 @@ services:
     plan: free
     region: singapore
     buildCommand: npm ci && npm run db:generate && npm run build
-    startCommand: npx prisma migrate deploy --schema server/prisma/schema.prisma && npm start
+    # Migrations are intentionally manual; never mutate a persistent database on service startup.
+    startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
