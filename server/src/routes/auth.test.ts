@@ -326,6 +326,16 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(assignArchivedMember.status, 400,
       'archived household members must not be assignable to new income sources');
+    const assignArchivedExpense = await post('/api/personal-finance/expenses', {
+      title: 'Archived member expense', amount: 100, date: today.toISOString().slice(0, 10), memberId: budgetMember.id,
+    }, first.token);
+    assert.equal(assignArchivedExpense.status, 400,
+      'archived household members must not be assignable to new expenses');
+    const assignArchivedObligation = await post('/api/personal-finance/obligations', {
+      title: 'Archived member obligation', category: 'Other', amount: 500, recurrence: 'ONCE', startDate: today.toISOString().slice(0, 10), memberId: budgetMember.id,
+    }, first.token);
+    assert.equal(assignArchivedObligation.status, 400,
+      'archived household members must not be assignable to new obligations');
 
     const secondResponse = await post('/api/auth/register', { email: secondEmail, password: 'Another-safe-password-123!' });
     assert.equal(secondResponse.status, 201);
