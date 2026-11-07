@@ -348,7 +348,9 @@ test('authentication works and household records stay isolated between accounts'
     const secondMembers = await get('/api/personal-finance/members', second.token);
     assert.equal(firstMembers.status, 200);
     assert.equal(secondMembers.status, 200);
-    assert.equal((await firstMembers.json() as unknown[]).length, 1);
+    const firstMemberList = await firstMembers.json() as Array<{ id: string; isArchived: boolean }>;
+    assert.equal(firstMemberList.length, 2, 'archived household members remain visible for historical records');
+    assert.equal(firstMemberList.find(member => member.id === budgetMember.id)?.isArchived, true);
     assert.equal((await secondMembers.json() as unknown[]).length, 1);
 
     const invalidLogin = await post('/api/auth/login', { email: firstEmail, password: 'incorrect-password' });
