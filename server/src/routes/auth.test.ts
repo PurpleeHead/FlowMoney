@@ -80,6 +80,39 @@ test('authentication works and household records stay isolated between accounts'
       recurrence: 'TWICE_MONTHLY', recurrenceConfig: { firstDay: 10, secondDay: 10 }, startDate: todayString,
     }, first.token);
     assert.equal(invalidTwiceMonthlyObligation.status, 400, 'duplicate twice-monthly dates must be rejected as a client validation error');
+
+    const recurringIncome = await post('/api/personal-finance/income-sources', {
+      title: 'Schedule edit test income', amount: 300, recurrence: 'MONTHLY',
+      recurrenceConfig: { day: Number(todayString.slice(-2)) }, startDate: todayString,
+    }, first.token);
+    assert.equal(recurringIncome.status, 201);
+    const recurringIncomeSource = await recurringIncome.json() as { id: string };
+    const incomeScheduleEdit = await patch(`/api/personal-finance/income-sources/${recurringIncomeSource.id}`, {
+      recurrence: 'ONCE', recurrenceConfig: {},
+    }, first.token);
+    assert.equal(incomeScheduleEdit.status, 200);
+    const updatedIncomeSchedules = await get(`/api/personal-finance/income-sources?from=${todayString}`, first.token);
+    const updatedIncomeData = await updatedIncomeSchedules.json() as { entries: Array<{ sourceId: string }> };
+    assert.equal(updatedIncomeData.entries.filter(item => item.sourceId === recurringIncomeSource.id).length, 1,
+      'editing an income schedule must remove obsolete future generated occurrences');
+
+    const recurringObligation = await post('/api/personal-finance/obligations', {
+      title: 'Schedule edit test obligation', category: 'housing', amount: 200,
+      recurrence: 'MONTHLY', recurrenceConfig: { day: Number(todayString.slice(-2)) }, startDate: todayString,
+    }, first.token);
+    assert.equal(recurringObligation.status, 201);
+    const recurringObligationRecord = await recurringObligation.json() as { id: string };
+    const obligationScheduleEdit = await patch(`/api/personal-finance/obligations/${recurringObligationRecord.id}`, {
+      recurrence: 'ONCE', recurrenceConfig: {},
+    }, first.token);
+    assert.equal(obligationScheduleEdit.status, 200);
+    const updatedObligationSchedules = await get(`/api/personal-finance/obligations?from=${todayString}`, first.token);
+    const updatedObligationData = await updatedObligationSchedules.json() as {
+      occurrences: Array<{ obligationId: string }>;
+    };
+    assert.equal(updatedObligationData.occurrences.filter(item => item.obligationId === recurringObligationRecord.id).length, 1,
+      'editing an obligation schedule must remove obsolete future generated occurrences');
+
     const obligationResponse = await post('/api/personal-finance/obligations', {
       title: 'Concurrent rent payment', category: 'housing', amount: 700,
       recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
