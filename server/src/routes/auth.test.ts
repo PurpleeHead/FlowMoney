@@ -125,7 +125,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.ok(occurrence, 'one-time obligation occurrence should be generated');
 
     const paymentResponses = await Promise.all([
-      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, {}, first.token),
+      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 750 }, first.token),
       post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, {}, first.token),
     ]);
     assert.ok(paymentResponses.every(response => response.status === 200));
@@ -138,7 +138,9 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(expensesData.expenses.filter(item => item.title === 'Concurrent rent payment').length, 1);
     const afterPaymentDashboard = await get('/api/personal-finance/dashboard', first.token);
     const afterPaymentData = await afterPaymentDashboard.json() as { actual: { balance: number } };
-    assert.equal(Number(afterPaymentData.actual.balance), 300, 'paid obligation must reduce the actual balance exactly once');
+    assert.equal(Number(afterPaymentData.actual.balance), 250, 'the actual payment amount must reduce the actual balance exactly once');
+    const afterPaymentObligations = (await afterPaymentDashboard.json()) as { obligations: { paid: number } };
+    assert.equal(Number(afterPaymentObligations.obligations.paid), 750, 'paid obligation reporting must use the actual amount, not the planned amount');
 
     const plannedIncomeResponse = await post('/api/personal-finance/income-entries', {
       plannedDate: todayString, plannedAmount: 1000,
@@ -146,7 +148,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(plannedIncomeResponse.status, 201);
     const plannedIncome = await plannedIncomeResponse.json() as { id: string };
     const beforeReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 300,
+    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 250,
       'planned income must not affect the actual balance');
 
     const receivedIncome = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 1200 }, first.token);
@@ -154,7 +156,7 @@ test('authentication works and household records stay isolated between accounts'
     const duplicateReceipt = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 9000 }, first.token);
     assert.equal(duplicateReceipt.status, 200);
     const afterReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1500,
+    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1450,
       'receiving the same income entry again must not count it twice or overwrite the first actual amount');
 
     // A future selected report month must not hide planned income and obligations due before that month.
@@ -182,7 +184,7 @@ test('authentication works and household records stay isolated between accounts'
       'forecast must include planned income between today and a future selected month');
     assert.equal(Number(futureMonthData.forecast.unpaidObligations), 250,
       'forecast must include unpaid obligations due before a future selected month');
-    assert.equal(Number(futureMonthData.forecast.balance), 1750,
+    assert.equal(Number(futureMonthData.forecast.balance), 1700,
       'future-month forecast must reconcile from current actual balance plus near-term income less near-term obligations');
 
     const budgetPayload = { periodMonth: today.toISOString().slice(0, 7) + '-01', limitAmount: 10000 };
