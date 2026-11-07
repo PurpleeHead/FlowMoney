@@ -202,6 +202,27 @@ test('authentication works and household records stay isolated between accounts'
     const historicalData = await historical.json() as { period: { horizon: string } };
     assert.equal(historicalData.period.horizon, todayString);
 
+    // Concurrent receipt requests must atomically preserve exactly one actual amount.
+    const concurrentIncomeResponse = await post('/api/personal-finance/income-entries', {
+      plannedDate: todayString, plannedAmount: 1100,
+    }, first.token);
+    assert.equal(concurrentIncomeResponse.status, 201);
+    const concurrentIncome = await concurrentIncomeResponse.json() as { id: string };
+    const concurrentReceipts = await Promise.all([
+      post(`/api/personal-finance/income-entries/${concurrentIncome.id}/receive`, { actualAmount: 1300 }, first.token),
+      post(`/api/personal-finance/income-entries/${concurrentIncome.id}/receive`, { actualAmount: 1700 }, first.token),
+    ]);
+    assert.ok(concurrentReceipts.every(response => response.status === 200));
+    const concurrentReceiptResults = await Promise.all(concurrentReceipts.map(response => response.json() as Promise<{ status: string; actualAmount: number }>));
+    assert.ok(concurrentReceiptResults.every(result => result.status === 'RECEIVED'));
+    assert.ok([1300, 1700].includes(Number(concurrentReceiptResults[0].actualAmount)));
+    assert.equal(Number(concurrentReceiptResults[0].actualAmount), Number(concurrentReceiptResults[1].actualAmount),
+      'concurrent receipt requests must return the same winning actual amount');
+    const afterConcurrentReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
+    const afterConcurrentReceiptData = await afterConcurrentReceiptDashboard.json() as { actual: { balance: number } };
+    assert.equal(Number(afterConcurrentReceiptData.actual.balance), 1450 + Number(concurrentReceiptResults[0].actualAmount),
+      'concurrent receipt requests must add the winning actual amount to the balance exactly once');
+
     const budgetPayload = { periodMonth: today.toISOString().slice(0, 7) + '-01', limitAmount: 10000 };
     const budgetResponses = await Promise.all([
       post('/api/personal-finance/budgets', budgetPayload, first.token),
