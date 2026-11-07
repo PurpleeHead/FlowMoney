@@ -92,12 +92,12 @@ export default function PersonalFinanceApp() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [adjustments, setAdjustments] = useState<Array<{ id: string; amount: number | string; date: string; reason: string }>>([]);
 
-  const [incomeTitle, setIncomeTitle] = useState('Зарплата');
-  const [incomeAmount, setIncomeAmount] = useState('5000');
-  const [incomeRecurrence, setIncomeRecurrence] = useState('DAILY');
+  const [incomeTitle, setIncomeTitle] = useState('');
+  const [incomeAmount, setIncomeAmount] = useState('');
+  const [incomeRecurrence, setIncomeRecurrence] = useState('MONTHLY');
   const [incomeStart, setIncomeStart] = useState(moscowToday());
   const [incomeEnd, setIncomeEnd] = useState('');
-  const [incomeDay1, setIncomeDay1] = useState('1');
+  const [incomeDay1, setIncomeDay1] = useState(String(Number(moscowToday().slice(-2))));
   const [incomeDay2, setIncomeDay2] = useState('15');
   const [incomeWeekday, setIncomeWeekday] = useState('1');
   const [incomeIntervalWeeks, setIncomeIntervalWeeks] = useState('1');
