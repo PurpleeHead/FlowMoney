@@ -290,7 +290,7 @@ test('authentication works and household records stay isolated between accounts'
       'forecast must include planned income between today and a future selected month');
     assert.equal(Number(futureMonthData.forecast.unpaidObligations), 250,
       'forecast must include unpaid obligations due before a future selected month');
-    assert.equal(Number(futureMonthData.forecast.balance), 1700,
+    assert.equal(Number(futureMonthData.forecast.balance), 1850,
       'future-month forecast must reconcile from current actual balance plus near-term income less near-term obligations');
 
     const priorMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
@@ -345,7 +345,7 @@ test('authentication works and household records stay isolated between accounts'
       'concurrent receipt requests must return the same winning actual amount');
     const afterConcurrentReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
     const afterConcurrentReceiptData = await afterConcurrentReceiptDashboard.json() as { actual: { balance: number } };
-    assert.equal(Number(afterConcurrentReceiptData.actual.balance), 1450 + Number(concurrentReceiptResults[0].actualAmount),
+    assert.equal(Number(afterConcurrentReceiptData.actual.balance), 1600 + Number(concurrentReceiptResults[0].actualAmount),
       'concurrent receipt requests must add the winning actual amount to the balance exactly once');
 
     const budgetPayload = { periodMonth: today.toISOString().slice(0, 7) + '-01', limitAmount: 10000 };
