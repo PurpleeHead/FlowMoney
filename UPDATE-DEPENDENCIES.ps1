@@ -47,7 +47,9 @@ try {
   Invoke-Npm -Arguments @("run", "db:generate", "--", "--schema", "server/prisma/schema.prisma") -FailureMessage "Prisma Client generation failed."
 
   Write-Host "Applying compatible security updates only (no --force)..."
-  Invoke-Npm -Arguments @("audit", "fix", "--registry=$registry") -FailureMessage "npm audit fix failed."
+  & npm audit fix "--registry=$registry"
+  $auditFixExit = $LASTEXITCODE
+  if ($auditFixExit -gt 1) { throw "npm audit fix failed operationally with exit code $auditFixExit. The final audit below will distinguish remaining advisories from registry errors." }
 
   Write-Host "Regenerating Prisma Client after dependency updates..."
   Invoke-Npm -Arguments @("run", "db:generate", "--", "--schema", "server/prisma/schema.prisma") -FailureMessage "Prisma Client generation failed after updates."
