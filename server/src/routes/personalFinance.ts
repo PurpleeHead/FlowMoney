@@ -737,7 +737,10 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const receivedThisMonth = Number(receivedPeriod._sum.actualAmount ?? 0);
     const plannedThisMonth = Number(plannedPeriod._sum.plannedAmount ?? 0);
     const paidMonth = monthOccurrences.filter(item => item.status === 'PAID').reduce((sum, item) => sum + Number(item.actualAmount ?? item.plannedAmount), 0);
-    const unpaidMonth = dueTotal - paidMonth;
+    // Unpaid is the remaining planned amount only; subtracting actual paid amounts from planned due
+    // can produce a negative remainder when a payment exceeds the original estimate.
+    const unpaidMonth = monthOccurrences.filter(item => item.status === 'UPCOMING' || item.status === 'OVERDUE')
+      .reduce((sum, item) => sum + Number(item.plannedAmount), 0);
     const nextPayments = await prisma.obligationOccurrence.findMany({
       where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } },
       include: { obligation: true }, orderBy: { dueDate: 'asc' }, take: 10,
