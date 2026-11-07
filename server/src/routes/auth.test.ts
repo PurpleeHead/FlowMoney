@@ -92,9 +92,13 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(incomeScheduleEdit.status, 200);
     const updatedIncomeSchedules = await get(`/api/personal-finance/income-sources?from=${todayString}`, first.token);
-    const updatedIncomeData = await updatedIncomeSchedules.json() as { entries: Array<{ sourceId: string }> };
+    const updatedIncomeData = await updatedIncomeSchedules.json() as { entries: Array<{ id: string; sourceId: string }> };
+    const updatedIncomeEntry = updatedIncomeData.entries.find(item => item.sourceId === recurringIncomeSource.id);
+    assert.ok(updatedIncomeEntry, 'edited one-time income schedule should keep its next occurrence');
     assert.equal(updatedIncomeData.entries.filter(item => item.sourceId === recurringIncomeSource.id).length, 1,
       'editing an income schedule must remove obsolete future generated occurrences');
+    const skipScheduleIncome = await patch(`/api/personal-finance/income-entries/${updatedIncomeEntry.id}`, { status: 'SKIPPED' }, first.token);
+    assert.equal(skipScheduleIncome.status, 200);
 
     const recurringObligation = await post('/api/personal-finance/obligations', {
       title: 'Schedule edit test obligation', category: 'housing', amount: 200,
@@ -108,10 +112,14 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(obligationScheduleEdit.status, 200);
     const updatedObligationSchedules = await get(`/api/personal-finance/obligations?from=${todayString}`, first.token);
     const updatedObligationData = await updatedObligationSchedules.json() as {
-      occurrences: Array<{ obligationId: string }>;
+      occurrences: Array<{ id: string; obligationId: string }>;
     };
+    const updatedObligationOccurrence = updatedObligationData.occurrences.find(item => item.obligationId === recurringObligationRecord.id);
+    assert.ok(updatedObligationOccurrence, 'edited one-time obligation schedule should keep its next occurrence');
     assert.equal(updatedObligationData.occurrences.filter(item => item.obligationId === recurringObligationRecord.id).length, 1,
       'editing an obligation schedule must remove obsolete future generated occurrences');
+    const skipScheduleObligation = await post(`/api/personal-finance/obligation-occurrences/${updatedObligationOccurrence.id}/skip`, {}, first.token);
+    assert.equal(skipScheduleObligation.status, 200);
 
     const obligationResponse = await post('/api/personal-finance/obligations', {
       title: 'Concurrent rent payment', category: 'housing', amount: 700,
@@ -126,7 +134,7 @@ test('authentication works and household records stay isolated between accounts'
 
     const paymentResponses = await Promise.all([
       post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 750 }, first.token),
-      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, {}, first.token),
+      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 750 }, first.token),
     ]);
     assert.ok(paymentResponses.every(response => response.status === 200));
     const paymentResults = await Promise.all(paymentResponses.map(response => response.json() as Promise<{ status: string; expenseId: string | null }>));
