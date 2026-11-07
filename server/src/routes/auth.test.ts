@@ -70,6 +70,21 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(Number(dashboardData.actual.balance), 1000);
 
     const todayString = today.toISOString().slice(0, 10);
+
+    // Reject oversized report windows before generating recurring rows or running broad aggregates.
+    const wideRange = 'from=2020-01-01&to=2026-11-30';
+    for (const path of [
+      `/api/personal-finance/income-sources?${wideRange}`,
+      `/api/personal-finance/obligations?${wideRange}`,
+      `/api/personal-finance/analytics?${wideRange}`,
+      `/api/personal-finance/dashboard?${wideRange}`,
+    ]) {
+      const response = await get(path, first.token);
+      assert.equal(response.status, 400, `oversized date range must be rejected: ${path}`);
+    }
+    const distantForecast = await get('/api/personal-finance/dashboard?from=' + todayString + '&to=' + todayString + '&horizon=2030-01-01', first.token);
+    assert.equal(distantForecast.status, 400, 'forecast horizons beyond two years must be rejected');
+
     const invalidWeeklyIncome = await post('/api/personal-finance/income-sources', {
       title: 'Invalid weekly income', amount: 100, recurrence: 'WEEKLY',
       recurrenceConfig: { weekdays: [] }, startDate: todayString,
