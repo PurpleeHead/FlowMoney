@@ -229,12 +229,13 @@ router.patch('/income-sources/:id', async (req: AuthedRequest, res, next) => {
     if (!result.count) return res.status(404).json({ message: 'Income source not found.' });
     const today = await userToday(userId);
     const scheduleChanged = ['amount', 'recurrence', 'recurrenceConfig', 'startDate', 'endDate', 'memberId'].some(key => key in input);
+    const reactivated = input.isActive === true && !existing.isActive;
     if (input.isActive === false) {
-      await prisma.incomeEntry.updateMany({
+      // Generated future rows are disposable; remove them so reactivation can safely regenerate them.
+      await prisma.incomeEntry.deleteMany({
         where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } },
-        data: { status: 'SKIPPED' },
       });
-    } else if (scheduleChanged) {
+    } else if (scheduleChanged || reactivated) {
       await prisma.incomeEntry.deleteMany({
         where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } },
       });
@@ -253,7 +254,7 @@ router.delete('/income-sources/:id', async (req: AuthedRequest, res, next) => {
     const today = await userToday(userId);
     const result = await prisma.incomeSource.updateMany({ where: { id: String(req.params.id), userId }, data: { isActive: false } });
     if (!result.count) return res.status(404).json({ message: 'Income source not found.' });
-    await prisma.incomeEntry.updateMany({ where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } }, data: { status: 'SKIPPED' } });
+    await prisma.incomeEntry.deleteMany({ where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } } });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
@@ -433,12 +434,13 @@ router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
     if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
     const today = await userToday(userId);
     const scheduleChanged = ['amount', 'recurrence', 'recurrenceConfig', 'startDate', 'endDate', 'memberId'].some(key => key in input);
+    const reactivated = input.isActive === true && !existing.isActive;
     if (input.isActive === false) {
-      await prisma.obligationOccurrence.updateMany({
+      // Remove only unpaid generated future rows; paid history and manually skipped rows stay intact.
+      await prisma.obligationOccurrence.deleteMany({
         where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } },
-        data: { status: 'SKIPPED' },
       });
-    } else if (scheduleChanged) {
+    } else if (scheduleChanged || reactivated) {
       await prisma.obligationOccurrence.deleteMany({
         where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } },
       });
@@ -457,7 +459,7 @@ router.delete('/obligations/:id', async (req: AuthedRequest, res, next) => {
     const result = await prisma.obligation.updateMany({ where: { id: String(req.params.id), userId }, data: { isActive: false } });
     if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
     const today = await userToday(userId);
-    await prisma.obligationOccurrence.updateMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } }, data: { status: 'SKIPPED' } });
+    await prisma.obligationOccurrence.deleteMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } } });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
