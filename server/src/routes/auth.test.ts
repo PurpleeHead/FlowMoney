@@ -114,6 +114,34 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1500,
       'receiving the same income entry again must not count it twice or overwrite the first actual amount');
 
+    // A future selected report month must not hide planned income and obligations due before that month.
+    const forecastIncome = await post('/api/personal-finance/income-entries', {
+      plannedDate: futureDate, plannedAmount: 500,
+    }, first.token);
+    assert.equal(forecastIncome.status, 201);
+    const forecastObligation = await post('/api/personal-finance/obligations', {
+      title: 'Upcoming forecast commitment', category: 'housing', amount: 250,
+      recurrence: 'ONCE', recurrenceConfig: {}, startDate: futureDate,
+    }, first.token);
+    assert.equal(forecastObligation.status, 201);
+    const nextMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1));
+    const nextMonthFrom = nextMonth.toISOString().slice(0, 10);
+    const nextMonthEnd = new Date(Date.UTC(nextMonth.getUTCFullYear(), nextMonth.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    const futureMonthDashboard = await get(
+      `/api/personal-finance/dashboard?from=${nextMonthFrom}&to=${nextMonthEnd}&horizon=${nextMonthEnd}`,
+      first.token,
+    );
+    assert.equal(futureMonthDashboard.status, 200);
+    const futureMonthData = await futureMonthDashboard.json() as {
+      forecast: { plannedIncome: number; unpaidObligations: number; balance: number };
+    };
+    assert.equal(Number(futureMonthData.forecast.plannedIncome), 500,
+      'forecast must include planned income between today and a future selected month');
+    assert.equal(Number(futureMonthData.forecast.unpaidObligations), 250,
+      'forecast must include unpaid obligations due before a future selected month');
+    assert.equal(Number(futureMonthData.forecast.balance), 1750,
+      'future-month forecast must reconcile from current actual balance plus near-term income less near-term obligations');
+
     const budgetPayload = { periodMonth: today.toISOString().slice(0, 7) + '-01', limitAmount: 10000 };
     const budgetResponses = await Promise.all([
       post('/api/personal-finance/budgets', budgetPayload, first.token),
