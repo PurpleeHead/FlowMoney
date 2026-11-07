@@ -44,7 +44,7 @@ try {
   Invoke-Npm -Arguments @("ci", "--registry=$registry") -FailureMessage "npm ci failed."
 
   Write-Host "Generating Prisma Client before TypeScript compilation..."
-  Invoke-Npm -Arguments @("run", "db:generate", "--", "--schema", "server/prisma/schema.prisma") -FailureMessage "Prisma Client generation failed."
+  Invoke-Npm -Arguments @("run", "db:generate") -FailureMessage "Prisma Client generation failed."
 
   Write-Host "Applying compatible security updates only (no --force)..."
   & npm audit fix "--registry=$registry"
@@ -52,7 +52,7 @@ try {
   if ($auditFixExit -gt 1) { throw "npm audit fix failed operationally with exit code $auditFixExit. The final audit below will distinguish remaining advisories from registry errors." }
 
   Write-Host "Regenerating Prisma Client after dependency updates..."
-  Invoke-Npm -Arguments @("run", "db:generate", "--", "--schema", "server/prisma/schema.prisma") -FailureMessage "Prisma Client generation failed after updates."
+  Invoke-Npm -Arguments @("run", "db:generate") -FailureMessage "Prisma Client generation failed after updates."
 
   Write-Host "Checking production and client builds..."
   Invoke-Npm -Arguments @("run", "build") -FailureMessage "Build failed after dependency updates."
