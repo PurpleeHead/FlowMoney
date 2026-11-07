@@ -70,6 +70,16 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(Number(dashboardData.actual.balance), 1000);
 
     const todayString = today.toISOString().slice(0, 10);
+    const invalidWeeklyIncome = await post('/api/personal-finance/income-sources', {
+      title: 'Invalid weekly income', amount: 100, recurrence: 'WEEKLY',
+      recurrenceConfig: { weekdays: [] }, startDate: todayString,
+    }, first.token);
+    assert.equal(invalidWeeklyIncome.status, 400, 'empty weekly weekday selection must be rejected as a client validation error');
+    const invalidTwiceMonthlyObligation = await post('/api/personal-finance/obligations', {
+      title: 'Invalid twice-monthly obligation', category: 'housing', amount: 100,
+      recurrence: 'TWICE_MONTHLY', recurrenceConfig: { firstDay: 10, secondDay: 10 }, startDate: todayString,
+    }, first.token);
+    assert.equal(invalidTwiceMonthlyObligation.status, 400, 'duplicate twice-monthly dates must be rejected as a client validation error');
     const obligationResponse = await post('/api/personal-finance/obligations', {
       title: 'Concurrent rent payment', category: 'housing', amount: 700,
       recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
