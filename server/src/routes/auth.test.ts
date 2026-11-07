@@ -194,7 +194,10 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(Number(futureMonthData.forecast.balance), 1700,
       'future-month forecast must reconcile from current actual balance plus near-term income less near-term obligations');
 
-    const historical = await get(`/api/personal-finance/dashboard?from=2026-10-01&to=2026-10-31&horizon=2026-10-31`, first.token);
+    const priorMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+    const priorFrom = priorMonth.toISOString().slice(0, 10);
+    const priorTo = new Date(Date.UTC(priorMonth.getUTCFullYear(), priorMonth.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    const historical = await get(`/api/personal-finance/dashboard?from=${priorFrom}&to=${priorTo}&horizon=${priorTo}`, first.token);
     assert.equal(historical.status, 200);
     const historicalData = await historical.json() as { period: { horizon: string } };
     assert.equal(historicalData.period.horizon, todayString);
