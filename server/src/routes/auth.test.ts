@@ -139,6 +139,8 @@ test('authentication works and household records stay isolated between accounts'
     const restoredIncomeData = await restoredIncomeRows.json() as { entries: Array<{ sourceId: string; status: string }> };
     assert.ok(restoredIncomeData.entries.some(item => item.sourceId === reactivationIncomeSource.id && item.status === 'PLANNED'),
       'reactivating an income source must regenerate its future planned entries');
+    const cleanupIncomeSource = await patch(`/api/personal-finance/income-sources/${reactivationIncomeSource.id}`, { isActive: false }, first.token);
+    assert.equal(cleanupIncomeSource.status, 200);
 
     const obligationResponse = await post('/api/personal-finance/obligations', {
       title: 'Concurrent rent payment', category: 'housing', amount: 700,
@@ -163,6 +165,8 @@ test('authentication works and household records stay isolated between accounts'
     const restoredObligationData = await restoredObligationRows.json() as { occurrences: Array<{ obligationId: string; status: string }> };
     assert.ok(restoredObligationData.occurrences.some(item => item.obligationId === reactivationObligationRecord.id && ['UPCOMING', 'OVERDUE'].includes(item.status)),
       'reactivating an obligation must regenerate its unpaid future occurrences');
+    const cleanupObligation = await patch(`/api/personal-finance/obligations/${reactivationObligationRecord.id}`, { isActive: false }, first.token);
+    assert.equal(cleanupObligation.status, 200);
 
     const obligationsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
     assert.equal(obligationsResponse.status, 200);
