@@ -47,10 +47,10 @@ jobs:
         run: |
           npm audit --json > npm-audit.json || true
           node -e "const a=require('./npm-audit.json'); console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
-      - name: Report server runtime dependency audit
+      - name: Report server workspace audit (omit dev)
         run: |
           npm audit --workspace=@flowmoney/server --omit=dev --json > npm-audit-server-runtime.json || true
-          node -e "const a=require('./npm-audit-server-runtime.json'); console.log(JSON.stringify({serverRuntimeSummary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
+          node -e "const a=require('./npm-audit-server-runtime.json'); console.log(JSON.stringify({serverWorkspaceOmitDevSummary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
       - name: Validate Prisma schema
         run: npx prisma validate --schema server/prisma/schema.prisma
       - name: Generate Prisma Client
