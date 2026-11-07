@@ -90,6 +90,7 @@ test('authentication works and household records stay isolated between accounts'
       `/api/personal-finance/obligations?from=not-a-date&to=${todayString}`,
       `/api/personal-finance/analytics?from=not-a-date&to=${todayString}`,
       `/api/personal-finance/dashboard?from=not-a-date&to=${todayString}`,
+      '/api/personal-finance/analytics?from=2026-02-30&to=2026-03-01',
       `/api/personal-finance/dashboard?from=${todayString}&to=${todayString}&horizon=not-a-date`,
     ]) {
       const response = await get(path, first.token);
