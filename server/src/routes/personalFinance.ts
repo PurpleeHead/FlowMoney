@@ -637,7 +637,9 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const obligationMemberWhere = memberFilter ? { obligation: { is: { memberId: memberFilter === 'shared' ? null : memberFilter } } } : {};
     const from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, monthEnd(now));
-    const horizon = dateQuery(req.query.horizon, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)));
+    const requestedHorizon = dateQuery(req.query.horizon, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)));
+    // A historical report period must not move the live forecast horizon backwards in time.
+    const horizon = requestedHorizon < now ? now : requestedHorizon;
     const openingSettings = await prisma.user.findUnique({ where: { id: userId }, select: { openingBalance: true, openingBalanceDate: true } });
     const openingDate = openingSettings?.openingBalanceDate ?? new Date(0);
     const [sources, obligations] = await Promise.all([
