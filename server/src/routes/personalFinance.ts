@@ -286,6 +286,17 @@ router.patch('/income-entries/:id', async (req: AuthedRequest, res, next) => {
     return res.json(await prisma.incomeEntry.findFirst({ where: { id: String(req.params.id), userId } }));
   } catch (error) { return next(error); }
 });
+router.delete('/income-entries/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    // Manual planned income can be removed, but recurring-source entries and received history are immutable here.
+    const result = await prisma.incomeEntry.deleteMany({
+      where: { id: String(req.params.id), userId: uid(req), sourceId: null, status: 'PLANNED' },
+    });
+    if (!result.count) return res.status(404).json({ message: 'Deletable one-time planned income not found.' });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+
 router.post('/income-entries/:id/receive', async (req: AuthedRequest, res, next) => {
   try {
     const parsed = z.object({ actualAmount: money.optional(), receivedAt: z.string().datetime().optional() }).safeParse(req.body);
