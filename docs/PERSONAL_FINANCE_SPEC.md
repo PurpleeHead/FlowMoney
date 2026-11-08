@@ -39,6 +39,7 @@ Each expense is a dated actual transaction with amount, category, optional descr
 Seed editable categories: groceries, cafes/restaurants, coffee, transport/taxi, fuel, car repair, car maintenance/TO, home, health, entertainment, shopping, subscriptions, education, travel, other.
 Users can add, rename, archive categories. Historical expenses keep their category association; archived categories remain readable.
 Support filters by date range, category, and person.
+The expense history API accepts optional `from` and `to` dates together (maximum two-year range), `categoryId` (including `uncategorized`), and `memberId` (including `shared`). Invalid or incomplete ranges and categories outside the household are rejected. Obligation-linked expenses remain immutable through ordinary expense edit/delete endpoints; they can only be changed through the obligation workflow.
 
 ### 2.3 Obligations
 An obligation is a recurring or one-time commitment, not itself a cash transaction.
