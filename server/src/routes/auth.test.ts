@@ -302,7 +302,7 @@ test('authentication works and household records stay isolated between accounts'
 
     const obligationsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
     assert.equal(obligationsResponse.status, 200);
-    const obligationsData = await obligationsResponse.json() as { occurrences: Array<{ id: string; status: string }> };
+    const obligationsData = await obligationsResponse.json() as { occurrences: Array<{ id: string; status: string; obligationId: string }> };
     const occurrence = obligationsData.occurrences.find(item => item.status === 'UPCOMING');
     assert.ok(occurrence, 'one-time obligation occurrence should be generated');
 
@@ -328,6 +328,20 @@ test('authentication works and household records stay isolated between accounts'
     const paidObligationAnalyticsData = await paidObligationAnalytics.json() as { totals: { obligations: number } };
     assert.equal(Number(paidObligationAnalyticsData.totals.obligations), 750,
       'analytics obligation totals must use the actual amount paid, not the planned amount');
+
+    // Archiving and reactivating an obligation must never erase an already-paid occurrence.
+    const archivePaidObligation = await patch(`/api/personal-finance/obligations/${occurrence.obligationId}`, { isActive: false }, first.token);
+    assert.equal(archivePaidObligation.status, 200);
+    const paidHistoryWhileArchived = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
+    const archivedHistoryData = await paidHistoryWhileArchived.json() as { occurrences: Array<{ id: string; status: string }> };
+    assert.ok(archivedHistoryData.occurrences.some(item => item.id === occurrence.id && item.status === 'PAID'),
+      'deactivating an obligation must preserve its paid occurrence history');
+    const restorePaidObligation = await patch(`/api/personal-finance/obligations/${occurrence.obligationId}`, { isActive: true }, first.token);
+    assert.equal(restorePaidObligation.status, 200);
+    const paidHistoryAfterRestore = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
+    const restoredHistoryData = await paidHistoryAfterRestore.json() as { occurrences: Array<{ id: string; status: string }> };
+    assert.ok(restoredHistoryData.occurrences.some(item => item.id === occurrence.id && item.status === 'PAID'),
+      'reactivating an obligation must retain the original paid occurrence without duplicating it');
 
     const plannedIncomeResponse = await post('/api/personal-finance/income-entries', {
       plannedDate: todayString, plannedAmount: 1000,
