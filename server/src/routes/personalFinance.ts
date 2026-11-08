@@ -199,7 +199,8 @@ router.get('/income-sources', async (req: AuthedRequest, res, next) => {
     const now = await userToday(uid(req)), from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 3, 0)));
     if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an income date range no longer than two years.' });
-    const sources = await prisma.incomeSource.findMany({ where: { userId: uid(req), isActive: true } });
+    const includeArchived = req.query.includeArchived === 'true';
+    const sources = await prisma.incomeSource.findMany({ where: { userId: uid(req), ...(includeArchived ? {} : { isActive: true }) }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
     for (const source of sources) await createIncomeOccurrences(source, from, to);
     const entries = await prisma.incomeEntry.findMany({
       where: { userId: uid(req), plannedDate: { gte: from, lte: to } },
@@ -475,7 +476,8 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
     const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
     if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
-    const obligations = await prisma.obligation.findMany({ where: { userId, isActive: true, ...memberWhere } });
+    const includeArchived = req.query.includeArchived === 'true';
+    const obligations = await prisma.obligation.findMany({ where: { userId, ...(includeArchived ? {} : { isActive: true }), ...memberWhere }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
     for (const obligation of obligations) await createObligationOccurrences(obligation, from, to, now);
     const today = now;
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
