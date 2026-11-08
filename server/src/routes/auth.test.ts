@@ -128,6 +128,7 @@ test('authentication works and household records stay isolated between accounts'
 
     for (const path of [
       `/api/personal-finance/income-sources?from=not-a-date&to=${todayString}`,
+      `/api/personal-finance/income-entries?from=not-a-date&to=${todayString}`,
       `/api/personal-finance/obligations?from=not-a-date&to=${todayString}`,
       `/api/personal-finance/analytics?from=not-a-date&to=${todayString}`,
       `/api/personal-finance/dashboard?from=not-a-date&to=${todayString}`,
@@ -270,6 +271,13 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(plannedIncomeResponse.status, 201);
     const plannedIncome = await plannedIncomeResponse.json() as { id: string };
+    const listedIncomeResponse = await get(`/api/personal-finance/income-entries?from=${todayString}&to=${todayString}&status=PLANNED`, first.token);
+    assert.equal(listedIncomeResponse.status, 200);
+    const listedIncomeData = await listedIncomeResponse.json() as { entries: Array<{ id: string; status: string }> };
+    assert.ok(listedIncomeData.entries.some(item => item.id === plannedIncome.id && item.status === 'PLANNED'),
+      'income entry listing must return matching planned entries with status filtering');
+    const invalidIncomeStatus = await get(`/api/personal-finance/income-entries?from=${todayString}&to=${todayString}&status=UNKNOWN`, first.token);
+    assert.equal(invalidIncomeStatus.status, 400, 'unknown income entry status filters must be rejected');
     const beforeReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
     assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 465,
       'planned income must not affect the actual balance');
@@ -466,6 +474,12 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(foreignPayment.status, 404, 'another account must not be able to pay this household obligation');
     const foreignReceipt = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, {}, second.token);
     assert.equal(foreignReceipt.status, 404, 'another account must not be able to receive this household income');
+    const foreignIncomeList = await get(`/api/personal-finance/income-entries?from=${todayString}&to=${todayString}`, second.token);
+    assert.equal(foreignIncomeList.status, 200);
+    assert.deepEqual((await foreignIncomeList.json() as { entries: unknown[] }).entries, [],
+      'income entry listing must remain isolated between accounts');
+    const foreignIncomeDelete = await del(`/api/personal-finance/income-entries/${plannedIncome.id}`, second.token);
+    assert.equal(foreignIncomeDelete.status, 404, 'another account must not delete this household income');
 
     const secondMemberResponse = await post('/api/personal-finance/members', { name: 'Second household member' }, second.token);
     assert.equal(secondMemberResponse.status, 201);
