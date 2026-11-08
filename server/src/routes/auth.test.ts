@@ -288,6 +288,8 @@ test('authentication works and household records stay isolated between accounts'
     const archivedIncomeData = await archivedIncomeRows.json() as { sources: Array<{ id: string; isActive: boolean }> };
     assert.equal(archivedIncomeData.sources.find(item => item.id === reactivationIncomeSource.id)?.isActive, false,
       'the archived-income view must include inactive sources without regenerating their planned rows');
+    assert.equal(archivedIncomeData.entries.filter(item => item.sourceId === reactivationIncomeSource.id && item.status === 'PLANNED').length, 0,
+      'listing archived income sources must not recreate future planned income');
     const reactivateIncome = await patch(`/api/personal-finance/income-sources/${reactivationIncomeSource.id}`, { isActive: true }, first.token);
     assert.equal(reactivateIncome.status, 200);
     const restoredIncomeRows = await get(`/api/personal-finance/income-sources?from=${todayString}`, first.token);
@@ -342,6 +344,8 @@ test('authentication works and household records stay isolated between accounts'
     const archivedObligationData = await archivedObligationRows.json() as { obligations: Array<{ id: string; isActive: boolean }> };
     assert.equal(archivedObligationData.obligations.find(item => item.id === reactivationObligationRecord.id)?.isActive, false,
       'the archived-obligation view must include inactive obligations without regenerating unpaid rows');
+    assert.equal(archivedObligationData.occurrences.filter(item => item.obligationId === reactivationObligationRecord.id).length, 0,
+      'listing archived obligations must not recreate future unpaid occurrences');
     const reactivateObligation = await patch(`/api/personal-finance/obligations/${reactivationObligationRecord.id}`, { isActive: true }, first.token);
     assert.equal(reactivateObligation.status, 200);
     const restoredObligationRows = await get(`/api/personal-finance/obligations?from=${todayString}`, first.token);
