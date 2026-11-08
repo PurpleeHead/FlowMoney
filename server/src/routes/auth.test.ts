@@ -277,6 +277,29 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1665,
       'receiving the same income entry again must not count it twice or overwrite the first actual amount');
 
+    // Dated balance adjustments affect actual cash only once their date is reached,
+    // and an adjustment before the accounting start date must never enter the balance.
+    const beforeOpeningDate = new Date(today);
+    beforeOpeningDate.setUTCDate(beforeOpeningDate.getUTCDate() - 1);
+    const beforeOpeningAdjustment = await post('/api/personal-finance/balance-adjustments', {
+      amount: 300, date: beforeOpeningDate.toISOString().slice(0, 10), reason: 'Before accounting start',
+    }, first.token);
+    assert.equal(beforeOpeningAdjustment.status, 201);
+    const futureSharedAdjustment = await post('/api/personal-finance/balance-adjustments', {
+      amount: 500, date: futureDate, reason: 'Future shared correction',
+    }, first.token);
+    assert.equal(futureSharedAdjustment.status, 201);
+    const futureMemberAdjustment = await post('/api/personal-finance/balance-adjustments', {
+      amount: 200, date: futureDate, reason: 'Future member correction', memberId: member.id,
+    }, first.token);
+    assert.equal(futureMemberAdjustment.status, 201);
+    const balanceAfterDatedAdjustments = await get('/api/personal-finance/dashboard', first.token);
+    assert.equal(Number((await balanceAfterDatedAdjustments.json() as { actual: { balance: number } }).actual.balance), 1665,
+      'future and pre-opening adjustments must not affect the current household balance');
+    const memberBalanceAfterFutureAdjustment = await get(`/api/personal-finance/dashboard?memberId=${member.id}`, first.token);
+    assert.equal(Number((await memberBalanceAfterFutureAdjustment.json() as { actual: { balance: number } }).actual.balance), 175,
+      'future member adjustments must not affect the current member balance');
+
     // A future selected report month must not hide planned income and obligations due before that month.
     const forecastIncome = await post('/api/personal-finance/income-entries', {
       plannedDate: futureDate, plannedAmount: 500,
