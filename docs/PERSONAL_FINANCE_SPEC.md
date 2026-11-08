@@ -48,6 +48,7 @@ Create dated obligation occurrences with statuses UPCOMING / PAID / OVERDUE / SK
 When marked PAID, create exactly one linked expense transaction and store paidAt/actualAmount. Repeated requests must be idempotent. The linked expense is the only deduction from actual cash balance.
 Monthly obligation total = sum of due occurrences in selected calendar month, including unpaid and paid amounts for burden reporting; show paid and unpaid subtotals separately.
 Future obligations are displayed by month and in a payment calendar. Do not sum all future obligations into the current-month total.
+The obligations history API accepts an optional `memberId` filter (`shared` for unassigned obligations); unknown or foreign household members are rejected. The client applies the global household/member selector to the obligations list and calendar.
 
 ### 2.4 Household members
 Support a household with multiple members and a shared/unassigned category.
