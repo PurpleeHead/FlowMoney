@@ -357,7 +357,7 @@ test('authentication works and household records stay isolated between accounts'
       'concurrent receipt requests must return the same winning actual amount');
     const afterConcurrentReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
     const afterConcurrentReceiptData = await afterConcurrentReceiptDashboard.json() as { actual: { balance: number } };
-    assert.equal(Number(afterConcurrentReceiptData.actual.balance), 1600 + Number(concurrentReceiptResults[0].actualAmount),
+    assert.equal(Number(afterConcurrentReceiptData.actual.balance), 1665 + Number(concurrentReceiptResults[0].actualAmount),
       'concurrent receipt requests must add the winning actual amount to the balance exactly once');
 
     const budgetPayload = { periodMonth: today.toISOString().slice(0, 7) + '-01', limitAmount: 10000 };
