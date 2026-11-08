@@ -152,19 +152,21 @@ test('authentication works and household records stay isolated between accounts'
     const todayString = today.toISOString().slice(0, 10);
 
     // Analytics must distinguish members by identity even when their display names match.
-    const duplicateNameMemberResponse = await post('/api/personal-finance/members', { name: 'First household member' }, first.token);
-    assert.equal(duplicateNameMemberResponse.status, 201);
-    const duplicateNameMember = await duplicateNameMemberResponse.json() as { id: string };
-    const duplicateNameExpense = await post('/api/personal-finance/expenses', {
-      title: 'Duplicate-name member future expense', amount: 25, date: futureDate, memberId: duplicateNameMember.id,
+    const duplicateMemberNameResponse = await post('/api/personal-finance/members', { name: 'First household member' }, first.token);
+    assert.equal(duplicateMemberNameResponse.status, 409, 'duplicate household member names must return a conflict, not a server error');
+    const sharedNamedMemberResponse = await post('/api/personal-finance/members', { name: 'Shared' }, first.token);
+    assert.equal(sharedNamedMemberResponse.status, 201);
+    const sharedNamedMember = await sharedNamedMemberResponse.json() as { id: string };
+    const sharedNamedExpense = await post('/api/personal-finance/expenses', {
+      title: 'Member named Shared future expense', amount: 25, date: futureDate, memberId: sharedNamedMember.id,
     }, first.token);
-    assert.equal(duplicateNameExpense.status, 201);
-    const duplicateNameAnalytics = await get(`/api/personal-finance/analytics?from=${todayString}&to=${futureDate}`, first.token);
-    assert.equal(duplicateNameAnalytics.status, 200);
-    const duplicateNameAnalyticsData = await duplicateNameAnalytics.json() as { members: Array<{ id: string | null; name: string }> };
-    const sameNameMembers = duplicateNameAnalyticsData.members.filter(item => item.name === 'First household member');
-    assert.equal(sameNameMembers.length, 2, 'analytics must not merge different household members that share a display name');
-    assert.equal(new Set(sameNameMembers.map(item => item.id)).size, 2, 'analytics member rows must have stable distinct IDs');
+    assert.equal(sharedNamedExpense.status, 201);
+    const sharedLabelAnalytics = await get(`/api/personal-finance/analytics?from=${todayString}&to=${futureDate}`, first.token);
+    assert.equal(sharedLabelAnalytics.status, 200);
+    const sharedLabelAnalyticsData = await sharedLabelAnalytics.json() as { members: Array<{ id: string | null; name: string }> };
+    const sharedLabelRows = sharedLabelAnalyticsData.members.filter(item => item.name === 'Shared');
+    assert.equal(sharedLabelRows.length, 2, 'analytics must distinguish the actual member named Shared from unassigned household transactions');
+    assert.equal(new Set(sharedLabelRows.map(item => item.id)).size, 2, 'analytics member rows must have stable distinct IDs');
 
     // Reject oversized report windows before generating recurring rows or running broad aggregates.
     const wideRange = 'from=2020-01-01&to=2026-11-30';
