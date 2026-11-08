@@ -247,6 +247,30 @@ test('authentication works and household records stay isolated between accounts'
     const cleanupIncomeSource = await patch(`/api/personal-finance/income-sources/${reactivationIncomeSource.id}`, { isActive: false }, first.token);
     assert.equal(cleanupIncomeSource.status, 200);
 
+    // Obligation history must honor the same household member/shared filter as the dashboard.
+    const memberScopedObligation = await post('/api/personal-finance/obligations', {
+      title: 'Member-scoped obligation filter test', category: 'housing', amount: 90,
+      recurrence: 'ONCE', startDate: futureDate, memberId: member.id,
+    }, first.token);
+    assert.equal(memberScopedObligation.status, 201);
+    const sharedScopedObligation = await post('/api/personal-finance/obligations', {
+      title: 'Shared obligation filter test', category: 'housing', amount: 80,
+      recurrence: 'ONCE', startDate: futureDate,
+    }, first.token);
+    assert.equal(sharedScopedObligation.status, 201);
+    const memberObligationFilter = await get(`/api/personal-finance/obligations?from=${futureDate}&to=${futureDate}&memberId=${member.id}`, first.token);
+    assert.equal(memberObligationFilter.status, 200);
+    const memberObligationFilterData = await memberObligationFilter.json() as { occurrences: Array<{ obligation: { title: string } }> };
+    assert.ok(memberObligationFilterData.occurrences.some(item => item.obligation.title === 'Member-scoped obligation filter test'));
+    assert.ok(!memberObligationFilterData.occurrences.some(item => item.obligation.title === 'Shared obligation filter test'));
+    const sharedObligationFilter = await get(`/api/personal-finance/obligations?from=${futureDate}&to=${futureDate}&memberId=shared`, first.token);
+    assert.equal(sharedObligationFilter.status, 200);
+    const sharedObligationFilterData = await sharedObligationFilter.json() as { occurrences: Array<{ obligation: { title: string } }> };
+    assert.ok(sharedObligationFilterData.occurrences.some(item => item.obligation.title === 'Shared obligation filter test'));
+    assert.ok(!sharedObligationFilterData.occurrences.some(item => item.obligation.title === 'Member-scoped obligation filter test'));
+    const invalidObligationMemberFilter = await get(`/api/personal-finance/obligations?from=${futureDate}&to=${futureDate}&memberId=unknown`, first.token);
+    assert.equal(invalidObligationMemberFilter.status, 400);
+
     const obligationResponse = await post('/api/personal-finance/obligations', {
       title: 'Concurrent rent payment', category: 'housing', amount: 700,
       recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
