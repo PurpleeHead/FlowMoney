@@ -104,3 +104,5 @@ button{cursor:pointer}
 .pf-archive-card{grid-column:1/-1;border-style:dashed;background:rgba(255,255,255,.025)}
 .pf-archive-card .pf-list-row{padding:12px 0;border-top:1px solid rgba(255,255,255,.07)}
 @media(max-width:760px){.pf-archive-card{grid-column:auto}}
+
+.pf-load-more{display:flex;justify-content:center;padding-top:16px}
