@@ -44,7 +44,7 @@ The expense history API accepts optional `from` and `to` dates together (maximum
 ### 2.3 Obligations
 An obligation is a recurring or one-time commitment, not itself a cash transaction.
 Fields: title, category, amount, recurrence (once/weekly/twice-monthly/monthly/yearly), due-date rule, start date, optional end date, owner/member, active flag, notes. The UI must allow editing the complete recurrence rule and date range, not just the display name and amount.
-Create dated obligation occurrences with statuses UPCOMING / PAID / OVERDUE / SKIPPED. Schedule edits replace only future unpaid generated occurrences; paid history and manually skipped occurrences remain unchanged.
+Create dated obligation occurrences with statuses UPCOMING / PAID / OVERDUE / SKIPPED. Schedule edits replace only future unpaid generated occurrences; paid history and manually skipped occurrences remain unchanged. The obligations list can optionally include skipped history, and a skipped occurrence can be restored to UPCOMING or OVERDUE while its obligation remains active.
 When marked PAID, create exactly one linked expense transaction and store paidAt/actualAmount. Repeated requests must be idempotent. The linked expense is the only deduction from actual cash balance.
 Monthly obligation total = sum of due occurrences in selected calendar month, including unpaid and paid amounts for burden reporting; show paid and unpaid subtotals separately.
 Future obligations are displayed by month and in a payment calendar. Do not sum all future obligations into the current-month total.
