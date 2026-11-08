@@ -78,6 +78,10 @@ test('authentication works and household records stay isolated between accounts'
       name: 'Test category', slug: `test-category-${suffix.slice(0, 8)}`,
     }, first.token);
     assert.equal(customCategoryResponse.status, 201);
+    const duplicateCategorySlug = await post('/api/personal-finance/categories', {
+      name: 'Duplicate category', slug: `test-category-${suffix.slice(0, 8)}`,
+    }, first.token);
+    assert.equal(duplicateCategorySlug.status, 409, 'duplicate custom category slugs must return a conflict');
     const customCategory = await customCategoryResponse.json() as { id: string };
     const editableExpenseResponse = await post('/api/personal-finance/expenses', {
       title: 'Editable future expense', amount: 125, date: futureDate, categoryId: customCategory.id,
@@ -514,6 +518,11 @@ test('authentication works and household records stay isolated between accounts'
     const afterConcurrentReceiptData = await afterConcurrentReceiptDashboard.json() as { actual: { balance: number } };
     assert.equal(Number(afterConcurrentReceiptData.actual.balance), 1665 + Number(concurrentReceiptResults[0].actualAmount),
       'concurrent receipt requests must add the winning actual amount to the balance exactly once');
+
+    const invalidBudgetMonth = await get('/api/personal-finance/budgets?month=2026-02-30', first.token);
+    assert.equal(invalidBudgetMonth.status, 400, 'impossible budget month dates must be rejected');
+    const malformedBudgetMonth = await get('/api/personal-finance/budgets?month=not-a-date', first.token);
+    assert.equal(malformedBudgetMonth.status, 400, 'malformed budget month dates must be rejected');
 
     const budgetPayload = { periodMonth: today.toISOString().slice(0, 7) + '-01', limitAmount: 10000 };
     const budgetResponses = await Promise.all([
