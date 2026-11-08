@@ -279,6 +279,12 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(reactivationIncome.status, 201);
     const reactivationIncomeSource = await reactivationIncome.json() as { id: string };
+    const beforeArchiveIncomeRows = await get(`/api/personal-finance/income-sources?from=${todayString}`, first.token);
+    const beforeArchiveIncomeData = await beforeArchiveIncomeRows.json() as { entries: Array<{ id: string; sourceId: string | null; status: string }> };
+    const skippedBeforeArchive = beforeArchiveIncomeData.entries.find(item => item.sourceId === reactivationIncomeSource.id && item.status === 'PLANNED');
+    assert.ok(skippedBeforeArchive, 'the source must have a generated planned occurrence for the archive test');
+    const skipBeforeArchive = await patch(`/api/personal-finance/income-entries/${skippedBeforeArchive.id}`, { status: 'SKIPPED' }, first.token);
+    assert.equal(skipBeforeArchive.status, 200);
     const deactivateIncome = await patch(`/api/personal-finance/income-sources/${reactivationIncomeSource.id}`, { isActive: false }, first.token);
     assert.equal(deactivateIncome.status, 200);
     const inactiveIncomeRows = await get(`/api/personal-finance/income-sources?from=${todayString}`, first.token);
@@ -290,8 +296,12 @@ test('authentication works and household records stay isolated between accounts'
       'the archived-income view must include inactive sources without regenerating their planned rows');
     assert.equal(archivedIncomeData.entries.filter(item => item.sourceId === reactivationIncomeSource.id && item.status === 'PLANNED').length, 0,
       'listing archived income sources must not recreate future planned income');
+    const restoreWhileArchived = await patch(`/api/personal-finance/income-entries/${skippedBeforeArchive.id}`, { status: 'PLANNED' }, first.token);
+    assert.equal(restoreWhileArchived.status, 409, 'skipped income linked to an archived source cannot re-enter the forecast');
     const reactivateIncome = await patch(`/api/personal-finance/income-sources/${reactivationIncomeSource.id}`, { isActive: true }, first.token);
     assert.equal(reactivateIncome.status, 200);
+    const restoreAfterReactivation = await patch(`/api/personal-finance/income-entries/${skippedBeforeArchive.id}`, { status: 'PLANNED' }, first.token);
+    assert.equal(restoreAfterReactivation.status, 200, 'skipped income can be restored after its source is reactivated');
     const restoredIncomeRows = await get(`/api/personal-finance/income-sources?from=${todayString}`, first.token);
     const restoredIncomeData = await restoredIncomeRows.json() as { entries: Array<{ sourceId: string; status: string }> };
     assert.ok(restoredIncomeData.entries.some(item => item.sourceId === reactivationIncomeSource.id && item.status === 'PLANNED'),
