@@ -736,28 +736,28 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
       prisma.obligationOccurrence.findMany({ where: { userId, ...(memberId ? { obligation: { is: { memberId: memberId === 'shared' ? null : memberId } } } : {}), dueDate: { gte: from, lte: to }, status: { not: 'SKIPPED' } }, include: { obligation: true } }),
     ]);
     const categoryTotals = new Map<string, number>();
-    const memberTotals = new Map<string, { income: number; expenses: number }>();
+    const memberTotals = new Map<string, { id: string | null; name: string; income: number; expenses: number }>();
     const monthTotals = new Map<string, { income: number; expenses: number }>();
     for (const item of expenses) {
       const category = item.category?.name ?? 'Uncategorized';
       categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + Number(item.amount));
-      const name = item.member?.name ?? 'Shared';
-      const totals = memberTotals.get(name) ?? { income: 0, expenses: 0 };
-      totals.expenses += Number(item.amount); memberTotals.set(name, totals);
+      const id = item.memberId ?? null, key = id ?? '__shared__', name = item.member?.name ?? 'Shared';
+      const totals = memberTotals.get(key) ?? { id, name, income: 0, expenses: 0 };
+      totals.expenses += Number(item.amount); memberTotals.set(key, totals);
       const month = dateString(item.date).slice(0, 7), monthTotal = monthTotals.get(month) ?? { income: 0, expenses: 0 };
       monthTotal.expenses += Number(item.amount); monthTotals.set(month, monthTotal);
     }
     for (const item of incomes) {
-      const amount = Number(item.actualAmount ?? 0), name = item.member?.name ?? 'Shared';
-      const totals = memberTotals.get(name) ?? { income: 0, expenses: 0 };
-      totals.income += amount; memberTotals.set(name, totals);
+      const amount = Number(item.actualAmount ?? 0), id = item.memberId ?? null, key = id ?? '__shared__', name = item.member?.name ?? 'Shared';
+      const totals = memberTotals.get(key) ?? { id, name, income: 0, expenses: 0 };
+      totals.income += amount; memberTotals.set(key, totals);
       const month = dateStringInTimezone(item.receivedAt ?? item.plannedDate, analyticsTimeZone).slice(0, 7), monthTotal = monthTotals.get(month) ?? { income: 0, expenses: 0 };
       monthTotal.income += amount; monthTotals.set(month, monthTotal);
     }
     return res.json({
       totals: { income: incomes.reduce((sum, item) => sum + Number(item.actualAmount ?? 0), 0), expenses: expenses.reduce((sum, item) => sum + Number(item.amount), 0), obligations: obligations.reduce((sum, item) => sum + Number(item.status === 'PAID' ? (item.actualAmount ?? item.plannedAmount) : item.plannedAmount), 0) },
       categories: [...categoryTotals].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
-      members: [...memberTotals].map(([name, totals]) => ({ name, ...totals, net: totals.income - totals.expenses })),
+      members: [...memberTotals.values()].map(totals => ({ ...totals, net: totals.income - totals.expenses })).sort((a, b) => a.name.localeCompare(b.name)),
       months: [...monthTotals].sort((a, b) => a[0].localeCompare(b[0])).map(([month, totals]) => ({ month, ...totals, net: totals.income - totals.expenses })),
     });
   } catch (error) { return next(error); }
