@@ -157,6 +157,8 @@ test('authentication works and household records stay isolated between accounts'
     const sharedNamedMemberResponse = await post('/api/personal-finance/members', { name: 'Shared' }, first.token);
     assert.equal(sharedNamedMemberResponse.status, 201);
     const sharedNamedMember = await sharedNamedMemberResponse.json() as { id: string };
+    const duplicateMemberRename = await patch(`/api/personal-finance/members/${member.id}`, { name: 'Shared' }, first.token);
+    assert.equal(duplicateMemberRename.status, 409, 'renaming a member to an existing name must return a conflict');
     const sharedNamedExpense = await post('/api/personal-finance/expenses', {
       title: 'Member named Shared future expense', amount: 25, date: futureDate, memberId: sharedNamedMember.id,
     }, first.token);
