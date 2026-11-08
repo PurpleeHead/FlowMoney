@@ -98,6 +98,7 @@ export default function PersonalFinanceApp() {
   const [archivedIncomeSources, setArchivedIncomeSources] = useState<IncomeSource[]>([]);
   const [archivedObligations, setArchivedObligations] = useState<ObligationRecord[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [hasMoreExpenses, setHasMoreExpenses] = useState(false);
   const [adjustments, setAdjustments] = useState<Array<{ id: string; amount: number | string; date: string; reason: string }>>([]);
 
   const [incomeTitle, setIncomeTitle] = useState('');
@@ -151,7 +152,7 @@ export default function PersonalFinanceApp() {
     const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData] = await Promise.all([
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<{ entries: IncomeEntry[]; sources: IncomeSource[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}&includeArchived=true`),
-      api<{ expenses: Expense[]; categories: Category[] }>(`${PF}/expenses`),
+      api<{ expenses: Expense[]; total: number; page: { take: number; skip: number; hasMore: boolean }; categories: Category[] }>(`${PF}/expenses?take=100&skip=0`),
       api<{ occurrences: ObligationOccurrence[]; obligations: ObligationRecord[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}${showSkippedObligations ? '&includeSkipped=true' : ''}&includeArchived=true`),
       api<Member[]>(`${PF}/members`),
       api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`),
@@ -160,7 +161,7 @@ export default function PersonalFinanceApp() {
       api<SavingsGoal[]>(`${PF}/savings-goals`),
       api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean }>(`${PF}/settings`)
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
   }, [ranges, expenseCategory, filterMember, showSkippedObligations]);
 
@@ -169,6 +170,17 @@ export default function PersonalFinanceApp() {
     if (!token) { setLoading(false); return; }
     api<User>('/auth/me').then(async current => { setUser(current); await refresh(); }).catch(() => { setToken(null); }).finally(() => setLoading(false));
   }, [refresh]);
+
+  async function loadMoreExpenses() {
+    if (!hasMoreExpenses || busy) return;
+    setBusy(true); setError('');
+    try {
+      const page = await api<{ expenses: Expense[]; page: { hasMore: boolean } }>(`${PF}/expenses?take=100&skip=${expenses.length}`);
+      setExpenses(current => [...current, ...page.expenses]);
+      setHasMoreExpenses(page.page.hasMore);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
 
   async function saveOpeningBalance() { const amount = Number(openingBalance); if (!Number.isFinite(amount)) { setError(lang === 'ru' ? 'Введите корректную сумму начального остатка.' : 'Enter a valid opening balance.'); return; } setBusy(true); setError(''); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ openingBalance: amount, openingBalanceDate }) }); await refresh(); setNotice(lang === 'ru' ? 'Начальный остаток сохранён.' : 'Opening balance saved.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function changeLanguage(next: Lang) { setLang(next); if (user) { try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ locale: next }) }); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } } }
@@ -377,7 +389,7 @@ export default function PersonalFinanceApp() {
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ИСТОРИЯ ОПЕРАЦИЙ' : 'TRANSACTION HISTORY'}</span><h2>{tr(lang, 'expenses')}</h2></div><span className="pf-count">{visibleExpenses.length}</span></div><div className="pf-expense-filters"><select className="pf-member-filter" value={expensePeriod} onChange={e=>{const next=e.target.value as 'month'|'all'|'custom';setExpensePeriod(next);if(next==='custom'){setExpenseFrom(ranges.from);setExpenseTo(ranges.to);}}}><option value="month">{lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}</option><option value="all">{lang === 'ru' ? 'Вся история' : 'All history'}</option><option value="custom">{lang === 'ru' ? 'Произвольный период' : 'Custom date range'}</option></select><select className="pf-member-filter" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}><option value="all">{lang === 'ru' ? 'Все категории' : 'All categories'}</option><option value="uncategorized">{lang === 'ru' ? 'Без категории' : 'Uncategorized'}</option>{categories.map(x=><option key={x.id} value={x.id}>{categoryName(x,lang)}</option>)}</select></div>
           {expensePeriod === 'custom' && <div className="pf-field-row pf-expense-custom-range"><label>{lang === 'ru' ? 'С даты' : 'From'}<input type="date" value={expenseFrom} onChange={e=>setExpenseFrom(e.target.value)}/></label><label>{lang === 'ru' ? 'По дату' : 'To'}<input type="date" value={expenseTo} onChange={e=>setExpenseTo(e.target.value)}/></label></div>}
           {expensePeriod === 'custom' && !validExpenseCustomRange && <p className="pf-alert error">{lang === 'ru' ? 'Проверьте даты периода.' : 'Check the selected date range.'}</p>}
-          {visibleExpenses.length ? visibleExpenses.slice(0, 100).map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category ? categoryName(item.category, lang) : (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label="Delete">×</button></div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}
+          {visibleExpenses.length ? visibleExpenses.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category ? categoryName(item.category, lang) : (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label="Delete">×</button></div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}{hasMoreExpenses && <div className="pf-load-more"><button className="pf-button ghost" disabled={busy} onClick={loadMoreExpenses}>{busy ? (lang === 'ru' ? 'Загрузка…' : 'Loading…') : (lang === 'ru' ? 'Загрузить ещё' : 'Load more')}</button></div>}
         </section>
       </div>}
 
