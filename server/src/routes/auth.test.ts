@@ -285,7 +285,7 @@ test('authentication works and household records stay isolated between accounts'
     const inactiveIncomeData = await inactiveIncomeRows.json() as { entries: Array<{ sourceId: string }> };
     assert.equal(inactiveIncomeData.entries.filter(item => item.sourceId === reactivationIncomeSource.id).length, 0);
     const archivedIncomeRows = await get(`/api/personal-finance/income-sources?from=${todayString}&includeArchived=true`, first.token);
-    const archivedIncomeData = await archivedIncomeRows.json() as { sources: Array<{ id: string; isActive: boolean }> };
+    const archivedIncomeData = await archivedIncomeRows.json() as { sources: Array<{ id: string; isActive: boolean }>; entries: Array<{ sourceId: string | null; status: string }> };
     assert.equal(archivedIncomeData.sources.find(item => item.id === reactivationIncomeSource.id)?.isActive, false,
       'the archived-income view must include inactive sources without regenerating their planned rows');
     assert.equal(archivedIncomeData.entries.filter(item => item.sourceId === reactivationIncomeSource.id && item.status === 'PLANNED').length, 0,
@@ -341,7 +341,7 @@ test('authentication works and household records stay isolated between accounts'
     const inactiveObligationData = await inactiveObligationRows.json() as { occurrences: Array<{ obligationId: string }> };
     assert.equal(inactiveObligationData.occurrences.filter(item => item.obligationId === reactivationObligationRecord.id).length, 0);
     const archivedObligationRows = await get(`/api/personal-finance/obligations?from=${todayString}&includeArchived=true`, first.token);
-    const archivedObligationData = await archivedObligationRows.json() as { obligations: Array<{ id: string; isActive: boolean }> };
+    const archivedObligationData = await archivedObligationRows.json() as { obligations: Array<{ id: string; isActive: boolean }>; occurrences: Array<{ obligationId: string; status: string }> };
     assert.equal(archivedObligationData.obligations.find(item => item.id === reactivationObligationRecord.id)?.isActive, false,
       'the archived-obligation view must include inactive obligations without regenerating unpaid rows');
     assert.equal(archivedObligationData.occurrences.filter(item => item.obligationId === reactivationObligationRecord.id).length, 0,
