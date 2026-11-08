@@ -361,13 +361,34 @@ const expenseSchema = z.object({
 router.get('/expenses', async (req: AuthedRequest, res, next) => {
   try {
     const userId = uid(req);
-    const [expenses, categories] = await Promise.all([
-      prisma.ledgerExpense.findMany({
-        where: { userId }, include: { category: true, member: true, obligationOccurrence: true },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], take: 1000,
-      }),
-      prisma.expenseCategory.findMany({ where: { OR: [{ userId }, { userId: null }] }, orderBy: [{ userId: 'asc' }, { name: 'asc' }] }),
-    ]);
+    const from = typeof req.query.from === 'string' ? dateQuery(req.query.from, null) : null;
+    const to = typeof req.query.to === 'string' ? dateQuery(req.query.to, null) : null;
+    if ((req.query.from !== undefined && !from) || (req.query.to !== undefined && !to)) {
+      return res.status(400).json({ message: 'Use valid calendar dates for the expense range.' });
+    }
+    if ((from && !to) || (!from && to) || (from && to && !isSafeQueryRange(from, to))) {
+      return res.status(400).json({ message: 'Provide a complete expense date range no longer than two years.' });
+    }
+    const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
+    const categoryId = typeof req.query.categoryId === 'string' ? req.query.categoryId : '';
+    if (categoryId && categoryId !== 'uncategorized' && !(await prisma.expenseCategory.findFirst({
+      where: { id: categoryId, OR: [{ userId }, { userId: null }] },
+    }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const categoryWhere = categoryId === 'uncategorized' ? { categoryId: null } : categoryId ? { categoryId } : {};
+    const expenses = await prisma.ledgerExpense.findMany({
+      where: {
+        userId, ...memberWhere, ...categoryWhere,
+        ...(from && to ? { date: { gte: dateValue(from), lte: dateValue(to) } } : {}),
+      },
+      include: { category: true, member: true, obligationOccurrence: true },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], take: 1000,
+    });
+    const categories = await prisma.expenseCategory.findMany({
+      where: { OR: [{ userId }, { userId: null }] },
+      orderBy: [{ userId: 'asc' }, { name: 'asc' }],
+    });
     return res.json({ expenses, categories });
   } catch (error) { return next(error); }
 });
