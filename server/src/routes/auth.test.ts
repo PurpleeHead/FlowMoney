@@ -66,6 +66,9 @@ test('authentication works and household records stay isolated between accounts'
     const future = new Date(today);
     future.setUTCDate(future.getUTCDate() + 7);
     const futureDate = future.toISOString().slice(0, 10);
+    const obligationFilterFuture = new Date(today);
+    obligationFilterFuture.setUTCDate(obligationFilterFuture.getUTCDate() + 40);
+    const obligationFilterDate = obligationFilterFuture.toISOString().slice(0, 10);
     const settings = await patch('/api/personal-finance/settings', { openingBalance: 1000, openingBalanceDate: today.toISOString().slice(0, 10) }, first.token);
     assert.equal(settings.status, 200);
     const futureExpense = await post('/api/personal-finance/expenses', { title: 'Future test expense', amount: 500, date: futureDate }, first.token);
@@ -250,25 +253,25 @@ test('authentication works and household records stay isolated between accounts'
     // Obligation history must honor the same household member/shared filter as the dashboard.
     const memberScopedObligation = await post('/api/personal-finance/obligations', {
       title: 'Member-scoped obligation filter test', category: 'housing', amount: 90,
-      recurrence: 'ONCE', startDate: futureDate, memberId: member.id,
+      recurrence: 'ONCE', startDate: obligationFilterDate, memberId: member.id,
     }, first.token);
     assert.equal(memberScopedObligation.status, 201);
     const sharedScopedObligation = await post('/api/personal-finance/obligations', {
       title: 'Shared obligation filter test', category: 'housing', amount: 80,
-      recurrence: 'ONCE', startDate: futureDate,
+      recurrence: 'ONCE', startDate: obligationFilterDate,
     }, first.token);
     assert.equal(sharedScopedObligation.status, 201);
-    const memberObligationFilter = await get(`/api/personal-finance/obligations?from=${futureDate}&to=${futureDate}&memberId=${member.id}`, first.token);
+    const memberObligationFilter = await get(`/api/personal-finance/obligations?from=${obligationFilterDate}&to=${obligationFilterDate}&memberId=${member.id}`, first.token);
     assert.equal(memberObligationFilter.status, 200);
     const memberObligationFilterData = await memberObligationFilter.json() as { occurrences: Array<{ obligation: { title: string } }> };
     assert.ok(memberObligationFilterData.occurrences.some(item => item.obligation.title === 'Member-scoped obligation filter test'));
     assert.ok(!memberObligationFilterData.occurrences.some(item => item.obligation.title === 'Shared obligation filter test'));
-    const sharedObligationFilter = await get(`/api/personal-finance/obligations?from=${futureDate}&to=${futureDate}&memberId=shared`, first.token);
+    const sharedObligationFilter = await get(`/api/personal-finance/obligations?from=${obligationFilterDate}&to=${obligationFilterDate}&memberId=shared`, first.token);
     assert.equal(sharedObligationFilter.status, 200);
     const sharedObligationFilterData = await sharedObligationFilter.json() as { occurrences: Array<{ obligation: { title: string } }> };
     assert.ok(sharedObligationFilterData.occurrences.some(item => item.obligation.title === 'Shared obligation filter test'));
     assert.ok(!sharedObligationFilterData.occurrences.some(item => item.obligation.title === 'Member-scoped obligation filter test'));
-    const invalidObligationMemberFilter = await get(`/api/personal-finance/obligations?from=${futureDate}&to=${futureDate}&memberId=unknown`, first.token);
+    const invalidObligationMemberFilter = await get(`/api/personal-finance/obligations?from=${obligationFilterDate}&to=${obligationFilterDate}&memberId=unknown`, first.token);
     assert.equal(invalidObligationMemberFilter.status, 400);
 
     const obligationResponse = await post('/api/personal-finance/obligations', {
