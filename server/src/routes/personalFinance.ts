@@ -181,7 +181,12 @@ router.patch('/members/:id', async (req: AuthedRequest, res, next) => {
     const result = await prisma.householdMember.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: parsed.data });
     if (!result.count) return res.status(404).json({ message: 'Household member not found.' });
     return res.json(await prisma.householdMember.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
-  } catch (error) { return next(error); }
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+      return res.status(409).json({ message: 'A household member with this name already exists.' });
+    }
+    return next(error);
+  }
 });
 
 const incomeSchema = z.object({
