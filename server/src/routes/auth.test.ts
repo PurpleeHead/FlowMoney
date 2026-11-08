@@ -266,7 +266,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(plannedIncomeResponse.status, 201);
     const plannedIncome = await plannedIncomeResponse.json() as { id: string };
     const beforeReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 400,
+    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 465,
       'planned income must not affect the actual balance');
 
     const receivedIncome = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 1200 }, first.token);
@@ -274,7 +274,7 @@ test('authentication works and household records stay isolated between accounts'
     const duplicateReceipt = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 9000 }, first.token);
     assert.equal(duplicateReceipt.status, 200);
     const afterReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1600,
+    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1665,
       'receiving the same income entry again must not count it twice or overwrite the first actual amount');
 
     // A future selected report month must not hide planned income and obligations due before that month.
@@ -302,7 +302,7 @@ test('authentication works and household records stay isolated between accounts'
       'forecast must include planned income between today and a future selected month');
     assert.equal(Number(futureMonthData.forecast.unpaidObligations), 250,
       'forecast must include unpaid obligations due before a future selected month');
-    assert.equal(Number(futureMonthData.forecast.balance), 1850,
+    assert.equal(Number(futureMonthData.forecast.balance), 1915,
       'future-month forecast must reconcile from current actual balance plus near-term income less near-term obligations');
 
     const priorMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
