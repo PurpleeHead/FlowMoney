@@ -288,8 +288,11 @@ test('authentication works and household records stay isolated between accounts'
     const deactivateIncome = await patch(`/api/personal-finance/income-sources/${reactivationIncomeSource.id}`, { isActive: false }, first.token);
     assert.equal(deactivateIncome.status, 200);
     const inactiveIncomeRows = await get(`/api/personal-finance/income-sources?from=${todayString}`, first.token);
-    const inactiveIncomeData = await inactiveIncomeRows.json() as { entries: Array<{ sourceId: string }> };
-    assert.equal(inactiveIncomeData.entries.filter(item => item.sourceId === reactivationIncomeSource.id).length, 0);
+    const inactiveIncomeData = await inactiveIncomeRows.json() as { entries: Array<{ sourceId: string | null; status: string }> };
+    assert.equal(inactiveIncomeData.entries.filter(item => item.sourceId === reactivationIncomeSource.id && item.status === 'PLANNED').length, 0,
+      'deactivation removes future planned income but preserves skipped history');
+    assert.equal(inactiveIncomeData.entries.filter(item => item.sourceId === reactivationIncomeSource.id && item.status === 'SKIPPED').length, 1,
+      'deactivation must preserve manually skipped income history');
     const archivedIncomeRows = await get(`/api/personal-finance/income-sources?from=${todayString}&includeArchived=true`, first.token);
     const archivedIncomeData = await archivedIncomeRows.json() as { sources: Array<{ id: string; isActive: boolean }>; entries: Array<{ sourceId: string | null; status: string }> };
     assert.equal(archivedIncomeData.sources.find(item => item.id === reactivationIncomeSource.id)?.isActive, false,
