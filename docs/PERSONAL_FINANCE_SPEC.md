@@ -32,7 +32,7 @@ Each source has name, amount, recurrence, start date, optional end date, next pl
 Generate planned income occurrences for a bounded horizon (e.g. current month + next 2 months); avoid duplicate occurrences using a unique source/date key.
 Each occurrence has due date, planned amount, status PLANNED / RECEIVED / SKIPPED, actual amount, received date, owner/member and optional note.
 Only RECEIVED occurrences affect actual balance. Planned occurrences contribute to forecast only.
-Allow manual one-off income and editing/deleting with confirmation.
+Allow manual one-off income and editing/deleting with confirmation. Users can edit a recurring source's amount, recurrence rule, date range and member; skipped planned occurrences remain available in history and can be restored to PLANNED.
 
 ### 2.2 Expenses
 Each expense is a dated actual transaction with amount, category, optional description, person/member, createdAt and updatedAt.
