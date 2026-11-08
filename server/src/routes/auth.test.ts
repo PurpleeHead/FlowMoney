@@ -285,11 +285,10 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(disposableIncomeResponse.status, 201);
     const disposableIncome = await disposableIncomeResponse.json() as { id: string };
-    const foreignDelete = await del(`/api/personal-finance/income-entries/${disposableIncome.id}`, (await (async () => {
-      const response = await post('/api/auth/register', { email: fourthEmail, password: 'Safe-test-password-123!' });
-      assert.equal(response.status, 201);
-      return response.json() as Promise<{ token: string }>;
-    })()).token);
+    const foreignAccountResponse = await post('/api/auth/register', { email: fourthEmail, password: 'Safe-test-password-123!' });
+    assert.equal(foreignAccountResponse.status, 201);
+    const foreignAccount = await foreignAccountResponse.json() as { token: string };
+    const foreignDelete = await del(`/api/personal-finance/income-entries/${disposableIncome.id}`, foreignAccount.token);
     assert.equal(foreignDelete.status, 404, 'another account must not delete a one-time income entry');
     const deleteManualIncome = await del(`/api/personal-finance/income-entries/${disposableIncome.id}`, first.token);
     assert.equal(deleteManualIncome.status, 204);
