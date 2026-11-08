@@ -230,6 +230,10 @@ test('authentication works and household records stay isolated between accounts'
       'editing an income schedule must remove obsolete future generated occurrences');
     const skipScheduleIncome = await patch(`/api/personal-finance/income-entries/${updatedIncomeEntry.id}`, { status: 'SKIPPED' }, first.token);
     assert.equal(skipScheduleIncome.status, 200);
+    const restoreScheduleIncome = await patch(`/api/personal-finance/income-entries/${updatedIncomeEntry.id}`, { status: 'PLANNED' }, first.token);
+    assert.equal(restoreScheduleIncome.status, 200, 'a skipped planned income entry can be restored');
+    const reSkipScheduleIncome = await patch(`/api/personal-finance/income-entries/${updatedIncomeEntry.id}`, { status: 'SKIPPED' }, first.token);
+    assert.equal(reSkipScheduleIncome.status, 200);
 
     const recurringObligation = await post('/api/personal-finance/obligations', {
       title: 'Schedule edit test obligation', category: 'housing', amount: 200,
