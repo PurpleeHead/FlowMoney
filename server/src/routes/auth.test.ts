@@ -69,6 +69,41 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(settings.status, 200);
     const futureExpense = await post('/api/personal-finance/expenses', { title: 'Future test expense', amount: 500, date: futureDate }, first.token);
     assert.equal(futureExpense.status, 201);
+
+    const customCategoryResponse = await post('/api/personal-finance/categories', {
+      name: 'Test category', slug: `test-category-${suffix.slice(0, 8)}`,
+    }, first.token);
+    assert.equal(customCategoryResponse.status, 201);
+    const customCategory = await customCategoryResponse.json() as { id: string };
+    const editableExpenseResponse = await post('/api/personal-finance/expenses', {
+      title: 'Editable future expense', amount: 125, date: futureDate, categoryId: customCategory.id,
+    }, first.token);
+    assert.equal(editableExpenseResponse.status, 201);
+    const editableExpense = await editableExpenseResponse.json() as { id: string };
+    const filteredExpenseResponse = await get(`/api/personal-finance/expenses?from=${futureDate}&to=${futureDate}&categoryId=${customCategory.id}`, first.token);
+    assert.equal(filteredExpenseResponse.status, 200);
+    const filteredExpenseData = await filteredExpenseResponse.json() as { expenses: Array<{ id: string }> };
+    assert.ok(filteredExpenseData.expenses.some(item => item.id === editableExpense.id),
+      'expense history filters must match the requested date and category');
+    const invalidExpenseRange = await get(`/api/personal-finance/expenses?from=not-a-date&to=${futureDate}`, first.token);
+    assert.equal(invalidExpenseRange.status, 400, 'invalid expense date filters must be rejected');
+    const invalidExpenseCategory = await get(`/api/personal-finance/expenses?categoryId=${randomUUID()}`, first.token);
+    assert.equal(invalidExpenseCategory.status, 400, 'foreign or unknown expense categories must be rejected');
+    const updatedExpenseResponse = await patch(`/api/personal-finance/expenses/${editableExpense.id}`, {
+      title: 'Updated future expense', amount: 150,
+    }, first.token);
+    assert.equal(updatedExpenseResponse.status, 200);
+    assert.equal((await updatedExpenseResponse.json() as { title: string }).title, 'Updated future expense');
+    const foreignExpenseEdit = await patch(`/api/personal-finance/expenses/${editableExpense.id}`, { amount: 200 }, (await (async () => {
+      const response = await post('/api/auth/register', { email: fourthEmail, password: 'Safe-test-password-123!' });
+      assert.equal(response.status, 201);
+      return response.json() as Promise<{ token: string }>;
+    })()).token);
+    assert.equal(foreignExpenseEdit.status, 404, 'another household must not edit this expense');
+    const deletedExpense = await del(`/api/personal-finance/expenses/${editableExpense.id}`, first.token);
+    assert.equal(deletedExpense.status, 204);
+    const repeatedExpenseDelete = await del(`/api/personal-finance/expenses/${editableExpense.id}`, first.token);
+    assert.equal(repeatedExpenseDelete.status, 404, 'expense deletion must be idempotently protected');
     const dashboard = await get('/api/personal-finance/dashboard', first.token);
     assert.equal(dashboard.status, 200);
     const dashboardData = await dashboard.json() as { actual: { balance: number } };
