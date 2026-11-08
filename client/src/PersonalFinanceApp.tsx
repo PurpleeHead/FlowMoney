@@ -85,6 +85,8 @@ export default function PersonalFinanceApp() {
   const [members, setMembers] = useState<Member[]>([]);
   const [filterMember, setFilterMember] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [showSkippedIncome, setShowSkippedIncome] = useState(false);
+  const [showSkippedObligations, setShowSkippedObligations] = useState(false);
   const [expensePeriod, setExpensePeriod] = useState<'month' | 'all' | 'custom'>('month');
   const [expenseFrom, setExpenseFrom] = useState(moscowToday().slice(0, 7) + '-01');
   const [expenseTo, setExpenseTo] = useState(moscowToday());
@@ -146,7 +148,7 @@ export default function PersonalFinanceApp() {
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<{ entries: IncomeEntry[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}`),
       api<{ expenses: Expense[]; categories: Category[] }>(`${PF}/expenses`),
-      api<{ occurrences: ObligationOccurrence[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
+      api<{ occurrences: ObligationOccurrence[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}${showSkippedObligations ? '&includeSkipped=true' : ''}`),
       api<Member[]>(`${PF}/members`),
       api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`),
       api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
@@ -156,7 +158,7 @@ export default function PersonalFinanceApp() {
     ]);
     setDashboard(dash); setIncomeEntries(income.entries); setExpenses(expenseData.expenses); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
-  }, [ranges, expenseCategory, filterMember]);
+  }, [ranges, expenseCategory, filterMember, showSkippedObligations]);
 
   useEffect(() => {
     const token = getToken();
@@ -196,6 +198,7 @@ export default function PersonalFinanceApp() {
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
   async function skipIncomeEntry(id: string) { setBusy(true); try { await api(`${PF}/income-entries/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'SKIPPED' }) }); await refresh(); setNotice(lang === 'ru' ? 'Плановое поступление пропущено.' : 'Planned income skipped.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function restoreIncomeEntry(id: string) { setBusy(true); try { await api(`${PF}/income-entries/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'PLANNED' }) }); await refresh(); setNotice(lang === 'ru' ? 'Поступление возвращено в план.' : 'Income entry restored to plan.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function deleteOneTimeIncome(id: string) {
     if (!window.confirm(lang === 'ru' ? 'Удалить это плановое поступление? Полученные доходы удалить нельзя.' : 'Delete this planned income? Received income cannot be deleted.')) return;
     setBusy(true); setError('');
@@ -215,6 +218,7 @@ export default function PersonalFinanceApp() {
     setBusy(true); try { await api(`${PF}/obligations/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
   async function skipObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/skip`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function restoreObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/restore`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); setNotice(lang === 'ru' ? 'Платёж возвращён в график.' : 'Payment restored to schedule.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function markPaid(id: string, plannedAmount: number | string) {
     const rawAmount = window.prompt(lang === 'ru' ? 'Сколько фактически заплатили, ₽?' : 'How much was actually paid, RUB?', String(plannedAmount));
     if (rawAmount === null) return;
@@ -267,11 +271,11 @@ export default function PersonalFinanceApp() {
   const activeMembers = members.filter(member => !member.isArchived);
   const memberOptions = <><option value="">{tr(lang, 'shared')}</option>{activeMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</>;
   const matchesMember = (id?: string | null) => filterMember === 'all' || (filterMember === 'shared' ? !id : id === filterMember);
-  const visibleIncome = incomeEntries.filter(entry => entry.status !== 'SKIPPED' && matchesMember(entry.memberId ?? entry.member?.id));
+  const visibleIncome = incomeEntries.filter(entry => (showSkippedIncome || entry.status !== 'SKIPPED') && matchesMember(entry.memberId ?? entry.member?.id));
   const memberExpenses = expenses.filter(item => matchesMember(item.memberId ?? item.member?.id));
   const validExpenseCustomRange = Boolean(expenseFrom && expenseTo && expenseFrom <= expenseTo);
   const visibleExpenses = memberExpenses.filter(item => (filterCategory === 'all' || (filterCategory === 'uncategorized' ? !item.category : item.category?.id === filterCategory)) && (expensePeriod === 'all' || (expensePeriod === 'month' ? item.date >= ranges.from && item.date <= ranges.to : validExpenseCustomRange && item.date >= expenseFrom && item.date <= expenseTo)));
-  const visibleObligations = obligationOccurrences.filter(item => matchesMember(item.obligation.memberId));
+  const visibleObligations = obligationOccurrences.filter(item => matchesMember(item.obligation.memberId) && (showSkippedObligations || item.status !== 'SKIPPED'));
   const monthIncome = visibleIncome.filter(entry => entry.plannedDate >= ranges.from && entry.plannedDate <= ranges.to);
   const monthObligations = visibleObligations.filter(item => item.dueDate >= ranges.from && item.dueDate <= ranges.to);
   const visibleBudgets = budgets.filter(item => matchesMember(item.memberId));
