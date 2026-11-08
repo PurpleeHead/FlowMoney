@@ -67,7 +67,7 @@ test('authentication works and household records stay isolated between accounts'
     future.setUTCDate(future.getUTCDate() + 7);
     const futureDate = future.toISOString().slice(0, 10);
     const obligationFilterFuture = new Date(today);
-    obligationFilterFuture.setUTCDate(obligationFilterFuture.getUTCDate() + 40);
+    obligationFilterFuture.setUTCDate(obligationFilterFuture.getUTCDate() + 80);
     const obligationFilterDate = obligationFilterFuture.toISOString().slice(0, 10);
     const settings = await patch('/api/personal-finance/settings', { openingBalance: 1000, openingBalanceDate: today.toISOString().slice(0, 10) }, first.token);
     assert.equal(settings.status, 200);
