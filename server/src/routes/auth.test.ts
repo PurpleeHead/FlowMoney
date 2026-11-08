@@ -12,6 +12,7 @@ test('authentication works and household records stay isolated between accounts'
   const firstEmail = `flowmoney-test-${suffix}@example.test`;
   const secondEmail = `flowmoney-test-other-${suffix}@example.test`;
   const thirdEmail = `flowmoney-test-race-${suffix}@example.test`;
+  const fourthEmail = `flowmoney-test-foreign-${suffix}@example.test`;
   const server = createApp().listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
   const address = server.address() as AddressInfo;
@@ -285,7 +286,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(disposableIncomeResponse.status, 201);
     const disposableIncome = await disposableIncomeResponse.json() as { id: string };
     const foreignDelete = await del(`/api/personal-finance/income-entries/${disposableIncome.id}`, (await (async () => {
-      const response = await post('/api/auth/register', { email: secondEmail, password: 'Safe-test-password-123!' });
+      const response = await post('/api/auth/register', { email: fourthEmail, password: 'Safe-test-password-123!' });
       assert.equal(response.status, 201);
       return response.json() as Promise<{ token: string }>;
     })()).token);
@@ -503,6 +504,6 @@ test('authentication works and household records stay isolated between accounts'
     assert.deepEqual(concurrentRegistrations.map(response => response.status).sort((a, b) => a - b), [201, 409]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-    await prisma.user.deleteMany({ where: { email: { in: [firstEmail, secondEmail, thirdEmail] } } });
+    await prisma.user.deleteMany({ where: { email: { in: [firstEmail, secondEmail, thirdEmail, fourthEmail] } } });
   }
 });
