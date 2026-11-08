@@ -457,12 +457,19 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
     const to = dateQuery(req.query.to, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 4, 0)));
     if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an obligations date range no longer than two years.' });
     const userId = uid(req);
-    const obligations = await prisma.obligation.findMany({ where: { userId, isActive: true } });
+    const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
+    const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const obligations = await prisma.obligation.findMany({ where: { userId, isActive: true, ...memberWhere } });
     for (const obligation of obligations) await createObligationOccurrences(obligation, from, to, now);
     const today = now;
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const occurrences = await prisma.obligationOccurrence.findMany({
-      where: { userId, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, include: { obligation: true, expense: true }, orderBy: { dueDate: 'asc' },
+      where: {
+        userId, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to },
+        ...(memberId ? { obligation: { is: memberWhere } } : {}),
+      },
+      include: { obligation: true, expense: true }, orderBy: { dueDate: 'asc' },
     });
     return res.json({ obligations, occurrences });
   } catch (error) { return next(error); }
