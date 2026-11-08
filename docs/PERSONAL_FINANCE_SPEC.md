@@ -32,7 +32,7 @@ Each source has name, amount, recurrence, start date, optional end date, next pl
 Generate planned income occurrences for a bounded horizon (e.g. current month + next 2 months); avoid duplicate occurrences using a unique source/date key.
 Each occurrence has due date, planned amount, status PLANNED / RECEIVED / SKIPPED, actual amount, received date, owner/member and optional note.
 Only RECEIVED occurrences affect actual balance. Planned occurrences contribute to forecast only.
-Allow manual one-off income and editing/deleting with confirmation. Users can edit a recurring source's amount, recurrence rule, date range and member; skipped planned occurrences remain available in history and can be restored to PLANNED.
+Allow manual one-off income and editing/deleting with confirmation. Users can edit a recurring source's amount, recurrence rule, date range and member; skipped planned occurrences remain available in history and can be restored to PLANNED. Archived sources and obligations remain visible in a dedicated archive view and can be reactivated; archive listing must never regenerate future rows until reactivation.
 
 ### 2.2 Expenses
 Each expense is a dated actual transaction with amount, category, optional description, person/member, createdAt and updatedAt.
@@ -44,7 +44,7 @@ The expense history API accepts optional `from` and `to` dates together (maximum
 ### 2.3 Obligations
 An obligation is a recurring or one-time commitment, not itself a cash transaction.
 Fields: title, category, amount, recurrence (once/weekly/twice-monthly/monthly/yearly), due-date rule, start date, optional end date, owner/member, active flag, notes. The UI must allow editing the complete recurrence rule and date range, not just the display name and amount.
-Create dated obligation occurrences with statuses UPCOMING / PAID / OVERDUE / SKIPPED. Schedule edits replace only future unpaid generated occurrences; paid history and manually skipped occurrences remain unchanged. The obligations list can optionally include skipped history, and a skipped occurrence can be restored to UPCOMING or OVERDUE while its obligation remains active.
+Create dated obligation occurrences with statuses UPCOMING / PAID / OVERDUE / SKIPPED. Schedule edits replace only future unpaid generated occurrences; paid history and manually skipped occurrences remain unchanged. The obligations list can optionally include skipped history, and a skipped occurrence can be restored to UPCOMING or OVERDUE while its obligation remains active. The API can include archived obligation definitions for the archive view without generating occurrences for inactive obligations.
 When marked PAID, create exactly one linked expense transaction and store paidAt/actualAmount. Repeated requests must be idempotent. The linked expense is the only deduction from actual cash balance.
 Monthly obligation total = sum of due occurrences in selected calendar month, including unpaid and paid amounts for burden reporting; show paid and unpaid subtotals separately.
 Future obligations are displayed by month and in a payment calendar. Do not sum all future obligations into the current-month total.
