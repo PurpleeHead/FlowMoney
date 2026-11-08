@@ -383,7 +383,7 @@ router.get('/expenses', async (req: AuthedRequest, res, next) => {
     const expenses = await prisma.ledgerExpense.findMany({
       where: {
         userId, ...memberWhere, ...categoryWhere,
-        ...(from && to ? { date: { gte: dateValue(from), lte: dateValue(to) } } : {}),
+        ...(from && to ? { date: { gte: from, lte: to } } : {}),
       },
       include: { category: true, member: true, obligationOccurrence: true },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], take: 1000,
