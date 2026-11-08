@@ -228,6 +228,11 @@ test('authentication works and household records stay isolated between accounts'
       'editing an obligation schedule must remove obsolete future generated occurrences');
     const skipScheduleObligation = await post(`/api/personal-finance/obligation-occurrences/${updatedObligationOccurrence.id}/skip`, {}, first.token);
     assert.equal(skipScheduleObligation.status, 200);
+    const editAfterSkip = await patch(`/api/personal-finance/obligations/${recurringObligationRecord.id}`, { amount: 125 }, first.token);
+    assert.equal(editAfterSkip.status, 200);
+    const skippedOccurrenceAfterEdit = await prisma.obligationOccurrence.findUnique({ where: { id: updatedObligationOccurrence.id } });
+    assert.equal(skippedOccurrenceAfterEdit?.status, 'SKIPPED',
+      'editing an obligation schedule must preserve a manually skipped occurrence');
 
     // Deactivating and reactivating a recurring income source must restore its future schedule.
     const reactivationIncome = await post('/api/personal-finance/income-sources', {
