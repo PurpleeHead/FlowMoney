@@ -481,7 +481,7 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const occurrences = await prisma.obligationOccurrence.findMany({
       where: {
-        userId, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to },
+        userId, ...(req.query.includeSkipped === 'true' ? {} : { status: { not: 'SKIPPED' } }), dueDate: { gte: from, lte: to },
         ...(memberId ? { obligation: { is: memberWhere } } : {}),
       },
       include: { obligation: true, expense: true }, orderBy: { dueDate: 'asc' },
@@ -565,6 +565,22 @@ router.post('/obligation-occurrences/:id/skip', async (req: AuthedRequest, res, 
     });
     if (!result.count) return res.status(404).json({ message: 'Skippable obligation occurrence not found.' });
     return res.json(await prisma.obligationOccurrence.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
+  } catch (error) { return next(error); }
+});
+router.post('/obligation-occurrences/:id/restore', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req), id = String(req.params.id), today = await userToday(userId);
+    const occurrence = await prisma.obligationOccurrence.findFirst({
+      where: { id, userId }, include: { obligation: true },
+    });
+    if (!occurrence || occurrence.status !== 'SKIPPED') return res.status(404).json({ message: 'Skipped obligation occurrence not found.' });
+    if (!occurrence.obligation.isActive) return res.status(409).json({ message: 'Reactivate the obligation before restoring this occurrence.' });
+    const status = occurrence.dueDate < today ? 'OVERDUE' : 'UPCOMING';
+    const restored = await prisma.obligationOccurrence.updateMany({
+      where: { id, userId, status: 'SKIPPED' }, data: { status },
+    });
+    if (!restored.count) return res.status(409).json({ message: 'Obligation occurrence was changed by another request.' });
+    return res.json(await prisma.obligationOccurrence.findFirst({ where: { id, userId }, include: { obligation: true, expense: true } }));
   } catch (error) { return next(error); }
 });
 router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, next) => {
