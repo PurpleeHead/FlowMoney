@@ -361,11 +361,14 @@ const expenseSchema = z.object({
 router.get('/expenses', async (req: AuthedRequest, res, next) => {
   try {
     const userId = uid(req);
-    const from = typeof req.query.from === 'string' ? dateQuery(req.query.from, null) : null;
-    const to = typeof req.query.to === 'string' ? dateQuery(req.query.to, null) : null;
-    if ((req.query.from !== undefined && !from) || (req.query.to !== undefined && !to)) {
+    const fromInput = typeof req.query.from === 'string' ? dateSchema.safeParse(req.query.from) : null;
+    const toInput = typeof req.query.to === 'string' ? dateSchema.safeParse(req.query.to) : null;
+    if ((req.query.from !== undefined && (!fromInput || !fromInput.success)) ||
+        (req.query.to !== undefined && (!toInput || !toInput.success))) {
       return res.status(400).json({ message: 'Use valid calendar dates for the expense range.' });
     }
+    const from = fromInput?.success ? dateValue(fromInput.data) : null;
+    const to = toInput?.success ? dateValue(toInput.data) : null;
     if ((from && !to) || (!from && to) || (from && to && !isSafeQueryRange(from, to))) {
       return res.status(400).json({ message: 'Provide a complete expense date range no longer than two years.' });
     }
