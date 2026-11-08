@@ -317,6 +317,30 @@ router.post('/income-entries/:id/receive', async (req: AuthedRequest, res, next)
     return res.json(entry);
   } catch (error) { return next(error); }
 });
+router.get('/income-entries', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req), today = await userToday(userId);
+    const from = dateQuery(req.query.from, monthStart(today));
+    const to = dateQuery(req.query.to, new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 3, 0)));
+    if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an income date range no longer than two years.' });
+    const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
+    const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const status = typeof req.query.status === 'string' ? req.query.status : '';
+    if (status && !['PLANNED', 'RECEIVED', 'SKIPPED'].includes(status)) {
+      return res.status(400).json({ message: 'Unknown income entry status.' });
+    }
+    const sources = await prisma.incomeSource.findMany({ where: { userId, isActive: true, ...memberWhere } });
+    for (const source of sources) await createIncomeOccurrences(source, from, to);
+    const entries = await prisma.incomeEntry.findMany({
+      where: { userId, ...memberWhere, plannedDate: { gte: from, lte: to }, ...(status ? { status } : {}) },
+      include: { source: true, member: true },
+      orderBy: [{ plannedDate: 'asc' }, { createdAt: 'asc' }],
+    });
+    return res.json({ entries });
+  } catch (error) { return next(error); }
+});
+
 router.post('/income-entries', async (req: AuthedRequest, res, next) => {
   try {
     const parsed = z.object({ plannedDate: dateSchema, plannedAmount: money, memberId: optionalMember, note: z.string().max(500).optional() }).safeParse(req.body);
