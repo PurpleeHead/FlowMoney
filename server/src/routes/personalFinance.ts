@@ -326,7 +326,7 @@ router.get('/income-entries', async (req: AuthedRequest, res, next) => {
     const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
     if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
-    const status = typeof req.query.status === 'string' ? req.query.status : '';
+    const status = (typeof req.query.status === 'string' ? req.query.status : '') as 'PLANNED' | 'RECEIVED' | 'SKIPPED' | '';
     if (status && !['PLANNED', 'RECEIVED', 'SKIPPED'].includes(status)) {
       return res.status(400).json({ message: 'Unknown income entry status.' });
     }
