@@ -422,6 +422,11 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(assignArchivedObligation.status, 400,
       'archived household members must not be assignable to new obligations');
+    const assignArchivedAdjustment = await post('/api/personal-finance/balance-adjustments', {
+      amount: 50, date: todayString, reason: 'Archived member adjustment', memberId: budgetMember.id,
+    }, first.token);
+    assert.equal(assignArchivedAdjustment.status, 400,
+      'archived household members must not be assignable to new balance adjustments');
 
     const archivedMemberDashboard = await get(`/api/personal-finance/dashboard?memberId=${budgetMember.id}`, first.token);
     assert.equal(archivedMemberDashboard.status, 200,
@@ -446,6 +451,15 @@ test('authentication works and household records stay isolated between accounts'
       title: 'Foreign member expense', amount: 100, date: todayString, memberId: secondMember.id,
     }, first.token);
     assert.equal(foreignMemberExpense.status, 400, 'a household cannot assign records to another account member');
+    const foreignMemberAdjustment = await post('/api/personal-finance/balance-adjustments', {
+      amount: 100, date: todayString, reason: 'Foreign member adjustment', memberId: secondMember.id,
+    }, first.token);
+    assert.equal(foreignMemberAdjustment.status, 400,
+      'a household cannot assign balance adjustments to another account member');
+    const secondAdjustments = await get('/api/personal-finance/balance-adjustments', second.token);
+    assert.equal(secondAdjustments.status, 200);
+    assert.deepEqual(await secondAdjustments.json(), [],
+      'a household must not be able to read another account balance adjustments');
 
     const firstMembers = await get('/api/personal-finance/members', first.token);
     const secondMembers = await get('/api/personal-finance/members', second.token);
