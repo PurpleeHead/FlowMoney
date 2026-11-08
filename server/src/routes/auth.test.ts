@@ -93,6 +93,23 @@ test('authentication works and household records stay isolated between accounts'
     const filteredExpenseData = await filteredExpenseResponse.json() as { expenses: Array<{ id: string }> };
     assert.ok(filteredExpenseData.expenses.some(item => item.id === editableExpense.id),
       'expense history filters must match the requested date and category');
+
+    const expensePageOne = await get('/api/personal-finance/expenses?take=1&skip=0', first.token);
+    const expensePageOneData = await expensePageOne.json() as { expenses: Array<{ id: string }>; total: number; page: { hasMore: boolean; take: number; skip: number } };
+    assert.equal(expensePageOne.status, 200);
+    assert.equal(expensePageOneData.expenses.length, 1);
+    assert.equal(expensePageOneData.page.hasMore, true, 'the first expense page reports additional ledger rows');
+    const expensePageTwo = await get('/api/personal-finance/expenses?take=1&skip=1', first.token);
+    const expensePageTwoData = await expensePageTwo.json() as { expenses: Array<{ id: string }>; total: number; page: { hasMore: boolean; take: number; skip: number } };
+    assert.equal(expensePageTwo.status, 200);
+    assert.equal(expensePageTwoData.expenses.length, 1);
+    assert.notEqual(expensePageOneData.expenses[0].id, expensePageTwoData.expenses[0].id,
+      'expense pages must not repeat the same row');
+    assert.equal(expensePageOneData.total, expensePageTwoData.total);
+    const invalidExpensePage = await get('/api/personal-finance/expenses?take=251', first.token);
+    assert.equal(invalidExpensePage.status, 400, 'expense page size must stay within the API limit');
+    const invalidExpenseOffset = await get('/api/personal-finance/expenses?skip=-1', first.token);
+    assert.equal(invalidExpenseOffset.status, 400, 'negative expense offsets must be rejected');
     const invalidExpenseRange = await get(`/api/personal-finance/expenses?from=not-a-date&to=${futureDate}`, first.token);
     assert.equal(invalidExpenseRange.status, 400, 'invalid expense date filters must be rejected');
     const invalidExpenseCategory = await get(`/api/personal-finance/expenses?categoryId=${randomUUID()}`, first.token);
