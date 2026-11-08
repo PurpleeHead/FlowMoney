@@ -257,6 +257,17 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(skippedOccurrenceAfterEdit?.status, 'SKIPPED',
       'editing an obligation schedule must preserve a manually skipped occurrence');
 
+    const skippedHistoryResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}&includeSkipped=true`, first.token);
+    assert.equal(skippedHistoryResponse.status, 200);
+    const skippedHistoryData = await skippedHistoryResponse.json() as { occurrences: Array<{ id: string; status: string }> };
+    assert.ok(skippedHistoryData.occurrences.some(item => item.id === updatedObligationOccurrence.id && item.status === 'SKIPPED'),
+      'the optional skipped-history view must return skipped occurrences');
+    const restoreSkippedOccurrence = await post(`/api/personal-finance/obligation-occurrences/${updatedObligationOccurrence.id}/restore`, {}, first.token);
+    assert.equal(restoreSkippedOccurrence.status, 200);
+    assert.equal((await restoreSkippedOccurrence.json() as { status: string }).status, 'UPCOMING');
+    const skipRestoredOccurrence = await post(`/api/personal-finance/obligation-occurrences/${updatedObligationOccurrence.id}/skip`, {}, first.token);
+    assert.equal(skipRestoredOccurrence.status, 200, 'restored occurrences can be skipped again');
+
     // Deactivating and reactivating a recurring income source must restore its future schedule.
     const reactivationIncome = await post('/api/personal-finance/income-sources', {
       title: 'Reactivation income test', amount: 300, recurrence: 'MONTHLY',
