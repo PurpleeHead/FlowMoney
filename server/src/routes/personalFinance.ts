@@ -411,7 +411,12 @@ router.post('/categories', async (req: AuthedRequest, res, next) => {
     const parsed = categorySchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Enter a category name and a lowercase slug.' });
     return res.status(201).json(await prisma.expenseCategory.create({ data: { ...parsed.data, userId: uid(req) } }));
-  } catch (error) { return next(error); }
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+      return res.status(409).json({ message: 'A category with this slug already exists.' });
+    }
+    return next(error);
+  }
 });
 router.patch('/categories/:id', async (req: AuthedRequest, res, next) => {
   try {
@@ -623,7 +628,11 @@ const budgetSchema = z.object({
 router.get('/budgets', async (req: AuthedRequest, res, next) => {
   try {
     const today = await userToday(uid(req));
-    const month = typeof req.query.month === 'string' && dateSchema.safeParse(req.query.month).success ? monthStart(dateValue(req.query.month)) : monthStart(today);
+    const monthInput = typeof req.query.month === 'string' ? dateSchema.safeParse(req.query.month) : null;
+    if (req.query.month !== undefined && (!monthInput || !monthInput.success)) {
+      return res.status(400).json({ message: 'Use a valid calendar date for the budget month.' });
+    }
+    const month = monthInput?.success ? monthStart(dateValue(monthInput.data)) : monthStart(today);
     return res.json(await prisma.budget.findMany({
       where: { userId: uid(req), periodMonth: month }, include: { category: true, member: true },
       orderBy: [{ memberId: 'asc' }, { categoryId: 'asc' }],
