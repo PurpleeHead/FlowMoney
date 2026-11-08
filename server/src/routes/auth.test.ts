@@ -89,9 +89,21 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(Number(memberDashboardData.actual.balance), 150,
       'member balance must include member transactions but not the household opening balance');
 
+    const memberAdjustment = await post('/api/personal-finance/balance-adjustments', {
+      amount: 25, date: today.toISOString().slice(0, 10), reason: 'Member balance correction', memberId: member.id,
+    }, first.token);
+    assert.equal(memberAdjustment.status, 201);
+    const sharedAdjustment = await post('/api/personal-finance/balance-adjustments', {
+      amount: 40, date: today.toISOString().slice(0, 10), reason: 'Shared household correction',
+    }, first.token);
+    assert.equal(sharedAdjustment.status, 201);
+    const adjustedMemberDashboard = await get(`/api/personal-finance/dashboard?memberId=${member.id}`, first.token);
+    assert.equal(Number((await adjustedMemberDashboard.json() as { actual: { balance: number } }).actual.balance), 175,
+      'member balance must include only adjustments attributed to that member');
+
     const householdDashboardAfterMemberTransactions = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await householdDashboardAfterMemberTransactions.json() as { actual: { balance: number } }).actual.balance), 1150,
-      'household balance must include the opening balance and all members’ actual transactions');
+    assert.equal(Number((await householdDashboardAfterMemberTransactions.json() as { actual: { balance: number } }).actual.balance), 1215,
+      'household balance must include the opening balance, all member transactions and shared adjustments');
 
     const todayString = today.toISOString().slice(0, 10);
 
@@ -239,7 +251,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(expensesData.expenses.filter(item => item.title === 'Concurrent rent payment').length, 1);
     const afterPaymentDashboard = await get('/api/personal-finance/dashboard', first.token);
     const afterPaymentData = await afterPaymentDashboard.json() as { actual: { balance: number }; obligations: { paid: number; unpaid: number } };
-    assert.equal(Number(afterPaymentData.actual.balance), 400, 'the actual payment amount must reduce the household balance exactly once while retaining prior member transactions');
+    assert.equal(Number(afterPaymentData.actual.balance), 465, 'the actual payment amount must reduce the household balance exactly once while retaining member and shared adjustments');
     assert.equal(Number(afterPaymentData.obligations.paid), 750, 'paid obligation reporting must use the actual amount, not the planned amount');
     assert.equal(Number(afterPaymentData.obligations.unpaid), 0, 'overpaying a planned obligation must not create a negative unpaid balance');
     const paidObligationAnalytics = await get(`/api/personal-finance/analytics?from=${todayString}&to=${todayString}`, first.token);
