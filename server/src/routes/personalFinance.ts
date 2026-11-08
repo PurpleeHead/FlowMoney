@@ -201,7 +201,7 @@ router.get('/income-sources', async (req: AuthedRequest, res, next) => {
     if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an income date range no longer than two years.' });
     const includeArchived = req.query.includeArchived === 'true';
     const sources = await prisma.incomeSource.findMany({ where: { userId: uid(req), ...(includeArchived ? {} : { isActive: true }) }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
-    for (const source of sources) await createIncomeOccurrences(source, from, to);
+    for (const source of sources) if (source.isActive) await createIncomeOccurrences(source, from, to);
     const entries = await prisma.incomeEntry.findMany({
       where: { userId: uid(req), plannedDate: { gte: from, lte: to } },
       include: { source: true, member: true }, orderBy: { plannedDate: 'asc' },
@@ -478,7 +478,7 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
     const includeArchived = req.query.includeArchived === 'true';
     const obligations = await prisma.obligation.findMany({ where: { userId, ...(includeArchived ? {} : { isActive: true }), ...memberWhere }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
-    for (const obligation of obligations) await createObligationOccurrences(obligation, from, to, now);
+    for (const obligation of obligations) if (obligation.isActive) await createObligationOccurrences(obligation, from, to, now);
     const today = now;
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
     const occurrences = await prisma.obligationOccurrence.findMany({
