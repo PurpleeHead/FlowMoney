@@ -395,6 +395,12 @@ router.get('/expenses', async (req: AuthedRequest, res, next) => {
     if ((from && !to) || (!from && to) || (from && to && !isSafeQueryRange(from, to))) {
       return res.status(400).json({ message: 'Provide a complete expense date range no longer than two years.' });
     }
+    const take = req.query.take === undefined ? 100 : Number(req.query.take);
+    const skip = req.query.skip === undefined ? 0 : Number(req.query.skip);
+    if (!Number.isSafeInteger(take) || take < 1 || take > 250 ||
+        !Number.isSafeInteger(skip) || skip < 0 || skip > 100_000) {
+      return res.status(400).json({ message: 'Use take from 1 to 250 and skip from 0 to 100000.' });
+    }
     const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
     if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
     const categoryId = typeof req.query.categoryId === 'string' ? req.query.categoryId : '';
@@ -403,19 +409,22 @@ router.get('/expenses', async (req: AuthedRequest, res, next) => {
     }))) return res.status(400).json({ message: 'Selected category was not found.' });
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
     const categoryWhere = categoryId === 'uncategorized' ? { categoryId: null } : categoryId ? { categoryId } : {};
-    const expenses = await prisma.ledgerExpense.findMany({
-      where: {
-        userId, ...memberWhere, ...categoryWhere,
-        ...(from && to ? { date: { gte: from, lte: to } } : {}),
-      },
-      include: { category: true, member: true, obligationOccurrence: true },
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], take: 1000,
-    });
-    const categories = await prisma.expenseCategory.findMany({
-      where: { OR: [{ userId }, { userId: null }] },
-      orderBy: [{ userId: 'asc' }, { name: 'asc' }],
-    });
-    return res.json({ expenses, categories });
+    const where = {
+      userId, ...memberWhere, ...categoryWhere,
+      ...(from && to ? { date: { gte: from, lte: to } } : {}),
+    };
+    const [expenses, total, categories] = await Promise.all([
+      prisma.ledgerExpense.findMany({
+        where, include: { category: true, member: true, obligationOccurrence: true },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }], take, skip,
+      }),
+      prisma.ledgerExpense.count({ where }),
+      prisma.expenseCategory.findMany({
+        where: { OR: [{ userId }, { userId: null }] },
+        orderBy: [{ userId: 'asc' }, { name: 'asc' }],
+      }),
+    ]);
+    return res.json({ expenses, total, page: { take, skip, hasMore: skip + expenses.length < total }, categories });
   } catch (error) { return next(error); }
 });
 const categorySchema = z.object({ name: z.string().trim().min(1).max(60), slug: z.string().trim().min(1).max(70).regex(new RegExp('^[a-z0-9-]+$')) });
