@@ -167,7 +167,12 @@ router.post('/members', async (req: AuthedRequest, res, next) => {
     const parsed = z.object({ name: z.string().trim().min(1).max(60), color: z.string().max(24).optional() }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Enter a household member name.' });
     return res.status(201).json(await prisma.householdMember.create({ data: { ...parsed.data, userId: uid(req) } }));
-  } catch (error) { return next(error); }
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+      return res.status(409).json({ message: 'A household member with this name already exists.' });
+    }
+    return next(error);
+  }
 });
 router.patch('/members/:id', async (req: AuthedRequest, res, next) => {
   try {
