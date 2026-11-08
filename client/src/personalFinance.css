@@ -98,3 +98,9 @@ button{cursor:pointer}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+
+/* Archived schedules remain accessible without crowding the active forms. */
+.pf-archive-card{grid-column:1/-1;border-style:dashed;background:rgba(255,255,255,.025)}
+.pf-archive-card .pf-list-row{padding:12px 0;border-top:1px solid rgba(255,255,255,.07)}
+@media(max-width:760px){.pf-archive-card{grid-column:auto}}
