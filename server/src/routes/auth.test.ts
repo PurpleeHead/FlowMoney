@@ -29,6 +29,10 @@ test('authentication works and household records stay isolated between accounts'
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   });
+  const del = (path: string, token: string) => fetch(baseUrl + path, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${token}` },
+  });
 
   try {
     const frontend = await get('/');
@@ -273,6 +277,25 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(receivedIncome.status, 200);
     const duplicateReceipt = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 9000 }, first.token);
     assert.equal(duplicateReceipt.status, 200);
+
+    // One-time planned income is deletable; received history and another account's records are not.
+    const disposableIncomeResponse = await post('/api/personal-finance/income-entries', {
+      plannedDate: todayString, plannedAmount: 350,
+    }, first.token);
+    assert.equal(disposableIncomeResponse.status, 201);
+    const disposableIncome = await disposableIncomeResponse.json() as { id: string };
+    const foreignDelete = await del(`/api/personal-finance/income-entries/${disposableIncome.id}`, (await (async () => {
+      const response = await post('/api/auth/register', { email: secondEmail, password: 'Safe-test-password-123!' });
+      assert.equal(response.status, 201);
+      return response.json() as Promise<{ token: string }>;
+    })()).token);
+    assert.equal(foreignDelete.status, 404, 'another account must not delete a one-time income entry');
+    const deleteManualIncome = await del(`/api/personal-finance/income-entries/${disposableIncome.id}`, first.token);
+    assert.equal(deleteManualIncome.status, 204);
+    const repeatDeleteManualIncome = await del(`/api/personal-finance/income-entries/${disposableIncome.id}`, first.token);
+    assert.equal(repeatDeleteManualIncome.status, 404, 'deleting the same income twice must not report success');
+    const deleteReceivedIncome = await del(`/api/personal-finance/income-entries/${plannedIncome.id}`, first.token);
+    assert.equal(deleteReceivedIncome.status, 404, 'received income history must remain protected');
     const afterReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
     assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1665,
       'receiving the same income entry again must not count it twice or overwrite the first actual amount');
