@@ -2,7 +2,7 @@ name: FlowMoney CI
 
 on:
   push:
-    branches: [feature/personal-finance-rework]
+    branches: [feature/personal-finance-rework, feature/telegram-mini-app]
   pull_request:
     branches: [main]
 
