@@ -72,6 +72,32 @@ router.patch('/', async (req: AuthedRequest, res, next) => {
   } catch (error) { return next(error); }
 });
 
+router.patch('/profile', async (req: AuthedRequest, res, next) => {
+  try {
+    const user = current(req);
+    if (!ownerOnly(req, res)) return;
+    const parsed = z.object({ memberId: z.string().cuid().nullable() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Choose a valid household profile.' });
+    if (parsed.data.memberId) {
+      const member = await prisma.householdMember.findFirst({
+        where: { id: parsed.data.memberId, userId: user.id, isArchived: false },
+        select: { id: true },
+      });
+      if (!member) return res.status(404).json({ message: 'Household member profile not found.' });
+      const occupied = await prisma.householdAccess.findFirst({
+        where: { householdId: user.householdId, memberId: parsed.data.memberId, revokedAt: null, userId: { not: user.accountId } },
+        select: { id: true },
+      });
+      if (occupied) return res.status(409).json({ message: 'This profile is already linked to another account.' });
+    }
+    await prisma.householdAccess.updateMany({
+      where: { householdId: user.householdId, userId: user.accountId, revokedAt: null, role: 'OWNER' },
+      data: { memberId: parsed.data.memberId },
+    });
+    return res.json({ memberId: parsed.data.memberId });
+  } catch (error) { return next(error); }
+});
+
 router.post('/invitations', invitationCreateLimit, async (req: AuthedRequest, res, next) => {
   try {
     if (!ownerOnly(req, res)) return;
