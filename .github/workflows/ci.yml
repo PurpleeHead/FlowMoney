@@ -4,7 +4,7 @@ on:
   push:
     branches: [feature/personal-finance-rework, feature/telegram-mini-app, feature/nummiox-branding]
   pull_request:
-    branches: [main]
+    branches: [main, feature/telegram-mini-app]
 
 permissions:
   contents: read
