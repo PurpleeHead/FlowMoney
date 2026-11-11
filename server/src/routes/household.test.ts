@@ -51,13 +51,13 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const inviteToken = new URL(invite.inviteLink).searchParams.get('startapp');
     assert.ok(inviteToken);
 
-    const memberInviteAttempt = await request('/api/household/invitations', 'POST', { memberId: reservedProfile.id }, spouse.token);
-    assert.equal(memberInviteAttempt.status, 403, 'only the household owner can invite users');
-
     const accepted = await request('/api/household/invitations/accept', 'POST', { token: inviteToken }, spouse.token);
     assert.equal(accepted.status, 200);
     const acceptedBody = await accepted.json() as { householdName: string; memberName: string };
     assert.equal(acceptedBody.memberName, 'Wife');
+
+    const memberInviteAttempt = await request('/api/household/invitations', 'POST', { memberId: reservedProfile.id }, spouse.token);
+    assert.equal(memberInviteAttempt.status, 403, 'only the household owner can invite users');
 
     const expense = await request('/api/personal-finance/expenses', 'POST', {
       title: 'Shared groceries', amount: 2450, date: '2026-11-11', memberId: wifeProfile.id,
