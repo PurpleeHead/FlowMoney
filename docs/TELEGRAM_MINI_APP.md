@@ -21,7 +21,7 @@ After the web app is deployed to HTTPS:
 
 1. Run `/setmenubutton` in BotFather.
 2. Select the bot.
-3. Set the button text to `Open FLOWMONEY`.
+3. Set the button text to `Open nummioX`.
 4. Provide the deployed HTTPS app URL.
 5. Optionally use `/newapp` to create a named Mini App. Use `nummioX` as its title and a short name such as `nummiox` if Telegram accepts it.\n\nFor the bot profile, set the display name to `nummioX` and use this description: `Удобный учёт доходов, расходов, бюджета и накоплений семьи.`
 
@@ -35,6 +35,6 @@ Run the normal nummioX setup, then set `TELEGRAM_BOT_TOKEN` in `server/.env`. Te
 
 - Only the server receives the bot token.
 - The client sends Telegram's raw `initData`; it never decides the authenticated Telegram user ID.
-- The server validates the HMAC signature, timestamp and user ID before issuing the existing FlowMoney JWT.
+- The server validates the HMAC signature, timestamp and user ID before issuing the existing nummioX session token.
 - Never accept `initDataUnsafe` as proof of identity.
 - The Telegram identity migration is additive. It must be applied through the reviewed migration process, not by production startup.
