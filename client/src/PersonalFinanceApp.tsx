@@ -317,7 +317,7 @@ export default function PersonalFinanceApp() {
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
 
-  if (loading) return <div className="pf-loading"><div className="pf-brand">FLOW<span>MONEY</span></div><div className="pf-spinner"/><p>{tr(lang, 'loading')}</p></div>;
+  if (loading) return <div className="pf-loading"><div className="pf-brand">nummio<span>X</span></div><div className="pf-spinner"/><p>{tr(lang, 'loading')}</p></div>;
   if (!user) return <main className="pf-auth">
     <div className="pf-auth-card">
       <div className="pf-brand">FLOW<span>MONEY</span></div>
@@ -550,7 +550,7 @@ export default function PersonalFinanceApp() {
           <ul className="pf-rules"><li>{lang === 'ru' ? 'Доходы учитываются в фактическом остатке только после отметки «Получено».' : 'Income affects actual balance only after being marked received.'}</li><li>{lang === 'ru' ? 'Обязательство становится расходом один раз после отметки «Оплачено».' : 'An obligation becomes an expense once when marked paid.'}</li><li>{lang === 'ru' ? 'Пустой участник означает общий расход или доход семьи.' : 'An empty member means a shared household item.'}</li><li>{lang === 'ru' ? 'Все суммы ведутся только в рублях.' : 'All amounts are tracked in RUB only.'}</li></ul>
         </section>
       </div>}
-      <footer className="pf-footer">FLOWMONEY <span>·</span> {lang === 'ru' ? 'Семейные финансы без догадок' : 'Family finances, without guesswork'}</footer>
+      <footer className="pf-footer">nummioX <span>·</span> {lang === 'ru' ? 'Семейные финансы без догадок' : 'Family finances, without guesswork'}</footer>
     </main>
   </div>;
 }
