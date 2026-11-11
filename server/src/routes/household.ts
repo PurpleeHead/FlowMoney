@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createHash } from 'node:crypto';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { authAccount } from '../middleware/auth.js';
@@ -8,6 +8,8 @@ import { newInvitationToken, hashInvitationToken } from '../services/households.
 
 const router = Router();
 router.use(authAccount);
+const invitationCreateLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false });
+const invitationAcceptLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false });
 
 function current(req: AuthedRequest) { return req.user!; }
 function ownerOnly(req: AuthedRequest, res: import('express').Response) {
@@ -70,7 +72,7 @@ router.patch('/', async (req: AuthedRequest, res, next) => {
   } catch (error) { return next(error); }
 });
 
-router.post('/invitations', async (req: AuthedRequest, res, next) => {
+router.post('/invitations', invitationCreateLimit, async (req: AuthedRequest, res, next) => {
   try {
     if (!ownerOnly(req, res)) return;
     const parsed = z.object({ memberId: z.string().cuid() }).safeParse(req.body);
@@ -135,7 +137,7 @@ router.delete('/invitations/:id', async (req: AuthedRequest, res, next) => {
   } catch (error) { return next(error); }
 });
 
-router.post('/invitations/accept', async (req: AuthedRequest, res, next) => {
+router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequest, res, next) => {
   try {
     const parsed = z.object({ token: z.string().min(32).max(128) }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'The invitation link is invalid.' });
