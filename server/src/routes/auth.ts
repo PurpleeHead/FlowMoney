@@ -35,7 +35,12 @@ router.post('/register', async (req, res, next) => {
       return res.status(409).json({ message: 'An account with this email already exists.' });
     }
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({ data: { email, passwordHash } });
+    const user = await prisma.$transaction(async tx => {
+      const created = await tx.user.create({ data: { email, passwordHash } });
+      const household = await tx.household.create({ data: { name: 'Моя семья', ownerUserId: created.id } });
+      await tx.householdAccess.create({ data: { householdId: household.id, userId: created.id, role: 'OWNER' } });
+      return created;
+    });
     return res.status(201).json({ token: token(user.id, user.email), user: { id: user.id, email: user.email } });
   } catch (error) {
     // Two requests can pass the pre-check at once; the database unique constraint is authoritative.
@@ -71,19 +76,30 @@ router.post('/telegram', async (req, res, next) => {
     const telegramUser = verifyTelegramInitData(initData, botToken);
     if (!telegramUser) return res.status(401).json({ message: 'Telegram sign-in data is invalid or expired. Reopen the app from Telegram.' });
 
-    const user = await prisma.user.upsert({
-      where: { telegramId: telegramUser.id },
-      update: {
-        telegramUsername: telegramUser.username ?? null,
-        telegramFirstName: telegramUser.firstName ?? 'Telegram user',
-      },
-      create: {
-        email: `telegram_${telegramUser.id}@telegram.flowmoney.invalid`,
-        passwordHash: randomBytes(32).toString('hex'),
-        telegramId: telegramUser.id,
-        telegramUsername: telegramUser.username ?? null,
-        telegramFirstName: telegramUser.firstName ?? 'Telegram user',
-      },
+    const user = await prisma.$transaction(async tx => {
+      const existing = await tx.user.findUnique({ where: { telegramId: telegramUser.id } });
+      if (existing) {
+        return tx.user.update({
+          where: { id: existing.id },
+          data: {
+            telegramUsername: telegramUser.username ?? null,
+            telegramFirstName: telegramUser.firstName ?? 'Telegram user',
+          },
+        });
+      }
+
+      const created = await tx.user.create({
+        data: {
+          email: `telegram_${telegramUser.id}@telegram.flowmoney.invalid`,
+          passwordHash: randomBytes(32).toString('hex'),
+          telegramId: telegramUser.id,
+          telegramUsername: telegramUser.username ?? null,
+          telegramFirstName: telegramUser.firstName ?? 'Telegram user',
+        },
+      });
+      const household = await tx.household.create({ data: { name: 'Моя семья', ownerUserId: created.id } });
+      await tx.householdAccess.create({ data: { householdId: household.id, userId: created.id, role: 'OWNER' } });
+      return created;
     });
     const displayName = user.telegramFirstName || user.telegramUsername || 'Telegram';
     return res.json({
@@ -97,7 +113,7 @@ router.post('/telegram', async (req, res, next) => {
 
 router.get('/me', auth, async (req: AuthedRequest, res, next) => {
   try {
-    return res.json(req.user);
+    return res.json({ ...req.user, id: req.user!.accountId });
   } catch (error) {
     return next(error);
   }
