@@ -14,6 +14,7 @@ type Expense = { id: string; title: string; amount: number | string; date: strin
 type Analytics = { totals: { income: number; expenses: number; obligations: number }; categories: Array<{ name: string; amount: number }>; members: Array<{ id: string | null; name: string; income: number; expenses: number; net: number }>; months: Array<{ month: string; income: number; expenses: number; net: number }> };
 type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | string; member?: Member | null; category?: Category | null; memberId?: string | null; categoryId?: string | null };
 type SavingsGoal = { id: string; title: string; targetAmount: number | string; currentAmount: number | string; targetDate?: string | null; status: string };
+type PendingHouseholdInvite = { alreadyAccepted: boolean; householdName: string; memberName: string; ownerName: string; expiresAt?: string };
 type HouseholdInfo = {
   id: string; name: string; ownerUserId: string; role: 'OWNER' | 'MEMBER';
   currentUser: { id: string; memberId: string | null };
@@ -91,6 +92,7 @@ export default function PersonalFinanceApp() {
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [household, setHousehold] = useState<HouseholdInfo | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<PendingHouseholdInvite | null>(null);
   const [inviteMemberId, setInviteMemberId] = useState('');
   const [ownerProfileId, setOwnerProfileId] = useState('');
   const [inviteLink, setInviteLink] = useState('');
@@ -197,12 +199,20 @@ export default function PersonalFinanceApp() {
     const bootstrap = async () => {
       const initData = window.Telegram?.WebApp?.initData;
       const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-      const acceptStartInvite = async () => {
-        if (!startParam) return;
+      const loadStartInvitePreview = async () => {
+        if (!startParam) return false;
         try {
-          const result = await api<{ householdName: string; memberName: string }>('/household/invitations/accept', { method: 'POST', body: JSON.stringify({ token: startParam }) });
-          setNotice(lang === 'ru' ? `Вы присоединились к семье «${result.householdName}» как ${result.memberName}.` : `Joined ${result.householdName} as ${result.memberName}.`);
-        } catch (e) { setError(e instanceof Error ? e.message : 'Invitation could not be accepted.'); }
+          const preview = await api<PendingHouseholdInvite>(`/household/invitations/preview?token=${encodeURIComponent(startParam)}`);
+          if (preview.alreadyAccepted) {
+            setNotice(lang === 'ru' ? `Ты уже присоединился к семье «${preview.householdName}».` : `You already joined ${preview.householdName}.`);
+            return false;
+          }
+          setPendingInvite(preview);
+          return true;
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'Invitation could not be loaded.');
+          return false;
+        }
       };
       const existingToken = getToken();
 
@@ -211,7 +221,7 @@ export default function PersonalFinanceApp() {
           const current = await api<User>('/auth/me');
           if (cancelled) return;
           setUser(current);
-          await acceptStartInvite();
+          if (await loadStartInvitePreview()) { if (!cancelled) setLoading(false); return; }
           await refresh();
           if (!cancelled) setLoading(false);
           return;
@@ -231,8 +241,7 @@ export default function PersonalFinanceApp() {
           if (cancelled) return;
           setToken(result.token);
           setUser(result.user);
-          await acceptStartInvite();
-          await refresh();
+          if (!(await loadStartInvitePreview())) await refresh();
         } catch (e) {
           if (!cancelled) setError(e instanceof Error ? e.message : 'Telegram sign-in failed.');
         } finally {
@@ -328,6 +337,19 @@ export default function PersonalFinanceApp() {
   }
   async function renameMember(member: Member) { const name = window.prompt(lang === 'ru' ? 'Имя участника' : 'Member name', member.name); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function archiveMember(member: Member) { if (!window.confirm(lang === 'ru' ? 'Убрать участника из списка? Старые операции сохранят привязку.' : 'Archive this member? Historical transactions keep the attribution.')) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); await refresh(); if (filterMember === member.id) setFilterMember('all'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function acceptPendingInvite() {
+    if (!pendingInvite) return;
+    const token = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+    if (!token) { setError(lang === 'ru' ? 'Не удалось прочитать ссылку-приглашение. Открой её ещё раз из Telegram.' : 'Invitation parameter is missing. Reopen the link in Telegram.'); return; }
+    setBusy(true); setError('');
+    try {
+      const result = await api<{ householdName: string; memberName: string }>('/household/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
+      setPendingInvite(null);
+      await refresh();
+      setNotice(lang === 'ru' ? `Ты присоединился к семье «${result.householdName}» как ${result.memberName}.` : `Joined ${result.householdName} as ${result.memberName}.`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Invitation could not be accepted.'); }
+    finally { setBusy(false); }
+  }
   async function saveOwnerProfile() {
     setBusy(true); setError('');
     try {
@@ -389,6 +411,20 @@ export default function PersonalFinanceApp() {
       </form>
       <button className="pf-link" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError(''); }}>{authMode === 'login' ? tr(lang, 'signUp') : tr(lang, 'signIn')}</button>
       <button className="pf-language" onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 English' : '🇷🇺 Русский'}</button>
+    </div>
+  </main>;
+
+  if (pendingInvite && user) return <main className="pf-auth">
+    <div className="pf-auth-card">
+      <div className="pf-brand">nummio<span>X</span></div>
+      <div className="pf-auth-icon">⌂</div>
+      <span className="pf-eyebrow">{lang === 'ru' ? 'ПРИГЛАШЕНИЕ В СЕМЕЙНЫЙ БЮДЖЕТ' : 'HOUSEHOLD INVITATION'}</span>
+      <h1>{lang === 'ru' ? 'Присоединиться к семье?' : 'Join this household?'}</h1>
+      <p>{lang === 'ru' ? `${pendingInvite.ownerName} приглашает тебя в пространство «${pendingInvite.householdName}».` : `${pendingInvite.ownerName} invited you to “${pendingInvite.householdName}”.`}</p>
+      <div className="pf-invite-summary"><strong>{pendingInvite.memberName}</strong><small>{lang === 'ru' ? 'Твой профиль в общем бюджете' : 'Your profile in the shared budget'}</small></div>
+      <p className="pf-muted">{lang === 'ru' ? 'После подтверждения ты получишь доступ к общим доходам, расходам, бюджетам и накоплениям. Твои существующие личные финансовые записи не будут объединяться автоматически.' : 'After confirmation, you will see shared income, expenses, budgets and savings. Existing personal financial records will not be merged automatically.'}</p>
+      {error && <div className="pf-alert error">{error}</div>}
+      <button className="pf-button primary" disabled={busy} onClick={acceptPendingInvite}>{busy ? '…' : (lang === 'ru' ? 'Принять приглашение' : 'Accept invitation')}</button>
     </div>
   </main>;
 
