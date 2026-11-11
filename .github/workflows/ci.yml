@@ -1,8 +1,8 @@
-name: FlowMoney CI
+name: nummioX CI
 
 on:
   push:
-    branches: [feature/personal-finance-rework, feature/telegram-mini-app]
+    branches: [feature/personal-finance-rework, feature/telegram-mini-app, feature/nummiox-branding]
   pull_request:
     branches: [main]
 
