@@ -35,6 +35,10 @@ model User {
   balanceAdjustments BalanceAdjustment[]
   budgets Budget[]
   savingsGoals SavingsGoal[]
+  ownedHouseholds Household[] @relation("HouseholdOwner")
+  householdAccess HouseholdAccess[] @relation("AccessUser")
+  createdHouseholdInvites HouseholdInvite[] @relation("InviteCreator")
+  acceptedHouseholdInvites HouseholdInvite[] @relation("InviteAcceptor")
 }
 
 model Wallet {
@@ -115,6 +119,8 @@ model HouseholdMember {
   obligations Obligation[]
   balanceAdjustments BalanceAdjustment[]
   budgets Budget[]
+  householdAccess HouseholdAccess[]
+  householdInvites HouseholdInvite[]
 
   @@unique([userId, name])
   @@index([userId])
@@ -283,4 +289,56 @@ model SavingsGoal {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
+}
+
+
+model Household {
+  id          String   @id @default(cuid())
+  name        String   @default("Моя семья")
+  ownerUserId String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  owner       User     @relation("HouseholdOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  accesses    HouseholdAccess[]
+  invitations HouseholdInvite[]
+
+  @@index([ownerUserId])
+}
+
+model HouseholdAccess {
+  id          String   @id @default(cuid())
+  householdId String
+  userId      String
+  memberId    String?
+  role        String   @default("MEMBER")
+  joinedAt    DateTime @default(now())
+  revokedAt   DateTime?
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user        User      @relation("AccessUser", fields: [userId], references: [id], onDelete: Cascade)
+  member      HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([userId, revokedAt])
+  @@index([householdId, revokedAt])
+  @@index([memberId])
+}
+
+model HouseholdInvite {
+  id               String   @id @default(cuid())
+  householdId      String
+  createdByUserId  String
+  memberId         String
+  tokenHash        String   @unique
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+  household        Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy        User      @relation("InviteCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  acceptedBy       User?     @relation("InviteAcceptor", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  member           HouseholdMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([householdId, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@index([expiresAt, acceptedAt, revokedAt])
 }

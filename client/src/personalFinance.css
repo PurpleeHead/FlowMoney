@@ -119,3 +119,45 @@ button{cursor:pointer}
   .pf-sidebar{padding-top:max(12px,env(safe-area-inset-top))}
   .pf-main{padding-bottom:max(24px,env(safe-area-inset-bottom))}
 }
+
+
+.pf-household-sharing {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.pf-invite-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pf-invite-link input {
+  min-width: 0;
+  flex: 1;
+}
+@media (max-width: 560px) {
+  .pf-invite-link {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+
+.pf-invitation-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+.pf-invite-summary {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+}
+.pf-invite-summary small {
+  color: var(--pf-muted, #a6a1b6);
+}

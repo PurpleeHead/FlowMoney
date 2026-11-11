@@ -1,5 +1,9 @@
 # Cross-account household collaboration
 
+## Implementation status (2026-11-11)
+
+Backend schema, migration, request-level household resolution, invitation API, immediate revocation and initial Telegram invite UI are now being implemented on `feature/household-collaboration`. This is not production-enabled until the migration is reviewed and deployed through an approved release.
+
 ## Why this is a separate milestone
 
 The current `HouseholdMember` records are attribution labels inside one account. They are not login identities. A second Telegram user currently receives a separate FlowMoney account and cannot see the first user's financial data. Do not describe the current model as shared multi-user access.
@@ -56,7 +60,9 @@ This approach avoids a destructive migration of every existing financial table a
 - `GET /api/personal-finance/household/invitations` — owner lists pending/recent invites without exposing token hashes.
 - `DELETE /api/personal-finance/household/invitations/:id` — owner revokes invite.
 - `POST /api/personal-finance/household/invitations/accept` — authenticated user accepts token and selected member profile.
-- `GET /api/personal-finance/household` — returns household name, role, current user profile and members.
+- `GET /api/household` — returns household name, role, current user profile and members.
+- `PATCH /api/household/profile` — owner links their own account to an attribution profile.
+- `PATCH /api/household` — owner renames the household.
 - `DELETE /api/personal-finance/household/access/:userId` — owner revokes a member's access.
 
 ## Required security and integration tests

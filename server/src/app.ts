@@ -12,6 +12,7 @@ import receiptRoutes from './routes/receipts.js';
 import translateRoutes from './routes/translate.js';
 import dashboardRoutes from './routes/dashboard.js';
 import personalFinanceRoutes from './routes/personalFinance.js';
+import householdRoutes from './routes/household.js';
 import { errorHandler } from './middleware/errors.js';
 
 export function createApp() {
@@ -30,6 +31,7 @@ export function createApp() {
   app.use('/api/translate', translateRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/personal-finance', personalFinanceRoutes);
+  app.use('/api/household', householdRoutes);
 
   const clientDist = resolve(fileURLToPath(new URL('../../client/dist', import.meta.url)));
   if (existsSync(clientDist)) app.use(express.static(clientDist, { index: false, maxAge: '1h' }));

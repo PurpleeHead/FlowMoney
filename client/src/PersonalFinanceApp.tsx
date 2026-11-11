@@ -14,6 +14,13 @@ type Expense = { id: string; title: string; amount: number | string; date: strin
 type Analytics = { totals: { income: number; expenses: number; obligations: number }; categories: Array<{ name: string; amount: number }>; members: Array<{ id: string | null; name: string; income: number; expenses: number; net: number }>; months: Array<{ month: string; income: number; expenses: number; net: number }> };
 type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | string; member?: Member | null; category?: Category | null; memberId?: string | null; categoryId?: string | null };
 type SavingsGoal = { id: string; title: string; targetAmount: number | string; currentAmount: number | string; targetDate?: string | null; status: string };
+type PendingHouseholdInvite = { alreadyAccepted: boolean; householdName: string; memberName: string; ownerName: string; expiresAt?: string };
+type HouseholdInviteRecord = { id: string; expiresAt: string; acceptedAt: string | null; revokedAt: string | null; member: { id: string; name: string } };
+type HouseholdInfo = {
+  id: string; name: string; ownerUserId: string; role: 'OWNER' | 'MEMBER';
+  currentUser: { id: string; memberId: string | null };
+  members: Array<{ userId: string; role: string; joinedAt: string; member: { id: string; name: string; color?: string | null } | null; identity: { telegramUsername: string | null; telegramFirstName: string | null } }>;
+};
 type Dashboard = {
   actual: { income: number; expenses: number; balance: number };
   forecast: { plannedIncome: number; unpaidObligations: number; balance: number };
@@ -85,6 +92,12 @@ export default function PersonalFinanceApp() {
   const [budgets, setBudgets] = useState<BudgetRecord[]>([]);
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [household, setHousehold] = useState<HouseholdInfo | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<PendingHouseholdInvite | null>(null);
+  const [inviteMemberId, setInviteMemberId] = useState('');
+  const [ownerProfileId, setOwnerProfileId] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
+  const [invitations, setInvitations] = useState<HouseholdInviteRecord[]>([]);
   const [filterMember, setFilterMember] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [showSkippedIncome, setShowSkippedIncome] = useState(false);
@@ -158,7 +171,7 @@ export default function PersonalFinanceApp() {
     webApp.setBackgroundColor?.('#0d0b16');
   }, []);
   const refresh = useCallback(async () => {
-    const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData] = await Promise.all([
+    const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData] = await Promise.all([
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<{ entries: IncomeEntry[]; sources: IncomeSource[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}&includeArchived=true`),
       api<{ expenses: Expense[]; total: number; page: { take: number; skip: number; hasMore: boolean }; categories: Category[] }>(`${PF}/expenses?take=100&skip=0`),
@@ -168,16 +181,52 @@ export default function PersonalFinanceApp() {
       api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
       api<SavingsGoal[]>(`${PF}/savings-goals`),
-      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean }>(`${PF}/settings`)
+      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean }>(`${PF}/settings`),
+      api<HouseholdInfo>('/household')
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
+    const mappedProfile = householdData.currentUser.memberId;
+    if (mappedProfile) {
+      setIncomeMember(current => current || mappedProfile);
+      setExpenseMember(current => current || mappedProfile);
+      setObligationMember(current => current || mappedProfile);
+      setBudgetMember(current => current || mappedProfile);
+    }
+    setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
   }, [ranges, expenseCategory, filterMember, showSkippedObligations]);
+
+  useEffect(() => {
+    if (tab !== 'family' || household?.role !== 'OWNER') { setInvitations([]); return; }
+    let cancelled = false;
+    api<HouseholdInviteRecord[]>('/household/invitations').then(items => {
+      if (!cancelled) setInvitations(items);
+    }).catch(e => {
+      if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load invitations.');
+    });
+    return () => { cancelled = true; };
+  }, [tab, household?.id, household?.role, inviteLink]);
 
   useEffect(() => {
     let cancelled = false;
     const bootstrap = async () => {
       const initData = window.Telegram?.WebApp?.initData;
+      const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      const loadStartInvitePreview = async () => {
+        if (!startParam) return false;
+        try {
+          const preview = await api<PendingHouseholdInvite>(`/household/invitations/preview?token=${encodeURIComponent(startParam)}`);
+          if (preview.alreadyAccepted) {
+            setNotice(lang === 'ru' ? `Ты уже присоединился к семье «${preview.householdName}».` : `You already joined ${preview.householdName}.`);
+            return false;
+          }
+          setPendingInvite(preview);
+          return true;
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'Invitation could not be loaded.');
+          return false;
+        }
+      };
       const existingToken = getToken();
 
       if (existingToken) {
@@ -185,6 +234,7 @@ export default function PersonalFinanceApp() {
           const current = await api<User>('/auth/me');
           if (cancelled) return;
           setUser(current);
+          if (await loadStartInvitePreview()) { if (!cancelled) setLoading(false); return; }
           await refresh();
           if (!cancelled) setLoading(false);
           return;
@@ -204,7 +254,7 @@ export default function PersonalFinanceApp() {
           if (cancelled) return;
           setToken(result.token);
           setUser(result.user);
-          await refresh();
+          if (!(await loadStartInvitePreview())) await refresh();
         } catch (e) {
           if (!cancelled) setError(e instanceof Error ? e.message : 'Telegram sign-in failed.');
         } finally {
@@ -300,6 +350,58 @@ export default function PersonalFinanceApp() {
   }
   async function renameMember(member: Member) { const name = window.prompt(lang === 'ru' ? 'Имя участника' : 'Member name', member.name); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function archiveMember(member: Member) { if (!window.confirm(lang === 'ru' ? 'Убрать участника из списка? Старые операции сохранят привязку.' : 'Archive this member? Historical transactions keep the attribution.')) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); await refresh(); if (filterMember === member.id) setFilterMember('all'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function acceptPendingInvite() {
+    if (!pendingInvite) return;
+    const token = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+    if (!token) { setError(lang === 'ru' ? 'Не удалось прочитать ссылку-приглашение. Открой её ещё раз из Telegram.' : 'Invitation parameter is missing. Reopen the link in Telegram.'); return; }
+    setBusy(true); setError('');
+    try {
+      const result = await api<{ householdName: string; memberName: string }>('/household/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
+      setPendingInvite(null);
+      await refresh();
+      setNotice(lang === 'ru' ? `Ты присоединился к семье «${result.householdName}» как ${result.memberName}.` : `Joined ${result.householdName} as ${result.memberName}.`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Invitation could not be accepted.'); }
+    finally { setBusy(false); }
+  }
+  async function saveOwnerProfile() {
+    setBusy(true); setError('');
+    try {
+      await api('/household/profile', { method: 'PATCH', body: JSON.stringify({ memberId: ownerProfileId || null }) });
+      setIncomeMember(ownerProfileId); setExpenseMember(ownerProfileId); setObligationMember(ownerProfileId); setBudgetMember(ownerProfileId);
+      await refresh();
+      setNotice(lang === 'ru' ? 'Твой профиль для учёта сохранён.' : 'Your attribution profile has been saved.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save your profile.'); }
+    finally { setBusy(false); }
+  }
+  async function createHouseholdInvite() {
+    if (!inviteMemberId) { setError(lang === 'ru' ? 'Выбери профиль участника для приглашения.' : 'Choose a member profile to invite.'); return; }
+    setBusy(true); setError('');
+    try {
+      const result = await api<{ inviteLink: string }>('/household/invitations', { method: 'POST', body: JSON.stringify({ memberId: inviteMemberId }) });
+      setInviteLink(result.inviteLink);
+      setNotice(lang === 'ru' ? 'Приглашение создано. Отправь ссылку супругу или другому участнику семьи.' : 'Invitation created. Share the link with your family member.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not create invitation.'); }
+    finally { setBusy(false); }
+  }
+  async function revokeHouseholdInvitation(invitationId: string) {
+    setBusy(true); setError('');
+    try {
+      await api('/household/invitations/' + encodeURIComponent(invitationId), { method: 'DELETE' });
+      setInvitations(current => current.map(item => item.id === invitationId ? { ...item, revokedAt: new Date().toISOString() } : item));
+      setNotice(lang === 'ru' ? 'Приглашение отозвано.' : 'Invitation revoked.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not revoke invitation.'); }
+    finally { setBusy(false); }
+  }
+  async function revokeHouseholdAccess(userId: string) {
+    if (!window.confirm(lang === 'ru' ? 'Отключить этому пользователю доступ к семейным финансам?' : 'Revoke this user’s access to the shared finances?')) return;
+    setBusy(true); setError('');
+    try {
+      await api('/household/access/' + encodeURIComponent(userId), { method: 'DELETE' });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Доступ пользователя отключён.' : 'User access revoked.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not revoke access.'); }
+    finally { setBusy(false); }
+  }
   async function addMember(event: FormEvent) {
     event.preventDefault(); if (!newMemberName.trim()) return; setBusy(true);
     try { await api(`${PF}/members`, { method: 'POST', body: JSON.stringify({ name: newMemberName.trim() }) }); setNewMemberName(''); await refresh(); }
@@ -331,6 +433,20 @@ export default function PersonalFinanceApp() {
       </form>
       <button className="pf-link" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError(''); }}>{authMode === 'login' ? tr(lang, 'signUp') : tr(lang, 'signIn')}</button>
       <button className="pf-language" onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 English' : '🇷🇺 Русский'}</button>
+    </div>
+  </main>;
+
+  if (pendingInvite && user) return <main className="pf-auth">
+    <div className="pf-auth-card">
+      <div className="pf-brand">nummio<span>X</span></div>
+      <div className="pf-auth-icon">⌂</div>
+      <span className="pf-eyebrow">{lang === 'ru' ? 'ПРИГЛАШЕНИЕ В СЕМЕЙНЫЙ БЮДЖЕТ' : 'HOUSEHOLD INVITATION'}</span>
+      <h1>{lang === 'ru' ? 'Присоединиться к семье?' : 'Join this household?'}</h1>
+      <p>{lang === 'ru' ? `${pendingInvite.ownerName} приглашает тебя в пространство «${pendingInvite.householdName}».` : `${pendingInvite.ownerName} invited you to “${pendingInvite.householdName}”.`}</p>
+      <div className="pf-invite-summary"><strong>{pendingInvite.memberName}</strong><small>{lang === 'ru' ? 'Твой профиль в общем бюджете' : 'Your profile in the shared budget'}</small></div>
+      <p className="pf-muted">{lang === 'ru' ? 'После подтверждения ты получишь доступ к общим доходам, расходам, бюджетам и накоплениям. Твои существующие личные финансовые записи не будут объединяться автоматически.' : 'After confirmation, you will see shared income, expenses, budgets and savings. Existing personal financial records will not be merged automatically.'}</p>
+      {error && <div className="pf-alert error">{error}</div>}
+      <button className="pf-button primary" disabled={busy} onClick={acceptPendingInvite}>{busy ? '…' : (lang === 'ru' ? 'Принять приглашение' : 'Accept invitation')}</button>
     </div>
   </main>;
 
@@ -537,16 +653,36 @@ export default function PersonalFinanceApp() {
         <section className="pf-card pf-settings-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЕРСОНАЛИЗАЦИЯ' : 'PREFERENCES'}</span><h2>{tr(lang,'settings')}</h2></div></div>
           <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Язык интерфейса' : 'Interface language'}</strong><small>{lang === 'ru' ? 'Язык названий и подсказок' : 'Labels and helper text language'}</small></span><select value={lang} onChange={e=>changeLanguage(e.target.value as Lang)}><option value="ru">Русский</option><option value="en">English</option></select></label>
           <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Часовой пояс' : 'Time zone'}</strong><small>{lang === 'ru' ? 'Используется для текущей даты и календаря платежей' : 'Used for today and payment calendar dates'}</small></span><select value={timezone} onChange={e=>changeTimezone(e.target.value)}>{[['Europe/Moscow','Москва (UTC+3)'],['Europe/Minsk','Минск (UTC+3)'],['Europe/Warsaw','Варшава'],['Europe/Berlin','Берлин'],['Europe/London','Лондон'],['Asia/Dubai','Дубай'],['Asia/Bangkok','Бангкок'],['Asia/Ho_Chi_Minh','Хошимин'],['UTC','UTC']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
-          <div className="pf-opening-balance"><div><strong>{lang === 'ru' ? 'Начальный остаток' : 'Opening balance'}</strong><small>{lang === 'ru' ? 'Сколько денег было на счетах и наличными на дату начала учёта' : 'Money held across accounts and cash on the start date'}</small></div><div className="pf-opening-fields"><label>{lang === 'ru' ? 'Сумма, ₽' : 'Amount, RUB'}<input type="number" step="0.01" value={openingBalance} onChange={e=>setOpeningBalance(e.target.value)}/></label><label>{lang === 'ru' ? 'Дата начала учёта' : 'Tracking start date'}<input type="date" max={todayInTimezone(timezone)} value={openingBalanceDate} onChange={e=>setOpeningBalanceDate(e.target.value)}/></label></div><button className="pf-button" disabled={busy || !openingBalanceDate} onClick={saveOpeningBalance}>{lang === 'ru' ? 'Сохранить начальный остаток' : 'Save opening balance'}</button><p className="pf-muted">{lang === 'ru' ? 'Фактический баланс будет считать доходы, расходы и корректировки только начиная с этой даты, чтобы не учитывать старую историю повторно.' : 'The actual balance includes income, expenses and adjustments from this date onward, avoiding double-counting older history.'}</p></div><p className="pf-muted">{lang === 'ru' ? 'Суммы хранятся в рублях. Смена часового пояса влияет на формирование будущих дат, но не пересчитывает уже записанные операции.' : 'Amounts are stored in RUB. Changing the timezone affects future date generation but does not rewrite existing transactions.'}</p>
+          {household?.role === 'OWNER' && <div className="pf-opening-balance"><div><strong>{lang === 'ru' ? 'Начальный остаток' : 'Opening balance'}</strong><small>{lang === 'ru' ? 'Сколько денег было на счетах и наличными на дату начала учёта' : 'Money held across accounts and cash on the start date'}</small></div><div className="pf-opening-fields"><label>{lang === 'ru' ? 'Сумма, ₽' : 'Amount, RUB'}<input type="number" step="0.01" value={openingBalance} onChange={e=>setOpeningBalance(e.target.value)}/></label><label>{lang === 'ru' ? 'Дата начала учёта' : 'Tracking start date'}<input type="date" max={todayInTimezone(timezone)} value={openingBalanceDate} onChange={e=>setOpeningBalanceDate(e.target.value)}/></label></div><button className="pf-button" disabled={busy || !openingBalanceDate} onClick={saveOpeningBalance}>{lang === 'ru' ? 'Сохранить начальный остаток' : 'Save opening balance'}</button><p className="pf-muted">{lang === 'ru' ? 'Фактический баланс будет считать доходы, расходы и корректировки только начиная с этой даты, чтобы не учитывать старую историю повторно.' : 'The actual balance includes income, expenses and adjustments from this date onward, avoiding double-counting older history.'}</p></div>}<p className="pf-muted">{lang === 'ru' ? 'Суммы хранятся в рублях. Смена часового пояса влияет на формирование будущих дат, но не пересчитывает уже записанные операции.' : 'Amounts are stored in RUB. Changing the timezone affects future date generation but does not rewrite existing transactions.'}</p>
         </section>
       </div>}
 
       {tab === 'family' && <div className="pf-page pf-two-col">
-        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'УЧАСТНИКИ ДОМОХОЗЯЙСТВА' : 'HOUSEHOLD MEMBERS'}</span><h2>{tr(lang, 'family')}</h2></div></div>
-          <form className="pf-inline-form" onSubmit={addMember}><label>{tr(lang, 'newMember')}<input required value={newMemberName} onChange={e => setNewMemberName(e.target.value)}/></label><button className="pf-button primary" disabled={busy}>{tr(lang, 'addMember')}</button></form>
-          {activeMembers.map(m => <div className="pf-list-row" key={m.id}><div><strong>{m.name}</strong><small>{lang === 'ru' ? 'Участник семейного бюджета' : 'Household member'}</small></div><div className="pf-row-action"><span className="pf-member-dot"/><button className="pf-edit" onClick={()=>renameMember(m)}>✎</button><button className="pf-delete" onClick={()=>archiveMember(m)}>×</button></div></div>)}
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОБЩЕЕ ПРОСТРАНСТВО' : 'SHARED SPACE'}</span><h2>{household?.name ?? tr(lang, 'family')}</h2></div><span className="pf-count">{household?.members.length ?? 0}</span></div>
+          <p className="pf-muted">{lang === 'ru' ? 'Все участники этого пространства видят одни и те же доходы, расходы, счета, бюджеты и накопления. У каждого свой вход через Telegram.' : 'Everyone in this space shares the same income, expenses, accounts, budgets and savings. Each person signs in with their own Telegram account.'}</p>
+          <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПРОФИЛИ ДЛЯ УЧЁТА' : 'ATTRIBUTION PROFILES'}</span><h2>{lang === 'ru' ? 'Кто совершил операцию' : 'Who made the transaction'}</h2></div></div>
+          {household?.role === 'OWNER' && <form className="pf-inline-form" onSubmit={addMember}><label>{tr(lang, 'newMember')}<input required value={newMemberName} onChange={e => setNewMemberName(e.target.value)}/></label><button className="pf-button primary" disabled={busy}>{tr(lang, 'addMember')}</button></form>}
+          {activeMembers.map(m => <div className="pf-list-row" key={m.id}><div><strong>{m.name}</strong><small>{lang === 'ru' ? 'Профиль для распределения доходов и расходов' : 'Profile for attributing income and expenses'}</small></div>{household?.role === 'OWNER' && <div className="pf-row-action"><span className="pf-member-dot"/><button className="pf-edit" onClick={()=>renameMember(m)}>✎</button><button className="pf-delete" onClick={()=>archiveMember(m)}>×</button></div>}</div>)}
         </section>
-        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОБЩИЕ ПРАВИЛА' : 'HOUSEHOLD RULES'}</span><h2>{lang === 'ru' ? 'Как считается бюджет' : 'How the budget works'}</h2></div></div>
+        <section className="pf-card">
+          {household?.role === 'OWNER' && <div className="pf-household-sharing">
+            <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ТВОЯ АТРИБУЦИЯ' : 'YOUR PROFILE'}</span><h2>{lang === 'ru' ? 'Как отмечать твои операции' : 'Attribute your activity'}</h2></div></div>
+            <label>{lang === 'ru' ? 'Мой профиль' : 'My profile'}<select value={ownerProfileId} onChange={e=>setOwnerProfileId(e.target.value)}><option value="">{lang === 'ru' ? 'Не выбран — общие операции' : 'Not set — shared transactions'}</option>{activeMembers.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+            <button className="pf-button" disabled={busy} onClick={saveOwnerProfile}>{lang === 'ru' ? 'Сохранить мой профиль' : 'Save my profile'}</button>
+            <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПРИГЛАШЕНИЕ В СЕМЬЮ' : 'INVITE TO HOUSEHOLD'}</span><h2>{lang === 'ru' ? 'Подключить близкого' : 'Add a family member'}</h2></div></div>
+            <p className="pf-muted">{lang === 'ru' ? 'Выбери профиль, который будет закреплён за новым Telegram-аккаунтом. История и общий баланс останутся едиными.' : 'Choose the profile to link to the new Telegram account. History and balances remain shared.'}</p>
+            <label>{lang === 'ru' ? 'Профиль участника' : 'Member profile'}<select value={inviteMemberId} onChange={e=>setInviteMemberId(e.target.value)}><option value="">{lang === 'ru' ? 'Выбрать профиль' : 'Choose a profile'}</option>{activeMembers.filter(m=>!household.members.some(a=>a.member?.id===m.id)).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+            <button className="pf-button primary" disabled={busy || !inviteMemberId} onClick={createHouseholdInvite}>{lang === 'ru' ? 'Создать ссылку-приглашение' : 'Create invite link'}</button>
+            {inviteLink && <div className="pf-invite-link"><input readOnly value={inviteLink}/><button className="pf-button" onClick={async()=>{try{await navigator.clipboard.writeText(inviteLink);setNotice(lang==='ru'?'Ссылка скопирована.':'Link copied.');}catch{setError(lang==='ru'?'Не удалось скопировать ссылку.':'Could not copy the link.');}}}>{lang === 'ru' ? 'Копировать' : 'Copy'}</button></div>}
+            {invitations.length > 0 && <div className="pf-invitation-list">{invitations.map(invite => {
+              const pending = !invite.acceptedAt && !invite.revokedAt && new Date(invite.expiresAt).getTime() > Date.now();
+              const status = invite.acceptedAt ? (lang === 'ru' ? 'Принято' : 'Accepted') : invite.revokedAt ? (lang === 'ru' ? 'Отозвано' : 'Revoked') : pending ? (lang === 'ru' ? 'Ожидает ответа' : 'Pending') : (lang === 'ru' ? 'Истекло' : 'Expired');
+              return <div className="pf-list-row" key={invite.id}><div><strong>{invite.member.name}</strong><small>{status} · {new Date(invite.expiresAt).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-GB')}</small></div>{pending && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отозвать приглашение' : 'Revoke invitation'} onClick={()=>revokeHouseholdInvitation(invite.id)}>×</button>}</div>;
+            })}</div>}
+          </div>}
+          <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ДОСТУП К БЮДЖЕТУ' : 'BUDGET ACCESS'}</span><h2>{lang === 'ru' ? 'Участники с аккаунтами' : 'Connected accounts'}</h2></div></div>
+          {household?.members.map(access=><div className="pf-list-row" key={access.userId}><div><strong>{access.member?.name ?? (access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец семьи' : 'Household owner') : (lang === 'ru' ? 'Участник' : 'Member'))}</strong><small>{access.identity.telegramUsername ? '@'+access.identity.telegramUsername : access.identity.telegramFirstName ?? (lang === 'ru' ? 'Telegram-пользователь' : 'Telegram user')} · {access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец' : 'Owner') : (lang === 'ru' ? 'Общий доступ' : 'Shared access')}</small></div>{household.role === 'OWNER' && access.role !== 'OWNER' && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отключить доступ' : 'Revoke access'} onClick={()=>revokeHouseholdAccess(access.userId)}>×</button>}</div>)}
+          <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОБЩИЕ ПРАВИЛА' : 'HOUSEHOLD RULES'}</span><h2>{lang === 'ru' ? 'Как считается бюджет' : 'How the budget works'}</h2></div></div>
           <ul className="pf-rules"><li>{lang === 'ru' ? 'Доходы учитываются в фактическом остатке только после отметки «Получено».' : 'Income affects actual balance only after being marked received.'}</li><li>{lang === 'ru' ? 'Обязательство становится расходом один раз после отметки «Оплачено».' : 'An obligation becomes an expense once when marked paid.'}</li><li>{lang === 'ru' ? 'Пустой участник означает общий расход или доход семьи.' : 'An empty member means a shared household item.'}</li><li>{lang === 'ru' ? 'Все суммы ведутся только в рублях.' : 'All amounts are tracked in RUB only.'}</li></ul>
         </section>
       </div>}
