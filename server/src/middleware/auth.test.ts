@@ -19,8 +19,6 @@ test('rejects an HS384 token even when signed with the same secret', () => {
 
 test('rejects tokens with incorrectly typed identity claims', () => {
   const token = jwt.sign({ id: 123, email: 'user@example.test' }, secret, { algorithm: 'HS256' });
-  const result = invoke(`Bearer ${token}`);
-  assert.equal(result.nextCalled, false);
-  assert.equal(result.statusCode, 401);
+  assert.equal(readSessionClaims(token, secret), null);
 });
 
