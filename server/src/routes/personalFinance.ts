@@ -137,24 +137,45 @@ async function createObligationOccurrences(obligation: {
 
 router.get('/settings', async (req: AuthedRequest, res, next) => {
   try {
-    const settings = await prisma.user.findUnique({ where: { id: uid(req) }, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } });
-    if (!settings) return res.status(404).json({ message: 'User settings not found.' });
-    return res.json(settings);
+    // Language and timezone belong to the signed-in person; the opening balance belongs
+    // to the shared ledger owner so family members cannot overwrite each other's preferences.
+    const [personal, ledger] = await Promise.all([
+      prisma.user.findUnique({ where: { id: req.user!.accountId }, select: { timezone: true, locale: true } }),
+      prisma.user.findUnique({ where: { id: uid(req) }, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } }),
+    ]);
+    if (!personal || !ledger) return res.status(404).json({ message: 'User settings not found.' });
+    return res.json({ ...personal, ...ledger });
   } catch (error) { return next(error); }
 });
 router.patch('/settings', async (req: AuthedRequest, res, next) => {
   try {
     const parsed = z.object({ timezone: z.string().trim().min(1).max(80).optional(), locale: z.enum(['ru', 'en']).optional(), openingBalance: z.number().finite().min(-1_000_000_000).max(1_000_000_000).optional(), openingBalanceDate: dateSchema.optional() }).safeParse(req.body);
-    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid timezone or language.' });
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid timezone, language or opening balance.' });
     if (parsed.data.timezone) {
       try { new Intl.DateTimeFormat('en-US', { timeZone: parsed.data.timezone }); }
       catch { return res.status(400).json({ message: 'Unknown IANA timezone.' }); }
     }
+    const changesLedger = parsed.data.openingBalance !== undefined || parsed.data.openingBalanceDate !== undefined;
+    if (changesLedger && req.user!.role !== 'OWNER') {
+      return res.status(403).json({ message: 'Only the household owner can change the shared opening balance.' });
+    }
     if (parsed.data.openingBalanceDate && parsed.data.openingBalanceDate > dateString(await userToday(uid(req)))) return res.status(400).json({ message: 'Opening balance date cannot be in the future.' });
-    const data: Record<string, unknown> = { ...parsed.data };
-    if (parsed.data.openingBalanceDate) data.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
-    if (parsed.data.openingBalance !== undefined || parsed.data.openingBalanceDate !== undefined) data.openingBalanceConfigured = true;
-    return res.json(await prisma.user.update({ where: { id: uid(req) }, data: data as never, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } }));
+
+    const personalData: Record<string, unknown> = {};
+    if (parsed.data.timezone !== undefined) personalData.timezone = parsed.data.timezone;
+    if (parsed.data.locale !== undefined) personalData.locale = parsed.data.locale;
+    const ledgerData: Record<string, unknown> = {};
+    if (parsed.data.openingBalance !== undefined) ledgerData.openingBalance = parsed.data.openingBalance;
+    if (parsed.data.openingBalanceDate !== undefined) ledgerData.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
+    if (changesLedger) ledgerData.openingBalanceConfigured = true;
+
+    const personal = Object.keys(personalData).length
+      ? await prisma.user.update({ where: { id: req.user!.accountId }, data: personalData as never, select: { timezone: true, locale: true } })
+      : await prisma.user.findUniqueOrThrow({ where: { id: req.user!.accountId }, select: { timezone: true, locale: true } });
+    const ledger = changesLedger
+      ? await prisma.user.update({ where: { id: uid(req) }, data: ledgerData as never, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } })
+      : await prisma.user.findUniqueOrThrow({ where: { id: uid(req) }, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } });
+    return res.json({ ...personal, ...ledger });
   } catch (error) { return next(error); }
 });
 
