@@ -133,6 +133,39 @@ router.post('/invitations', invitationCreateLimit, async (req: AuthedRequest, re
   } catch (error) { return next(error); }
 });
 
+router.get('/invitations/preview', invitationAcceptLimit, async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ token: z.string().min(32).max(128) }).safeParse({ token: req.query.token });
+    if (!parsed.success) return res.status(400).json({ message: 'The invitation link is invalid.' });
+    const user = current(req);
+    const invite = await prisma.householdInvite.findUnique({
+      where: { tokenHash: hashInvitationToken(parsed.data.token) },
+      include: {
+        household: { include: { owner: { select: { telegramUsername: true, telegramFirstName: true } } } },
+        member: { select: { name: true, isArchived: true } },
+      },
+    });
+    if (invite?.acceptedAt && invite.acceptedByUserId === user.accountId) {
+      return res.json({
+        alreadyAccepted: true,
+        householdName: invite.household.name,
+        memberName: invite.member.name,
+        ownerName: invite.household.owner.telegramFirstName || invite.household.owner.telegramUsername || 'nummioX',
+      });
+    }
+    if (!invite || invite.revokedAt || invite.acceptedAt || invite.expiresAt <= new Date() || invite.member.isArchived) {
+      return res.status(404).json({ message: 'This invitation is invalid, expired, revoked or already used.' });
+    }
+    return res.json({
+      alreadyAccepted: false,
+      householdName: invite.household.name,
+      memberName: invite.member.name,
+      ownerName: invite.household.owner.telegramFirstName || invite.household.owner.telegramUsername || 'nummioX',
+      expiresAt: invite.expiresAt,
+    });
+  } catch (error) { return next(error); }
+});
+
 router.get('/invitations', async (req: AuthedRequest, res, next) => {
   try {
     if (!ownerOnly(req, res)) return;
