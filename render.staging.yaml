@@ -1,0 +1,36 @@
+# Isolated test environment for nummioX.
+# This Blueprint is intentionally separate from render.yaml and production resources.
+services:
+  - type: web
+    name: nummiox-staging
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: feature/household-collaboration
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci && npm run db:generate && npm run build
+    preDeployCommand: npm run db:migrate
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nummiox-staging-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: TELEGRAM_BOT_USERNAME
+        value: nummioX_bot
+      - key: CLIENT_ORIGIN
+        value: https://nummiox-staging.onrender.com
+
+databases:
+  - name: nummiox-staging-db
+    databaseName: nummiox_staging
+    user: nummiox_staging
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: "16"
+    diskSizeGB: 1
