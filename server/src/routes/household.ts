@@ -228,7 +228,7 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
         return { error: 'already-member' as const };
       }
 
-      const [wallets, exchanges, expenses, receipts, incomeSources, incomeEntries, ledgerExpenses, obligations, obligationOccurrences, adjustments, budgets, goals] = await Promise.all([
+      const [wallets, exchanges, expenses, receipts, incomeSources, incomeEntries, ledgerExpenses, obligations, obligationOccurrences, adjustments, budgets, goals, customCategories, memberProfiles, accountSettings] = await Promise.all([
         tx.wallet.count({ where: { userId: user.accountId } }),
         tx.exchange.count({ where: { userId: user.accountId } }),
         tx.expense.count({ where: { userId: user.accountId } }),
@@ -241,10 +241,19 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
         tx.balanceAdjustment.count({ where: { userId: user.accountId } }),
         tx.budget.count({ where: { userId: user.accountId } }),
         tx.savingsGoal.count({ where: { userId: user.accountId } }),
+        tx.expenseCategory.count({ where: { userId: user.accountId } }),
+        tx.householdMember.count({ where: { userId: user.accountId } }),
+        tx.user.findUnique({ where: { id: user.accountId }, select: { openingBalanceConfigured: true, openingBalance: true } }),
       ]);
-      if ([wallets, exchanges, expenses, receipts, incomeSources, incomeEntries, ledgerExpenses, obligations, obligationOccurrences, adjustments, budgets, goals].some(count => count > 0)) {
-        return { error: 'has-data' as const };
-      }
+      // Joining must never orphan even "configuration-only" personal data such as custom
+      // categories, member profiles or a configured opening balance.
+      const hasPersonalData = [
+        wallets, exchanges, expenses, receipts, incomeSources, incomeEntries,
+        ledgerExpenses, obligations, obligationOccurrences, adjustments, budgets,
+        goals, customCategories, memberProfiles,
+      ].some(count => count > 0) || Boolean(accountSettings?.openingBalanceConfigured)
+        || Number(accountSettings?.openingBalance ?? 0) !== 0;
+      if (hasPersonalData) return { error: 'has-data' as const };
 
       const claimed = await tx.householdInvite.updateMany({
         where: { id: invite.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: now } },
