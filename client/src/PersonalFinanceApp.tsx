@@ -92,6 +92,7 @@ export default function PersonalFinanceApp() {
   const [members, setMembers] = useState<Member[]>([]);
   const [household, setHousehold] = useState<HouseholdInfo | null>(null);
   const [inviteMemberId, setInviteMemberId] = useState('');
+  const [ownerProfileId, setOwnerProfileId] = useState('');
   const [inviteLink, setInviteLink] = useState('');
   const [filterMember, setFilterMember] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
@@ -179,7 +180,15 @@ export default function PersonalFinanceApp() {
       api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean }>(`${PF}/settings`),
       api<HouseholdInfo>('/household')
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
+    const mappedProfile = householdData.currentUser.memberId;
+    if (mappedProfile) {
+      setIncomeMember(current => current || mappedProfile);
+      setExpenseMember(current => current || mappedProfile);
+      setObligationMember(current => current || mappedProfile);
+      setBudgetMember(current => current || mappedProfile);
+    }
+    setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
   }, [ranges, expenseCategory, filterMember, showSkippedObligations]);
 
@@ -319,6 +328,16 @@ export default function PersonalFinanceApp() {
   }
   async function renameMember(member: Member) { const name = window.prompt(lang === 'ru' ? 'Имя участника' : 'Member name', member.name); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function archiveMember(member: Member) { if (!window.confirm(lang === 'ru' ? 'Убрать участника из списка? Старые операции сохранят привязку.' : 'Archive this member? Historical transactions keep the attribution.')) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); await refresh(); if (filterMember === member.id) setFilterMember('all'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function saveOwnerProfile() {
+    setBusy(true); setError('');
+    try {
+      await api('/household/profile', { method: 'PATCH', body: JSON.stringify({ memberId: ownerProfileId || null }) });
+      setIncomeMember(ownerProfileId); setExpenseMember(ownerProfileId); setObligationMember(ownerProfileId); setBudgetMember(ownerProfileId);
+      await refresh();
+      setNotice(lang === 'ru' ? 'Твой профиль для учёта сохранён.' : 'Your attribution profile has been saved.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save your profile.'); }
+    finally { setBusy(false); }
+  }
   async function createHouseholdInvite() {
     if (!inviteMemberId) { setError(lang === 'ru' ? 'Выбери профиль участника для приглашения.' : 'Choose a member profile to invite.'); return; }
     setBusy(true); setError('');
@@ -589,6 +608,9 @@ export default function PersonalFinanceApp() {
         </section>
         <section className="pf-card">
           {household?.role === 'OWNER' && <div className="pf-household-sharing">
+            <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ТВОЯ АТРИБУЦИЯ' : 'YOUR PROFILE'}</span><h2>{lang === 'ru' ? 'Как отмечать твои операции' : 'Attribute your activity'}</h2></div></div>
+            <label>{lang === 'ru' ? 'Мой профиль' : 'My profile'}<select value={ownerProfileId} onChange={e=>setOwnerProfileId(e.target.value)}><option value="">{lang === 'ru' ? 'Не выбран — общие операции' : 'Not set — shared transactions'}</option>{activeMembers.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+            <button className="pf-button" disabled={busy} onClick={saveOwnerProfile}>{lang === 'ru' ? 'Сохранить мой профиль' : 'Save my profile'}</button>
             <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПРИГЛАШЕНИЕ В СЕМЬЮ' : 'INVITE TO HOUSEHOLD'}</span><h2>{lang === 'ru' ? 'Подключить близкого' : 'Add a family member'}</h2></div></div>
             <p className="pf-muted">{lang === 'ru' ? 'Выбери профиль, который будет закреплён за новым Telegram-аккаунтом. История и общий баланс останутся едиными.' : 'Choose the profile to link to the new Telegram account. History and balances remain shared.'}</p>
             <label>{lang === 'ru' ? 'Профиль участника' : 'Member profile'}<select value={inviteMemberId} onChange={e=>setInviteMemberId(e.target.value)}><option value="">{lang === 'ru' ? 'Выбрать профиль' : 'Choose a profile'}</option>{activeMembers.filter(m=>!household.members.some(a=>a.member?.id===m.id)).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
