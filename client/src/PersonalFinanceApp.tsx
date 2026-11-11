@@ -14,6 +14,11 @@ type Expense = { id: string; title: string; amount: number | string; date: strin
 type Analytics = { totals: { income: number; expenses: number; obligations: number }; categories: Array<{ name: string; amount: number }>; members: Array<{ id: string | null; name: string; income: number; expenses: number; net: number }>; months: Array<{ month: string; income: number; expenses: number; net: number }> };
 type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | string; member?: Member | null; category?: Category | null; memberId?: string | null; categoryId?: string | null };
 type SavingsGoal = { id: string; title: string; targetAmount: number | string; currentAmount: number | string; targetDate?: string | null; status: string };
+type HouseholdInfo = {
+  id: string; name: string; ownerUserId: string; role: 'OWNER' | 'MEMBER';
+  currentUser: { id: string; memberId: string | null };
+  members: Array<{ userId: string; role: string; joinedAt: string; member: { id: string; name: string; color?: string | null } | null; identity: { telegramUsername: string | null; telegramFirstName: string | null } }>;
+};
 type Dashboard = {
   actual: { income: number; expenses: number; balance: number };
   forecast: { plannedIncome: number; unpaidObligations: number; balance: number };
@@ -85,6 +90,9 @@ export default function PersonalFinanceApp() {
   const [budgets, setBudgets] = useState<BudgetRecord[]>([]);
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [household, setHousehold] = useState<HouseholdInfo | null>(null);
+  const [inviteMemberId, setInviteMemberId] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
   const [filterMember, setFilterMember] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [showSkippedIncome, setShowSkippedIncome] = useState(false);
@@ -168,9 +176,10 @@ export default function PersonalFinanceApp() {
       api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
       api<SavingsGoal[]>(`${PF}/savings-goals`),
-      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean }>(`${PF}/settings`)
+      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean }>(`${PF}/settings`),
+      api<HouseholdInfo>('/household')
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
   }, [ranges, expenseCategory, filterMember, showSkippedObligations]);
 
@@ -178,6 +187,14 @@ export default function PersonalFinanceApp() {
     let cancelled = false;
     const bootstrap = async () => {
       const initData = window.Telegram?.WebApp?.initData;
+      const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      const acceptStartInvite = async () => {
+        if (!startParam) return;
+        try {
+          const result = await api<{ householdName: string; memberName: string }>('/household/invitations/accept', { method: 'POST', body: JSON.stringify({ token: startParam }) });
+          setNotice(lang === 'ru' ? `Вы присоединились к семье «${result.householdName}» как ${result.memberName}.` : `Joined ${result.householdName} as ${result.memberName}.`);
+        } catch (e) { setError(e instanceof Error ? e.message : 'Invitation could not be accepted.'); }
+      };
       const existingToken = getToken();
 
       if (existingToken) {
@@ -185,6 +202,7 @@ export default function PersonalFinanceApp() {
           const current = await api<User>('/auth/me');
           if (cancelled) return;
           setUser(current);
+          await acceptStartInvite();
           await refresh();
           if (!cancelled) setLoading(false);
           return;
@@ -204,6 +222,7 @@ export default function PersonalFinanceApp() {
           if (cancelled) return;
           setToken(result.token);
           setUser(result.user);
+          await acceptStartInvite();
           await refresh();
         } catch (e) {
           if (!cancelled) setError(e instanceof Error ? e.message : 'Telegram sign-in failed.');
@@ -300,6 +319,26 @@ export default function PersonalFinanceApp() {
   }
   async function renameMember(member: Member) { const name = window.prompt(lang === 'ru' ? 'Имя участника' : 'Member name', member.name); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function archiveMember(member: Member) { if (!window.confirm(lang === 'ru' ? 'Убрать участника из списка? Старые операции сохранят привязку.' : 'Archive this member? Historical transactions keep the attribution.')) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); await refresh(); if (filterMember === member.id) setFilterMember('all'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function createHouseholdInvite() {
+    if (!inviteMemberId) { setError(lang === 'ru' ? 'Выбери профиль участника для приглашения.' : 'Choose a member profile to invite.'); return; }
+    setBusy(true); setError('');
+    try {
+      const result = await api<{ inviteLink: string }>('/household/invitations', { method: 'POST', body: JSON.stringify({ memberId: inviteMemberId }) });
+      setInviteLink(result.inviteLink);
+      setNotice(lang === 'ru' ? 'Приглашение создано. Отправь ссылку супругу или другому участнику семьи.' : 'Invitation created. Share the link with your family member.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not create invitation.'); }
+    finally { setBusy(false); }
+  }
+  async function revokeHouseholdAccess(userId: string) {
+    if (!window.confirm(lang === 'ru' ? 'Отключить этому пользователю доступ к семейным финансам?' : 'Revoke this user’s access to the shared finances?')) return;
+    setBusy(true); setError('');
+    try {
+      await api('/household/access/' + encodeURIComponent(userId), { method: 'DELETE' });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Доступ пользователя отключён.' : 'User access revoked.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not revoke access.'); }
+    finally { setBusy(false); }
+  }
   async function addMember(event: FormEvent) {
     event.preventDefault(); if (!newMemberName.trim()) return; setBusy(true);
     try { await api(`${PF}/members`, { method: 'POST', body: JSON.stringify({ name: newMemberName.trim() }) }); setNewMemberName(''); await refresh(); }
