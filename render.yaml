@@ -17,5 +17,7 @@ services:
         generateValue: true
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        value: nummioX_bot
       - key: CLIENT_ORIGIN
         value: https://flowmoney-app.onrender.com
