@@ -694,7 +694,7 @@ test('Telegram Mini App authentication creates one account per verified Telegram
   const previousBotToken = process.env.TELEGRAM_BOT_TOKEN;
   const botToken = 'flowmoney-telegram-test-bot-token';
   process.env.TELEGRAM_BOT_TOKEN = botToken;
-  const telegramId = String(Number('8' + randomUUID().replace(/\\D/g, '').slice(0, 15)));
+  const telegramId = String(Number('8' + randomUUID().replace(/\D/g, '').slice(0, 15)));
   const server = createApp().listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
   const address = server.address() as AddressInfo;
@@ -709,7 +709,7 @@ test('Telegram Mini App authentication creates one account per verified Telegram
     const dataCheckString = [...params.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => key + '=' + value)
-      .join('\\n');
+      .join('\n');
     const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
     params.set('hash', createHmac('sha256', secretKey).update(dataCheckString).digest('hex'));
     return params.toString();
@@ -740,7 +740,7 @@ test('Telegram Mini App authentication creates one account per verified Telegram
     assert.equal(repeated.user.id, first.user.id, 'reopening the Mini App must reuse the same FlowMoney account');
     assert.equal(repeated.user.displayName, 'Updated Name');
 
-    const tampered = signedInitData('Flow Tester', 'flow_tester').replace('Flow+Tester', 'Attacker');
+    const tampered = signedInitData('Flow Tester', 'flow_tester').replace('flow_tester', 'attacker');
     const invalidResponse = await authenticate(tampered);
     assert.equal(invalidResponse.status, 401, 'tampered Telegram identity must never create an account');
 
