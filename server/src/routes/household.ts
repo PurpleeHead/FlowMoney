@@ -238,7 +238,7 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
         'already-member': [409, 'This account already belongs to another shared household.'],
         'has-data': [409, 'This account already contains financial records. Join is blocked to prevent accidental data merging.'],
       } as const;
-      const [status, message] = messages[accepted.error];
+      const [status, message] = messages[accepted.error as keyof typeof messages];
       return res.status(status).json({ message });
     }
     return res.json({ success: true, householdName: accepted.householdName, memberName: accepted.memberName });
