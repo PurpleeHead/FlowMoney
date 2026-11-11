@@ -164,6 +164,7 @@ router.get('/members', async (req: AuthedRequest, res, next) => {
 });
 router.post('/members', async (req: AuthedRequest, res, next) => {
   try {
+    if (req.user!.role !== 'OWNER') return res.status(403).json({ message: 'Only the household owner can manage member profiles.' });
     const parsed = z.object({ name: z.string().trim().min(1).max(60), color: z.string().max(24).optional() }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Enter a household member name.' });
     return res.status(201).json(await prisma.householdMember.create({ data: { ...parsed.data, userId: uid(req) } }));
@@ -176,8 +177,16 @@ router.post('/members', async (req: AuthedRequest, res, next) => {
 });
 router.patch('/members/:id', async (req: AuthedRequest, res, next) => {
   try {
+    if (req.user!.role !== 'OWNER') return res.status(403).json({ message: 'Only the household owner can manage member profiles.' });
     const parsed = z.object({ name: z.string().trim().min(1).max(60).optional(), color: z.string().max(24).nullable().optional(), isArchived: z.boolean().optional() }).safeParse(req.body);
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid member update.' });
+    if (parsed.data.isArchived === true) {
+      const linked = await prisma.householdAccess.findFirst({
+        where: { householdId: req.user!.householdId, memberId: String(req.params.id), revokedAt: null },
+        select: { id: true },
+      });
+      if (linked) return res.status(409).json({ message: 'Revoke the linked account before archiving this profile.' });
+    }
     const result = await prisma.householdMember.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: parsed.data });
     if (!result.count) return res.status(404).json({ message: 'Household member not found.' });
     return res.json(await prisma.householdMember.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
