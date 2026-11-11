@@ -8,7 +8,7 @@ export type AuthUser = {
   email: string;
   displayName?: string;
   householdId: string;
-  role: 'OWNER' | 'MEMBER';
+  role: 'OWNER' | 'MEMBER' | 'NONE';
   memberId: string | null;
 };
 
