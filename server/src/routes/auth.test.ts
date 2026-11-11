@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHmac } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../app.js';
 import { prisma } from '../services/prisma.js';
@@ -685,5 +685,73 @@ test('authentication works and household records stay isolated between accounts'
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     await prisma.user.deleteMany({ where: { email: { in: [firstEmail, secondEmail, thirdEmail, fourthEmail, fifthEmail] } } });
+  }
+});
+
+
+test('Telegram Mini App authentication creates one account per verified Telegram identity', { skip: !process.env.DATABASE_URL }, async () => {
+  process.env.JWT_SECRET = 'flowmoney-telegram-integration-test-secret-32-chars';
+  const previousBotToken = process.env.TELEGRAM_BOT_TOKEN;
+  const botToken = 'flowmoney-telegram-test-bot-token';
+  process.env.TELEGRAM_BOT_TOKEN = botToken;
+  const telegramId = String(Number('8' + randomUUID().replace(/\\D/g, '').slice(0, 15)));
+  const server = createApp().listen(0, '127.0.0.1');
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  function signedInitData(firstName: string, username: string) {
+    const params = new URLSearchParams({
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      query_id: 'AAE-flowmoney-integration-test',
+      user: JSON.stringify({ id: Number(telegramId), first_name: firstName, username }),
+    });
+    const dataCheckString = [...params.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => key + '=' + value)
+      .join('\\n');
+    const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
+    params.set('hash', createHmac('sha256', secretKey).update(dataCheckString).digest('hex'));
+    return params.toString();
+  }
+
+  const authenticate = (initData: string) => fetch(baseUrl + '/api/auth/telegram', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ initData }),
+  });
+
+  try {
+    const firstResponse = await authenticate(signedInitData('Flow Tester', 'flow_tester'));
+    assert.equal(firstResponse.status, 200);
+    const first = await firstResponse.json() as { token: string; user: { id: string; displayName: string } };
+    assert.ok(first.token);
+    assert.equal(first.user.displayName, 'Flow Tester');
+
+    const profileResponse = await fetch(baseUrl + '/api/auth/me', {
+      headers: { authorization: `Bearer ${first.token}` },
+    });
+    assert.equal(profileResponse.status, 200);
+    assert.equal((await profileResponse.json() as { displayName: string }).displayName, 'Flow Tester');
+
+    const repeatedResponse = await authenticate(signedInitData('Updated Name', 'updated_handle'));
+    assert.equal(repeatedResponse.status, 200);
+    const repeated = await repeatedResponse.json() as { user: { id: string; displayName: string } };
+    assert.equal(repeated.user.id, first.user.id, 'reopening the Mini App must reuse the same FlowMoney account');
+    assert.equal(repeated.user.displayName, 'Updated Name');
+
+    const tampered = signedInitData('Flow Tester', 'flow_tester').replace('Flow+Tester', 'Attacker');
+    const invalidResponse = await authenticate(tampered);
+    assert.equal(invalidResponse.status, 401, 'tampered Telegram identity must never create an account');
+
+    const stored = await prisma.user.findUnique({ where: { telegramId } });
+    assert.ok(stored);
+    assert.equal(stored.telegramUsername, 'updated_handle');
+    assert.equal(stored.telegramFirstName, 'Updated Name');
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await prisma.user.deleteMany({ where: { telegramId } });
+    if (previousBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = previousBotToken;
   }
 });
