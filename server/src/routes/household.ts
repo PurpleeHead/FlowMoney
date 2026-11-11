@@ -2,12 +2,12 @@ import { Router } from 'express';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
-import { auth } from '../middleware/auth.js';
+import { authAccount } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { newInvitationToken, hashInvitationToken } from '../services/households.js';
 
 const router = Router();
-router.use(auth);
+router.use(authAccount);
 
 function current(req: AuthedRequest) { return req.user!; }
 function ownerOnly(req: AuthedRequest, res: import('express').Response) {
@@ -21,6 +21,7 @@ function ownerOnly(req: AuthedRequest, res: import('express').Response) {
 router.get('/', async (req: AuthedRequest, res, next) => {
   try {
     const user = current(req);
+    if (!user.householdId) return res.status(403).json({ message: 'Accept a household invitation to continue.' });
     const household = await prisma.household.findUnique({
       where: { id: user.householdId },
       include: {
@@ -156,7 +157,7 @@ router.post('/invitations/accept', async (req: AuthedRequest, res, next) => {
         where: { userId: user.accountId, revokedAt: null },
         include: { household: { select: { ownerUserId: true } } },
       });
-      if (!activeAccess || activeAccess.role !== 'OWNER' || activeAccess.household.ownerUserId !== user.accountId) {
+      if (activeAccess && (activeAccess.role !== 'OWNER' || activeAccess.household.ownerUserId !== user.accountId)) {
         return { error: 'already-member' as const };
       }
 
@@ -184,10 +185,12 @@ router.post('/invitations/accept', async (req: AuthedRequest, res, next) => {
       });
       if (!claimed.count) return { error: 'invalid' as const };
 
-      await tx.householdAccess.update({
-        where: { id: activeAccess.id },
-        data: { revokedAt: now },
-      });
+      if (activeAccess) {
+        await tx.householdAccess.update({
+          where: { id: activeAccess.id },
+          data: { revokedAt: now },
+        });
+      }
       const access = await tx.householdAccess.create({
         data: {
           householdId: invite.householdId,
