@@ -62,6 +62,27 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const acceptedBody = await accepted.json() as { householdName: string; memberName: string };
     assert.equal(acceptedBody.memberName, 'Wife');
 
+    // Personal display preferences are per account, while the opening balance is shared
+    // and may only be changed by the household owner.
+    const ownerSettingsBefore = await request('/api/personal-finance/settings', 'GET', undefined, owner.token);
+    const spouseSettingsBefore = await request('/api/personal-finance/settings', 'GET', undefined, spouse.token);
+    assert.equal(ownerSettingsBefore.status, 200);
+    assert.equal(spouseSettingsBefore.status, 200);
+    const spousePreferenceUpdate = await request('/api/personal-finance/settings', 'PATCH', {
+      locale: 'en', timezone: 'Asia/Bangkok',
+    }, spouse.token);
+    assert.equal(spousePreferenceUpdate.status, 200);
+    const ownerSettingsAfter = await request('/api/personal-finance/settings', 'GET', undefined, owner.token);
+    const spouseSettingsAfter = await request('/api/personal-finance/settings', 'GET', undefined, spouse.token);
+    assert.equal((await ownerSettingsAfter.json() as { locale: string }).locale, 'ru', 'changing a spouse locale must not change the owner locale');
+    const spousePreferences = await spouseSettingsAfter.json() as { locale: string; timezone: string };
+    assert.equal(spousePreferences.locale, 'en');
+    assert.equal(spousePreferences.timezone, 'Asia/Bangkok');
+    const blockedOpeningBalanceChange = await request('/api/personal-finance/settings', 'PATCH', {
+      openingBalance: 999999,
+    }, spouse.token);
+    assert.equal(blockedOpeningBalanceChange.status, 403, 'only the owner may change the shared opening balance');
+
     const alreadyJoinedPreview = await request('/api/household/invitations/preview?token=' + encodeURIComponent(inviteToken), 'GET', undefined, spouse.token);
     assert.equal(alreadyJoinedPreview.status, 200);
     assert.equal((await alreadyJoinedPreview.json() as { alreadyAccepted: boolean }).alreadyAccepted, true);
