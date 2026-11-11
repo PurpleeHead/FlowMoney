@@ -100,6 +100,19 @@ router.post('/telegram', async (req, res, next) => {
       const household = await tx.household.create({ data: { name: 'Моя семья', ownerUserId: created.id } });
       await tx.householdAccess.create({ data: { householdId: household.id, userId: created.id, role: 'OWNER' } });
       return created;
+    }).catch(async error => {
+      // Two Telegram WebViews can authenticate the same new account at nearly the same time.
+      // The unique Telegram ID constraint elects one creator; the other request reuses that account.
+      if (!isUniqueConstraintError(error)) throw error;
+      const existing = await prisma.user.findUnique({ where: { telegramId: telegramUser.id } });
+      if (!existing) throw error;
+      return prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          telegramUsername: telegramUser.username ?? null,
+          telegramFirstName: telegramUser.firstName ?? 'Telegram user',
+        },
+      });
     });
     const displayName = user.telegramFirstName || user.telegramUsername || 'Telegram';
     return res.json({
