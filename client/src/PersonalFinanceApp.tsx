@@ -177,10 +177,25 @@ export default function PersonalFinanceApp() {
   useEffect(() => {
     let cancelled = false;
     const bootstrap = async () => {
-      const token = getToken();
-      if (!token) {
-        const initData = window.Telegram?.WebApp?.initData;
-        if (!initData) { if (!cancelled) setLoading(false); return; }
+      const initData = window.Telegram?.WebApp?.initData;
+      const existingToken = getToken();
+
+      if (existingToken) {
+        try {
+          const current = await api<User>('/auth/me');
+          if (cancelled) return;
+          setUser(current);
+          await refresh();
+          if (!cancelled) setLoading(false);
+          return;
+        } catch {
+          // A seven-day FlowMoney JWT may expire while Telegram initData is still valid.
+          // Clear the stale session and transparently issue a fresh one below.
+          setToken(null);
+        }
+      }
+
+      if (initData) {
         try {
           const result = await api<{ token: string; user: User }>('/auth/telegram', {
             method: 'POST',
@@ -197,16 +212,8 @@ export default function PersonalFinanceApp() {
         }
         return;
       }
-      try {
-        const current = await api<User>('/auth/me');
-        if (cancelled) return;
-        setUser(current);
-        await refresh();
-      } catch {
-        setToken(null);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+
+      if (!cancelled) setLoading(false);
     };
     void bootstrap();
     return () => { cancelled = true; };
