@@ -119,3 +119,27 @@ button{cursor:pointer}
   .pf-sidebar{padding-top:max(12px,env(safe-area-inset-top))}
   .pf-main{padding-bottom:max(24px,env(safe-area-inset-bottom))}
 }
+
+
+.pf-household-sharing {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.pf-invite-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pf-invite-link input {
+  min-width: 0;
+  flex: 1;
+}
+@media (max-width: 560px) {
+  .pf-invite-link {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
