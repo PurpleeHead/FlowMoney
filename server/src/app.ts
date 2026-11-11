@@ -22,7 +22,7 @@ export function createApp() {
   app.use(cors({ origin: (origin, callback) => { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error('Origin not allowed by CORS')); } }));
   app.use(express.json({ limit: '1mb' }));
   app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 40, standardHeaders: true, legacyHeaders: false }));
-  app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'flowmoney-api' }));
+  app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'nummiox-api' }));
   app.use('/api/auth', authRoutes);
   app.use('/api/exchanges', exchangeRoutes);
   app.use('/api/expenses', expenseRoutes);
