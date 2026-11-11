@@ -56,6 +56,16 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const acceptedBody = await accepted.json() as { householdName: string; memberName: string };
     assert.equal(acceptedBody.memberName, 'Wife');
 
+    const alreadyJoinedPreview = await request('/api/household/invitations/preview?token=' + encodeURIComponent(inviteToken), 'GET', undefined, spouse.token);
+    assert.equal(alreadyJoinedPreview.status, 200);
+    assert.equal((await alreadyJoinedPreview.json() as { alreadyAccepted: boolean }).alreadyAccepted, true);
+
+    const previewResponse = await request('/api/household/invitations/preview?token=' + encodeURIComponent(inviteToken), 'GET', undefined, spouse.token);
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json() as { householdName: string; memberName: string; alreadyAccepted: boolean };
+    assert.equal(preview.memberName, 'Wife');
+    assert.equal(preview.alreadyAccepted, false);
+
     const memberInviteAttempt = await request('/api/household/invitations', 'POST', { memberId: reservedProfile.id }, spouse.token);
     assert.equal(memberInviteAttempt.status, 403, 'only the household owner can invite users');
 
