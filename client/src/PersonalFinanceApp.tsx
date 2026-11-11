@@ -320,7 +320,7 @@ export default function PersonalFinanceApp() {
   if (loading) return <div className="pf-loading"><div className="pf-brand">nummio<span>X</span></div><div className="pf-spinner"/><p>{tr(lang, 'loading')}</p></div>;
   if (!user) return <main className="pf-auth">
     <div className="pf-auth-card">
-      <div className="pf-brand">FLOW<span>MONEY</span></div>
+      <div className="pf-brand">nummio<span>X</span></div>
       <div className="pf-auth-icon">₽</div>
       <h1>{tr(lang, 'signInTitle')}</h1><p>{tr(lang, 'signInText')}</p>
       {error && <div className="pf-alert error">{error}</div>}
@@ -358,7 +358,7 @@ export default function PersonalFinanceApp() {
 
   return <div className="pf-shell">
     <aside className="pf-sidebar">
-      <div className="pf-brand">FLOW<span>MONEY</span></div>
+      <div className="pf-brand">nummio<span>X</span></div>
       <div className="pf-sidebar-caption">{lang === 'ru' ? 'СЕМЕЙНЫЕ ФИНАНСЫ' : 'HOUSEHOLD FINANCE'}</div>
       <nav>{(['overview', 'income', 'expenses', 'obligations', 'calendar', 'analytics', 'budgets', 'family', 'settings'] as Tab[]).map(item => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><span className="pf-nav-dot"/>{tr(lang, item)}</button>)}</nav>
       <div className="pf-sidebar-bottom"><div className="pf-avatar">{(user.displayName || user.email)[0].toUpperCase()}</div><div className="pf-user"><strong>{user.displayName || user.email.split('@')[0]}</strong><small>{user.email.endsWith('@telegram.flowmoney.invalid') ? 'Telegram' : user.email}</small></div>{!window.Telegram?.WebApp?.initData && <button className="pf-icon-button" title={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button>}</div>
