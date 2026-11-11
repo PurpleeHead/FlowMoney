@@ -1,4 +1,4 @@
-# FLOWMONEY — Technical Specification: Personal Finance
+# nummioX — Technical Specification: Personal Finance
 
 Status: approved scope for implementation
 Target branch: feature/personal-finance-rework
