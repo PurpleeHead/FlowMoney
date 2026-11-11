@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
+import { verifyTelegramInitData } from '../services/telegram.js';
 
 const router = Router();
 const credentials = z.object({
@@ -12,10 +14,10 @@ const credentials = z.object({
   password: z.string().min(8).max(128),
 });
 
-function token(id: string, email: string) {
+function token(id: string, email: string, displayName?: string | null) {
   const secret = process.env.JWT_SECRET;
   if (!secret || secret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-  return jwt.sign({ id, email }, secret, { expiresIn: '7d' });
+  return jwt.sign({ id, email, ...(displayName ? { displayName } : {}) }, secret, { expiresIn: '7d' });
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -54,6 +56,40 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ message: 'Email or password is incorrect.' });
     }
     return res.json({ token: token(user.id, user.email), user: { id: user.id, email: user.email } });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+
+router.post('/telegram', async (req, res, next) => {
+  try {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) return res.status(503).json({ message: 'Telegram sign-in is not configured yet.' });
+    const initData = typeof req.body?.initData === 'string' ? req.body.initData : '';
+    if (!initData || initData.length > 8192) return res.status(400).json({ message: 'Missing or invalid Telegram sign-in data.' });
+    const telegramUser = verifyTelegramInitData(initData, botToken);
+    if (!telegramUser) return res.status(401).json({ message: 'Telegram sign-in data is invalid or expired. Reopen the app from Telegram.' });
+
+    const user = await prisma.user.upsert({
+      where: { telegramId: telegramUser.id },
+      update: {
+        telegramUsername: telegramUser.username ?? null,
+        telegramFirstName: telegramUser.firstName ?? 'Telegram user',
+      },
+      create: {
+        email: `telegram_${telegramUser.id}@telegram.flowmoney.invalid`,
+        passwordHash: randomBytes(32).toString('hex'),
+        telegramId: telegramUser.id,
+        telegramUsername: telegramUser.username ?? null,
+        telegramFirstName: telegramUser.firstName ?? 'Telegram user',
+      },
+    });
+    const displayName = user.telegramFirstName || user.telegramUsername || 'Telegram';
+    return res.json({
+      token: token(user.id, user.email, displayName),
+      user: { id: user.id, email: user.email, displayName },
+    });
   } catch (error) {
     return next(error);
   }

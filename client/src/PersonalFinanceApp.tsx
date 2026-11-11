@@ -3,7 +3,7 @@ import { api, getToken, setToken } from './lib/api';
 import './personalFinance.css';
 
 type Lang = 'ru' | 'en';
-type User = { id: string; email: string };
+type User = { id: string; email: string; displayName?: string };
 type Member = { id: string; name: string; color?: string | null; isArchived: boolean };
 type Category = { id: string; name: string; slug: string; userId: string | null; isArchived: boolean };
 type IncomeSource = { id: string; title: string; amount: number | string; recurrence: string; recurrenceConfig: { day?: number; month?: number; weekdays?: number[]; intervalWeeks?: number; firstDay?: number; secondDay?: number }; startDate: string; endDate?: string | null; memberId?: string | null; isActive: boolean };
@@ -148,6 +148,15 @@ export default function PersonalFinanceApp() {
   const [goalDate, setGoalDate] = useState('');
 
   const ranges = useMemo(() => monthBounds(timezone, selectedMonth), [timezone, selectedMonth]);
+
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp) return;
+    webApp.ready();
+    webApp.expand();
+    webApp.setHeaderColor?.('#0d0b16');
+    webApp.setBackgroundColor?.('#0d0b16');
+  }, []);
   const refresh = useCallback(async () => {
     const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData] = await Promise.all([
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
@@ -166,9 +175,48 @@ export default function PersonalFinanceApp() {
   }, [ranges, expenseCategory, filterMember, showSkippedObligations]);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) { setLoading(false); return; }
-    api<User>('/auth/me').then(async current => { setUser(current); await refresh(); }).catch(() => { setToken(null); }).finally(() => setLoading(false));
+    let cancelled = false;
+    const bootstrap = async () => {
+      const initData = window.Telegram?.WebApp?.initData;
+      const existingToken = getToken();
+
+      if (existingToken) {
+        try {
+          const current = await api<User>('/auth/me');
+          if (cancelled) return;
+          setUser(current);
+          await refresh();
+          if (!cancelled) setLoading(false);
+          return;
+        } catch {
+          // A seven-day FlowMoney JWT may expire while Telegram initData is still valid.
+          // Clear the stale session and transparently issue a fresh one below.
+          setToken(null);
+        }
+      }
+
+      if (initData) {
+        try {
+          const result = await api<{ token: string; user: User }>('/auth/telegram', {
+            method: 'POST',
+            body: JSON.stringify({ initData }),
+          });
+          if (cancelled) return;
+          setToken(result.token);
+          setUser(result.user);
+          await refresh();
+        } catch (e) {
+          if (!cancelled) setError(e instanceof Error ? e.message : 'Telegram sign-in failed.');
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+        return;
+      }
+
+      if (!cancelled) setLoading(false);
+    };
+    void bootstrap();
+    return () => { cancelled = true; };
   }, [refresh]);
 
   async function loadMoreExpenses() {
@@ -313,7 +361,7 @@ export default function PersonalFinanceApp() {
       <div className="pf-brand">FLOW<span>MONEY</span></div>
       <div className="pf-sidebar-caption">{lang === 'ru' ? 'СЕМЕЙНЫЕ ФИНАНСЫ' : 'HOUSEHOLD FINANCE'}</div>
       <nav>{(['overview', 'income', 'expenses', 'obligations', 'calendar', 'analytics', 'budgets', 'family', 'settings'] as Tab[]).map(item => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><span className="pf-nav-dot"/>{tr(lang, item)}</button>)}</nav>
-      <div className="pf-sidebar-bottom"><div className="pf-avatar">{user.email[0].toUpperCase()}</div><div className="pf-user"><strong>{user.email.split('@')[0]}</strong><small>{user.email}</small></div><button className="pf-icon-button" title={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button></div>
+      <div className="pf-sidebar-bottom"><div className="pf-avatar">{(user.displayName || user.email)[0].toUpperCase()}</div><div className="pf-user"><strong>{user.displayName || user.email.split('@')[0]}</strong><small>{user.email.endsWith('@telegram.flowmoney.invalid') ? 'Telegram' : user.email}</small></div>{!window.Telegram?.WebApp?.initData && <button className="pf-icon-button" title={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button>}</div>
     </aside>
     <main className="pf-main">
       <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions"><input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) setSelectedMonth(e.target.value); }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.isArchived ? `${m.name} · ${lang === 'ru' ? 'архив' : 'archived'}` : m.name}</option>)}</select><button className="pf-language" onClick={() => changeLanguage(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>

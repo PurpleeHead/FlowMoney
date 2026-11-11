@@ -25,7 +25,7 @@ export function auth(req: AuthedRequest, res: Response, next: NextFunction) {
       throw new Error('Invalid token claims');
     }
 
-    req.user = { id: payload.id, email: payload.email };
+    req.user = { id: payload.id, email: payload.email, ...(typeof payload.displayName === 'string' ? { displayName: payload.displayName } : {}) };
     next();
   } catch {
     res.status(401).json({ message: 'Session expired. Please sign in again.' });
