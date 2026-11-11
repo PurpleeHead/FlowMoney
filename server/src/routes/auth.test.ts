@@ -722,11 +722,14 @@ test('Telegram Mini App authentication creates one account per verified Telegram
   });
 
   try {
-    const firstResponse = await authenticate(signedInitData('Flow Tester', 'flow_tester'));
-    assert.equal(firstResponse.status, 200);
-    const first = await firstResponse.json() as { token: string; user: { id: string; displayName: string } };
+    const initialData = signedInitData('Flow Tester', 'flow_tester');
+    const firstResponses = await Promise.all([authenticate(initialData), authenticate(initialData)]);
+    assert.deepEqual(firstResponses.map(response => response.status), [200, 200]);
+    const first = await firstResponses[0].json() as { token: string; user: { id: string; displayName: string } };
+    const concurrent = await firstResponses[1].json() as { user: { id: string } };
     assert.ok(first.token);
     assert.equal(first.user.displayName, 'Flow Tester');
+    assert.equal(concurrent.user.id, first.user.id, 'simultaneous first launches must resolve to one Telegram account');
 
     const profileResponse = await fetch(baseUrl + '/api/auth/me', {
       headers: { authorization: `Bearer ${first.token}` },
