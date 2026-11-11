@@ -7,12 +7,12 @@ nummioX can be opened as a Telegram Mini App. The web client remains a normal re
 The bot has already been created: [@nummioX_bot](https://t.me/nummioX_bot).
 
 1. Open [@BotFather](https://t.me/BotFather) and select `@nummioX_bot`.
-2. Use `/token` only if you need to retrieve or regenerate its token.
+2. Use `/revoke` to invalidate the token that was exposed and issue a new one. If a token is ever shared in a chat, treat it as compromised and rotate it immediately.
 3. Store the token as `TELEGRAM_BOT_TOKEN` on the server. Never send it in chat, commit it to Git, or expose it through a `VITE_*` client variable.
 
 ## 2. Configure the server
 
-Set `TELEGRAM_BOT_TOKEN` in the server environment (Render service environment or local `server/.env`). Do not expose it as a `VITE_*` variable.
+Set `TELEGRAM_BOT_TOKEN` in the server environment (Render service environment or local `server/.env`) and `TELEGRAM_BOT_USERNAME=nummioX_bot`. Do not expose the token as a `VITE_*` variable.
 
 The server verifies Telegram's signed `initData` using the bot token before creating or loading an account. Invalid signatures and data older than 24 hours are rejected. The database migration adds nullable Telegram identity fields and preserves existing users and finance records.
 
