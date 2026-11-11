@@ -106,3 +106,16 @@ button{cursor:pointer}
 @media(max-width:760px){.pf-archive-card{grid-column:auto}}
 
 .pf-load-more{display:flex;justify-content:center;padding-top:16px}
+
+
+/* Telegram iOS/Android webview safe areas and dynamic viewport sizing. */
+:root,body,#root{min-height:100%;min-height:100dvh}
+.pf-shell{min-height:100dvh}
+.pf-sidebar{padding-top:max(30px,env(safe-area-inset-top))}
+.pf-main{padding-bottom:max(24px,env(safe-area-inset-bottom))}
+.pf-auth{min-height:100dvh;padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom))}
+.pf-loading{min-height:100dvh;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+@media(max-width:680px){
+  .pf-sidebar{padding-top:max(12px,env(safe-area-inset-top))}
+  .pf-main{padding-bottom:max(24px,env(safe-area-inset-bottom))}
+}
