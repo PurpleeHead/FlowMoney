@@ -189,7 +189,7 @@ export default function PersonalFinanceApp() {
           if (!cancelled) setLoading(false);
           return;
         } catch {
-          // A seven-day FlowMoney JWT may expire while Telegram initData is still valid.
+          // A seven-day nummioX session token may expire while Telegram initData is still valid.
           // Clear the stale session and transparently issue a fresh one below.
           setToken(null);
         }
@@ -317,10 +317,10 @@ export default function PersonalFinanceApp() {
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
 
-  if (loading) return <div className="pf-loading"><div className="pf-brand">FLOW<span>MONEY</span></div><div className="pf-spinner"/><p>{tr(lang, 'loading')}</p></div>;
+  if (loading) return <div className="pf-loading"><div className="pf-brand">nummio<span>X</span></div><div className="pf-spinner"/><p>{tr(lang, 'loading')}</p></div>;
   if (!user) return <main className="pf-auth">
     <div className="pf-auth-card">
-      <div className="pf-brand">FLOW<span>MONEY</span></div>
+      <div className="pf-brand">nummio<span>X</span></div>
       <div className="pf-auth-icon">₽</div>
       <h1>{tr(lang, 'signInTitle')}</h1><p>{tr(lang, 'signInText')}</p>
       {error && <div className="pf-alert error">{error}</div>}
@@ -358,7 +358,7 @@ export default function PersonalFinanceApp() {
 
   return <div className="pf-shell">
     <aside className="pf-sidebar">
-      <div className="pf-brand">FLOW<span>MONEY</span></div>
+      <div className="pf-brand">nummio<span>X</span></div>
       <div className="pf-sidebar-caption">{lang === 'ru' ? 'СЕМЕЙНЫЕ ФИНАНСЫ' : 'HOUSEHOLD FINANCE'}</div>
       <nav>{(['overview', 'income', 'expenses', 'obligations', 'calendar', 'analytics', 'budgets', 'family', 'settings'] as Tab[]).map(item => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><span className="pf-nav-dot"/>{tr(lang, item)}</button>)}</nav>
       <div className="pf-sidebar-bottom"><div className="pf-avatar">{(user.displayName || user.email)[0].toUpperCase()}</div><div className="pf-user"><strong>{user.displayName || user.email.split('@')[0]}</strong><small>{user.email.endsWith('@telegram.flowmoney.invalid') ? 'Telegram' : user.email}</small></div>{!window.Telegram?.WebApp?.initData && <button className="pf-icon-button" title={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button>}</div>
@@ -550,7 +550,7 @@ export default function PersonalFinanceApp() {
           <ul className="pf-rules"><li>{lang === 'ru' ? 'Доходы учитываются в фактическом остатке только после отметки «Получено».' : 'Income affects actual balance only after being marked received.'}</li><li>{lang === 'ru' ? 'Обязательство становится расходом один раз после отметки «Оплачено».' : 'An obligation becomes an expense once when marked paid.'}</li><li>{lang === 'ru' ? 'Пустой участник означает общий расход или доход семьи.' : 'An empty member means a shared household item.'}</li><li>{lang === 'ru' ? 'Все суммы ведутся только в рублях.' : 'All amounts are tracked in RUB only.'}</li></ul>
         </section>
       </div>}
-      <footer className="pf-footer">FLOWMONEY <span>·</span> {lang === 'ru' ? 'Семейные финансы без догадок' : 'Family finances, without guesswork'}</footer>
+      <footer className="pf-footer">nummioX <span>·</span> {lang === 'ru' ? 'Семейные финансы без догадок' : 'Family finances, without guesswork'}</footer>
     </main>
   </div>;
 }
