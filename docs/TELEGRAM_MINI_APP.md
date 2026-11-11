@@ -24,7 +24,7 @@ After the web app is deployed to HTTPS:
 2. Select the bot.
 3. Set the button text to `Open nummioX`.
 4. Provide the deployed HTTPS app URL.
-5. Optionally use `/newapp` to create a named Mini App. Use `nummioX` as its title and a short name such as `nummiox` if Telegram accepts it.
+5. In Bot Settings, configure the same URL as the bot's **Main Mini App**. The household invitation links use Telegram's `startapp` parameter, which is delivered to the Mini App as `initDataUnsafe.start_param` only when a Main Mini App is configured.
 
 For the bot profile, set the display name to `nummioX` and use this description: `Удобный учёт доходов, расходов, бюджета и накоплений семьи.`
 
@@ -40,4 +40,5 @@ Run the normal nummioX setup, then set `TELEGRAM_BOT_TOKEN` in `server/.env`. Te
 - The client sends Telegram's raw `initData`; it never decides the authenticated Telegram user ID.
 - The server validates the HMAC signature, timestamp and user ID before issuing the existing nummioX session token.
 - Never accept `initDataUnsafe` as proof of identity.
-- The Telegram identity migration is additive. It must be applied through the reviewed migration process, not by production startup.
+- The Telegram identity and household migrations are additive. They must be applied through the reviewed migration process, not by production startup.
+- Household invitations are random, single-use, expire after seven days and store only a SHA-256 token hash. Rotate the bot token with BotFather `/revoke` immediately if it is ever exposed.
