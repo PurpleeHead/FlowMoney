@@ -23,7 +23,9 @@ After the web app is deployed to HTTPS:
 2. Select the bot.
 3. Set the button text to `Open nummioX`.
 4. Provide the deployed HTTPS app URL.
-5. Optionally use `/newapp` to create a named Mini App. Use `nummioX` as its title and a short name such as `nummiox` if Telegram accepts it.\n\nFor the bot profile, set the display name to `nummioX` and use this description: `Удобный учёт доходов, расходов, бюджета и накоплений семьи.`
+5. Optionally use `/newapp` to create a named Mini App. Use `nummioX` as its title and a short name such as `nummiox` if Telegram accepts it.
+
+For the bot profile, set the display name to `nummioX` and use this description: `Удобный учёт доходов, расходов, бюджета и накоплений семьи.`
 
 Do not point BotFather at a feature-branch preview until it is deployed and verified. The production URL should only be changed after an approved deployment.
 
