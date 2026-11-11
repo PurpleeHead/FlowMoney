@@ -2,12 +2,13 @@
 
 nummioX can be opened as a Telegram Mini App. The web client remains a normal responsive web app as well.
 
-## 1. Create the bot
+## 1. Existing Telegram bot
 
-1. Open [@BotFather](https://t.me/BotFather) in Telegram.
-2. Run `/newbot` and follow the prompts.
-3. Copy the bot token. Treat it as a secret; never commit it to Git.
-4. The bot username is `@nummioX_bot`. Keep it for the Mini App configuration.
+The bot has already been created: [@nummioX_bot](https://t.me/nummioX_bot).
+
+1. Open [@BotFather](https://t.me/BotFather) and select `@nummioX_bot`.
+2. Use `/token` only if you need to retrieve or regenerate its token.
+3. Store the token as `TELEGRAM_BOT_TOKEN` on the server. Never send it in chat, commit it to Git, or expose it through a `VITE_*` client variable.
 
 ## 2. Configure the server
 
