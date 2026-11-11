@@ -189,7 +189,7 @@ export default function PersonalFinanceApp() {
           if (!cancelled) setLoading(false);
           return;
         } catch {
-          // A seven-day FlowMoney JWT may expire while Telegram initData is still valid.
+          // A seven-day nummioX session token may expire while Telegram initData is still valid.
           // Clear the stale session and transparently issue a fresh one below.
           setToken(null);
         }
