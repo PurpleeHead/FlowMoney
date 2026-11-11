@@ -1,6 +1,6 @@
-# FLOWMONEY
+# nummioX
 
-A personal and family budget tracker focused on **RUB income, expenses and mandatory payments**.
+A personal and family finance tracker focused on **RUB income, expenses and mandatory payments**.
 
 **Current implementation:** [Pull Request #104](https://github.com/PurpleeHead/FlowMoney/pull/104)  
 **Production demo (legacy build until approved release):** https://purpleehead.github.io/FlowMoney/  
