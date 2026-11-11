@@ -146,12 +146,18 @@ router.get('/invitations/preview', invitationAcceptLimit, async (req: AuthedRequ
       },
     });
     if (invite?.acceptedAt && invite.acceptedByUserId === user.accountId) {
-      return res.json({
-        alreadyAccepted: true,
-        householdName: invite.household.name,
-        memberName: invite.member.name,
-        ownerName: invite.household.owner.telegramFirstName || invite.household.owner.telegramUsername || 'nummioX',
+      const activeAccess = await prisma.householdAccess.findFirst({
+        where: { userId: user.accountId, householdId: invite.householdId, revokedAt: null },
+        select: { id: true },
       });
+      if (activeAccess) {
+        return res.json({
+          alreadyAccepted: true,
+          householdName: invite.household.name,
+          memberName: invite.member.name,
+          ownerName: invite.household.owner.telegramFirstName || invite.household.owner.telegramUsername || 'nummioX',
+        });
+      }
     }
     if (!invite || invite.revokedAt || invite.acceptedAt || invite.expiresAt <= new Date() || invite.member.isArchived) {
       return res.status(404).json({ message: 'This invitation is invalid, expired, revoked or already used.' });
