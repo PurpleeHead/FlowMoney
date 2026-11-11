@@ -15,6 +15,7 @@ type Analytics = { totals: { income: number; expenses: number; obligations: numb
 type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | string; member?: Member | null; category?: Category | null; memberId?: string | null; categoryId?: string | null };
 type SavingsGoal = { id: string; title: string; targetAmount: number | string; currentAmount: number | string; targetDate?: string | null; status: string };
 type PendingHouseholdInvite = { alreadyAccepted: boolean; householdName: string; memberName: string; ownerName: string; expiresAt?: string };
+type HouseholdInviteRecord = { id: string; expiresAt: string; acceptedAt: string | null; revokedAt: string | null; member: { id: string; name: string } };
 type HouseholdInfo = {
   id: string; name: string; ownerUserId: string; role: 'OWNER' | 'MEMBER';
   currentUser: { id: string; memberId: string | null };
@@ -96,6 +97,7 @@ export default function PersonalFinanceApp() {
   const [inviteMemberId, setInviteMemberId] = useState('');
   const [ownerProfileId, setOwnerProfileId] = useState('');
   const [inviteLink, setInviteLink] = useState('');
+  const [invitations, setInvitations] = useState<HouseholdInviteRecord[]>([]);
   const [filterMember, setFilterMember] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [showSkippedIncome, setShowSkippedIncome] = useState(false);
@@ -193,6 +195,17 @@ export default function PersonalFinanceApp() {
     setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
   }, [ranges, expenseCategory, filterMember, showSkippedObligations]);
+
+  useEffect(() => {
+    if (tab !== 'family' || household?.role !== 'OWNER') { setInvitations([]); return; }
+    let cancelled = false;
+    api<HouseholdInviteRecord[]>('/household/invitations').then(items => {
+      if (!cancelled) setInvitations(items);
+    }).catch(e => {
+      if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load invitations.');
+    });
+    return () => { cancelled = true; };
+  }, [tab, household?.id, household?.role, inviteLink]);
 
   useEffect(() => {
     let cancelled = false;
@@ -368,6 +381,15 @@ export default function PersonalFinanceApp() {
       setInviteLink(result.inviteLink);
       setNotice(lang === 'ru' ? 'Приглашение создано. Отправь ссылку супругу или другому участнику семьи.' : 'Invitation created. Share the link with your family member.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not create invitation.'); }
+    finally { setBusy(false); }
+  }
+  async function revokeHouseholdInvitation(invitationId: string) {
+    setBusy(true); setError('');
+    try {
+      await api('/household/invitations/' + encodeURIComponent(invitationId), { method: 'DELETE' });
+      setInvitations(current => current.map(item => item.id === invitationId ? { ...item, revokedAt: new Date().toISOString() } : item));
+      setNotice(lang === 'ru' ? 'Приглашение отозвано.' : 'Invitation revoked.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not revoke invitation.'); }
     finally { setBusy(false); }
   }
   async function revokeHouseholdAccess(userId: string) {
@@ -652,6 +674,11 @@ export default function PersonalFinanceApp() {
             <label>{lang === 'ru' ? 'Профиль участника' : 'Member profile'}<select value={inviteMemberId} onChange={e=>setInviteMemberId(e.target.value)}><option value="">{lang === 'ru' ? 'Выбрать профиль' : 'Choose a profile'}</option>{activeMembers.filter(m=>!household.members.some(a=>a.member?.id===m.id)).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
             <button className="pf-button primary" disabled={busy || !inviteMemberId} onClick={createHouseholdInvite}>{lang === 'ru' ? 'Создать ссылку-приглашение' : 'Create invite link'}</button>
             {inviteLink && <div className="pf-invite-link"><input readOnly value={inviteLink}/><button className="pf-button" onClick={async()=>{try{await navigator.clipboard.writeText(inviteLink);setNotice(lang==='ru'?'Ссылка скопирована.':'Link copied.');}catch{setError(lang==='ru'?'Не удалось скопировать ссылку.':'Could not copy the link.');}}}>{lang === 'ru' ? 'Копировать' : 'Copy'}</button></div>}
+            {invitations.length > 0 && <div className="pf-invitation-list">{invitations.map(invite => {
+              const pending = !invite.acceptedAt && !invite.revokedAt && new Date(invite.expiresAt).getTime() > Date.now();
+              const status = invite.acceptedAt ? (lang === 'ru' ? 'Принято' : 'Accepted') : invite.revokedAt ? (lang === 'ru' ? 'Отозвано' : 'Revoked') : pending ? (lang === 'ru' ? 'Ожидает ответа' : 'Pending') : (lang === 'ru' ? 'Истекло' : 'Expired');
+              return <div className="pf-list-row" key={invite.id}><div><strong>{invite.member.name}</strong><small>{status} · {new Date(invite.expiresAt).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-GB')}</small></div>{pending && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отозвать приглашение' : 'Revoke invitation'} onClick={()=>revokeHouseholdInvitation(invite.id)}>×</button>}</div>;
+            })}</div>}
           </div>}
           <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ДОСТУП К БЮДЖЕТУ' : 'BUDGET ACCESS'}</span><h2>{lang === 'ru' ? 'Участники с аккаунтами' : 'Connected accounts'}</h2></div></div>
           {household?.members.map(access=><div className="pf-list-row" key={access.userId}><div><strong>{access.member?.name ?? (access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец семьи' : 'Household owner') : (lang === 'ru' ? 'Участник' : 'Member'))}</strong><small>{access.identity.telegramUsername ? '@'+access.identity.telegramUsername : access.identity.telegramFirstName ?? (lang === 'ru' ? 'Telegram-пользователь' : 'Telegram user')} · {access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец' : 'Owner') : (lang === 'ru' ? 'Общий доступ' : 'Shared access')}</small></div>{household.role === 'OWNER' && access.role !== 'OWNER' && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отключить доступ' : 'Revoke access'} onClick={()=>revokeHouseholdAccess(access.userId)}>×</button>}</div>)}
