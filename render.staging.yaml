@@ -8,8 +8,7 @@ services:
     region: frankfurt
     branch: feature/household-collaboration
     autoDeployTrigger: checksPass
-    buildCommand: npm ci && npm run db:generate && npm run build
-    preDeployCommand: npm run db:migrate
+    buildCommand: npm ci && npm run db:generate && npm run db:migrate && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -23,6 +22,8 @@ services:
         generateValue: true
       - key: TELEGRAM_BOT_USERNAME
         value: nummioX_bot
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
       - key: CLIENT_ORIGIN
         value: https://nummiox-staging.onrender.com
 
