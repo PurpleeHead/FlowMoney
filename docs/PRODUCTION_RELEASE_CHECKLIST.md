@@ -6,7 +6,7 @@ Production remains a separate, explicitly approved release. Staging merges and d
 
 The following items are verified on staging only. They do not certify or authorize production changes.
 
-- [x] Staging application runtime is live on commit `85192b4b5b1953b54b15d4bd726f520ddd1296a3` (including the Prisma 7 runtime, RLS lockdown, foreign-key indexes and database readiness probe).
+- [x] Staging application runtime is live on commit `089679136c58efe6baa6fdd3f5ab229bd6ab6345` (including Prisma 7, RLS lockdown, foreign-key indexes, database readiness probe and browser invitation token parsing).
 - [x] Render uses Node.js 22.23.3 from `.node-version`.
 - [x] Prisma 7.10.1 client generation and all 8 committed migrations complete; no pending migrations remain.
 - [x] The staging health probe runs a real PostgreSQL query through the runtime Prisma adapter and Render reports the service live.
@@ -14,7 +14,7 @@ The following items are verified on staging only. They do not certify or authori
 - [x] Isolated server and client production dependency audits report zero vulnerabilities.
 - [x] RLS is enabled on all 19 public tables; `anon` and `authenticated` have no public-schema/table access.
 - [x] All 11 previously missing foreign-key indexes are present; Supabase no longer reports unindexed foreign keys.
-- [x] Household invitations can be opened in a normal browser without a configured Telegram bot; Telegram deep links remain optional and deferred.
+- [x] Browser household invitations are covered by server integration tests and client token-parser tests; `CLIENT_ORIGIN` is explicitly set to the staging URL. Telegram deep links remain optional and deferred.
 
 **Known non-blocking item:** the full development-toolchain audit still reports 5 high-severity findings (0 critical) in build/test dependencies. The isolated production dependency trees remain clean. A forced downgrade of Vitest introduced critical advisories, so it was not applied.
 
