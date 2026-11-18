@@ -839,6 +839,10 @@ test('Telegram identity can only be linked from an authenticated account using s
     assert.equal(linkedBody.success, true);
     assert.equal(linkedBody.user.id, first.user.id);
     assert.equal(linkedBody.user.email, first.user.email, 'linking must preserve the existing FlowMoney account');
+    const refreshedSession = await fetch(baseUrl + '/api/auth/me', { headers: { authorization: 'Bearer ' + first.token } });
+    assert.equal(refreshedSession.status, 200);
+    assert.equal((await refreshedSession.json() as { telegramLinked: boolean }).telegramLinked, true,
+      'the account settings endpoint must expose the verified Telegram link state');
 
     const telegramLogin = await post('/api/auth/telegram', { initData });
     assert.equal(telegramLogin.status, 200);
