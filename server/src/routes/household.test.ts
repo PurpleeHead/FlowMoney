@@ -156,6 +156,55 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const sharedData = await sharedFromSpouse.json() as { expenses: Array<{ title: string }> };
     assert.ok(sharedData.expenses.some(item => item.title === 'Shared groceries'));
 
+    // Legacy finance endpoints must use the same canonical household owner as the
+    // newer personal-finance API, so family members see the same ledger.
+    const legacyExchange = await request('/api/exchanges', 'POST', {
+      rubSpent: 1000, usdtReceived: 12, vndPerUsdt: 25000, vndReceived: 299000, vndFee: 1000,
+    }, owner.token);
+    assert.equal(legacyExchange.status, 201);
+    const legacyExchangeBody = await legacyExchange.json() as { id: string };
+    const spouseLegacyExchanges = await request('/api/exchanges', 'GET', undefined, spouse.token);
+    assert.equal(spouseLegacyExchanges.status, 200);
+    assert.ok((await spouseLegacyExchanges.json() as Array<{ id: string }>).some(item => item.id === legacyExchangeBody.id));
+    const outsiderLegacyExchanges = await request('/api/exchanges', 'GET', undefined, outsider.token);
+    assert.equal(outsiderLegacyExchanges.status, 200);
+    assert.equal((await outsiderLegacyExchanges.json() as Array<{ id: string }>).some(item => item.id === legacyExchangeBody.id), false);
+
+    const legacyExpense = await request('/api/expenses', 'POST', {
+      title: 'Legacy shared purchase', category: 'Food', amount: 299000, currency: 'VND',
+      amountVnd: 299000, usdtCharged: 11.96, date: '2026-11-11T10:00:00.000Z',
+    }, owner.token);
+    assert.equal(legacyExpense.status, 201);
+    const legacyExpenseBody = await legacyExpense.json() as { id: string };
+    const spouseLegacyExpenses = await request('/api/expenses', 'GET', undefined, spouse.token);
+    assert.equal(spouseLegacyExpenses.status, 200);
+    assert.ok((await spouseLegacyExpenses.json() as Array<{ id: string }>).some(item => item.id === legacyExpenseBody.id));
+    const outsiderLegacyExpenses = await request('/api/expenses', 'GET', undefined, outsider.token);
+    assert.equal(outsiderLegacyExpenses.status, 200);
+    assert.equal((await outsiderLegacyExpenses.json() as Array<{ id: string }>).some(item => item.id === legacyExpenseBody.id), false);
+
+    const legacyReceipt = await request('/api/receipts', 'POST', {
+      rawText: 'Rice 299000 VND',
+      items: [{ name: 'Rice', price: 299000, quantity: 1, currency: 'VND', amountVnd: 299000 }],
+    }, owner.token);
+    assert.equal(legacyReceipt.status, 201);
+    const legacyReceiptBody = await legacyReceipt.json() as { id: string };
+    const spouseLegacyReceipts = await request('/api/receipts', 'GET', undefined, spouse.token);
+    assert.equal(spouseLegacyReceipts.status, 200);
+    assert.ok((await spouseLegacyReceipts.json() as Array<{ id: string }>).some(item => item.id === legacyReceiptBody.id));
+    const outsiderLegacyReceipts = await request('/api/receipts', 'GET', undefined, outsider.token);
+    assert.equal(outsiderLegacyReceipts.status, 200);
+    assert.equal((await outsiderLegacyReceipts.json() as Array<{ id: string }>).some(item => item.id === legacyReceiptBody.id), false);
+
+    const spouseLegacyDashboard = await request('/api/dashboard', 'GET', undefined, spouse.token);
+    assert.equal(spouseLegacyDashboard.status, 200);
+    const legacyDashboard = await spouseLegacyDashboard.json() as {
+      expenses: Array<{ id: string }>;
+      exchanges: Array<{ id: string }>;
+    };
+    assert.ok(legacyDashboard.expenses.some(item => item.id === legacyExpenseBody.id));
+    assert.ok(legacyDashboard.exchanges.some(item => item.id === legacyExchangeBody.id));
+
     // An owner with active members must not be allowed to join another household,
     // because that would revoke their owner access and orphan the existing household.
     const secondOwner = await register('second-owner');
@@ -194,6 +243,11 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(revoke.status, 204);
     const revokedRequest = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, spouse.token);
     assert.equal(revokedRequest.status, 403, 'revocation must take effect on the next request despite a valid JWT');
+
+    for (const path of ['/api/expenses', '/api/exchanges', '/api/receipts', '/api/dashboard']) {
+      const revokedLegacyRequest = await request(path, 'GET', undefined, spouse.token);
+      assert.equal(revokedLegacyRequest.status, 403, `revoked members must lose access to ${path} immediately`);
+    }
 
     const privateDataStillExists = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, dataAccount.token);
     assert.equal(privateDataStillExists.status, 200);
