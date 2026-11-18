@@ -848,11 +848,11 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
     const memberTotals = new Map<string, { id: string | null; name: string; income: number; expenses: number }>();
     const monthTotals = new Map<string, { income: number; expenses: number }>();
     for (const item of expenses) {
-      const id = item.category?.id ?? 'uncategorized';
+      const categoryId = item.category?.id ?? 'uncategorized';
       const slug = item.category?.slug ?? 'uncategorized';
-      const category = categoryTotals.get(id) ?? { id, slug, name: item.category?.name ?? 'Uncategorized', amount: 0 };
+      const category = categoryTotals.get(categoryId) ?? { id: categoryId, slug, name: item.category?.name ?? 'Uncategorized', amount: 0 };
       category.amount += Number(item.amount);
-      categoryTotals.set(id, category);
+      categoryTotals.set(categoryId, category);
       const id = item.memberId ?? null, key = id ?? '__shared__', name = item.member?.name ?? 'Shared';
       const totals = memberTotals.get(key) ?? { id, name, income: 0, expenses: 0 };
       totals.expenses += Number(item.amount); memberTotals.set(key, totals);
