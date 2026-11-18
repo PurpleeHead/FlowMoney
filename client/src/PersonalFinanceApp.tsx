@@ -462,13 +462,13 @@ export default function PersonalFinanceApp() {
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
 
-  if (loading) return <div className="pf-loading"><div className="pf-brand">nummio<span>X</span></div><div className="pf-spinner"/><p>{tr(lang, 'loading')}</p></div>;
+  if (loading) return <div className="pf-loading" role="status" aria-live="polite" aria-busy="true"><div className="pf-brand">nummio<span>X</span></div><div className="pf-spinner" aria-hidden="true"/><p>{tr(lang, 'loading')}</p></div>;
   if (!user) return <main className="pf-auth">
     <div className="pf-auth-card">
       <div className="pf-brand">nummio<span>X</span></div>
       <div className="pf-auth-icon">₽</div>
       <h1>{tr(lang, 'signInTitle')}</h1><p>{tr(lang, 'signInText')}</p>
-      {error && <div className="pf-alert error">{error}</div>}
+      {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
       <form onSubmit={handleAuth} className="pf-form">
         <label>{tr(lang, 'email')}<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
         <label>{tr(lang, 'password')}<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={8} required value={password} onChange={e => setPassword(e.target.value)} /></label>
@@ -524,8 +524,8 @@ export default function PersonalFinanceApp() {
     </aside>
     <main className="pf-main">
       <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions"><input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) setSelectedMonth(e.target.value); }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.isArchived ? `${m.name} · ${lang === 'ru' ? 'архив' : 'archived'}` : m.name}</option>)}</select><button className="pf-language" onClick={() => changeLanguage(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
-      {error && <div className="pf-alert error">{error}<button onClick={() => setError('')}>×</button></div>}
-      {notice && <div className="pf-alert success">{notice}<button onClick={() => setNotice('')}>×</button></div>}
+      {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}<button type="button" aria-label={lang === 'ru' ? 'Закрыть сообщение об ошибке' : 'Dismiss error message'} onClick={() => setError('')}>×</button></div>}
+      {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}<button type="button" aria-label={lang === 'ru' ? 'Закрыть уведомление' : 'Dismiss notification'} onClick={() => setNotice('')}>×</button></div>}
       {!openingBalanceConfigured && <div className="pf-opening-reminder"><span>{lang === 'ru' ? 'Укажите начальный остаток и дату начала учёта — тогда фактический баланс будет рассчитан корректно.' : 'Set your opening balance and tracking start date so the actual balance is calculated correctly.'}</span><button onClick={() => setTab('settings')}>{lang === 'ru' ? 'Настроить' : 'Set up'}</button></div>}
 
       {tab === 'overview' && dashboard && <div className="pf-page">
@@ -595,7 +595,7 @@ export default function PersonalFinanceApp() {
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ИСТОРИЯ ОПЕРАЦИЙ' : 'TRANSACTION HISTORY'}</span><h2>{tr(lang, 'expenses')}</h2></div><span className="pf-count">{visibleExpenses.length}</span></div><div className="pf-expense-filters"><select className="pf-member-filter" value={expensePeriod} onChange={e=>{const next=e.target.value as 'month'|'all'|'custom';setExpensePeriod(next);if(next==='custom'){setExpenseFrom(ranges.from);setExpenseTo(ranges.to);}}}><option value="month">{lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}</option><option value="all">{lang === 'ru' ? 'Вся история' : 'All history'}</option><option value="custom">{lang === 'ru' ? 'Произвольный период' : 'Custom date range'}</option></select><select className="pf-member-filter" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}><option value="all">{lang === 'ru' ? 'Все категории' : 'All categories'}</option><option value="uncategorized">{lang === 'ru' ? 'Без категории' : 'Uncategorized'}</option>{categories.map(x=><option key={x.id} value={x.id}>{categoryName(x,lang)}</option>)}</select></div>
           {expensePeriod === 'custom' && <div className="pf-field-row pf-expense-custom-range"><label>{lang === 'ru' ? 'С даты' : 'From'}<input type="date" value={expenseFrom} onChange={e=>setExpenseFrom(e.target.value)}/></label><label>{lang === 'ru' ? 'По дату' : 'To'}<input type="date" value={expenseTo} onChange={e=>setExpenseTo(e.target.value)}/></label></div>}
-          {expensePeriod === 'custom' && !validExpenseCustomRange && <p className="pf-alert error">{lang === 'ru' ? 'Проверьте даты периода.' : 'Check the selected date range.'}</p>}
+          {expensePeriod === 'custom' && !validExpenseCustomRange && <p className="pf-alert error" role="alert">{lang === 'ru' ? 'Проверьте даты периода.' : 'Check the selected date range.'}</p>}
           {visibleExpenses.length ? visibleExpenses.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category ? categoryName(item.category, lang) : (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label="Delete">×</button></div></div>) : <p className="pf-empty">{tr(lang, 'noData')}</p>}{hasMoreExpenses && <div className="pf-load-more"><button className="pf-button ghost" disabled={busy} onClick={loadMoreExpenses}>{busy ? (lang === 'ru' ? 'Загрузка…' : 'Loading…') : (lang === 'ru' ? 'Загрузить ещё' : 'Load more')}</button></div>}
         </section>
       </div>}
