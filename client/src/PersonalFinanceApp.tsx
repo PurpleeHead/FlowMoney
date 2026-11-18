@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, getToken, setToken } from './lib/api';
+import { getHouseholdInviteToken } from './lib/householdInvites';
 import './personalFinance.css';
 
 type Lang = 'ru' | 'en';
@@ -317,8 +318,7 @@ export default function PersonalFinanceApp() {
     const bootstrap = async () => {
       const initData = window.Telegram?.WebApp?.initData;
       const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-      const webInviteToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('invite');
-      const invitationToken = startParam || webInviteToken;
+      const invitationToken = getHouseholdInviteToken(window.location.hash, startParam);
       if (invitationToken) setInviteToken(invitationToken);
       const loadStartInvitePreview = async () => {
         if (!invitationToken) return false;
@@ -400,8 +400,7 @@ export default function PersonalFinanceApp() {
       setToken(result.token);
       setUser(result.user);
       const invitationToken = inviteToken
-        || new URLSearchParams(window.location.hash.replace(/^#/, '')).get('invite')
-        || window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+        || getHouseholdInviteToken(window.location.hash, window.Telegram?.WebApp?.initDataUnsafe?.start_param);
       if (invitationToken) {
         setInviteToken(invitationToken);
         try {
@@ -491,8 +490,7 @@ export default function PersonalFinanceApp() {
   async function acceptPendingInvite() {
     if (!pendingInvite) return;
     const token = inviteToken
-      || new URLSearchParams(window.location.hash.replace(/^#/, '')).get('invite')
-      || window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      || getHouseholdInviteToken(window.location.hash, window.Telegram?.WebApp?.initDataUnsafe?.start_param);
     if (!token) { setError(lang === 'ru' ? 'Ссылка-приглашение не найдена. Открой её заново.' : 'Invitation link is missing. Reopen it and try again.'); return; }
     setBusy(true); setError('');
     try {
