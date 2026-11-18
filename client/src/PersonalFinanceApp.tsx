@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, getToken, setToken } from './lib/api';
 import { getHouseholdInviteToken } from './lib/householdInvites';
+import { calculateMonthlyCashflow } from './lib/monthlyCashflow';
 import './personalFinance.css';
 
 type Lang = 'ru' | 'en';
@@ -25,7 +26,7 @@ type HouseholdInfo = {
 type Dashboard = {
   actual: { income: number; expenses: number; balance: number };
   forecast: { plannedIncome: number; unpaidObligations: number; balance: number };
-  obligations: { due: number; paid: number; unpaid: number; coverage: { receivedIncome: number; shortfall: number; surplus: number }; plannedCoverage: { income: number; shortfall: number } };
+  obligations: { due: number; paid: number; paidInPeriod: number; unpaid: number; coverage: { receivedIncome: number; shortfall: number; surplus: number }; plannedCoverage: { income: number; shortfall: number } };
   nextPayments: ObligationOccurrence[];
 };
 type Tab = 'overview' | 'income' | 'expenses' | 'obligations' | 'calendar' | 'analytics' | 'budgets' | 'family' | 'settings';
@@ -273,8 +274,8 @@ export default function PersonalFinanceApp() {
     if (!webApp) return;
     webApp.ready();
     webApp.expand();
-    webApp.setHeaderColor?.('#0d0b16');
-    webApp.setBackgroundColor?.('#0d0b16');
+    webApp.setHeaderColor?.('#F4F5F4');
+    webApp.setBackgroundColor?.('#F4F5F4');
   }, []);
   const refresh = useCallback(async () => {
     const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData] = await Promise.all([
@@ -629,6 +630,12 @@ export default function PersonalFinanceApp() {
   const visibleObligations = obligationOccurrences.filter(item => matchesMember(item.obligation.memberId) && (showSkippedObligations || item.status !== 'SKIPPED'));
   const monthIncome = visibleIncome.filter(entry => entry.plannedDate >= ranges.from && entry.plannedDate <= ranges.to);
   const monthObligations = visibleObligations.filter(item => item.dueDate >= ranges.from && item.dueDate <= ranges.to);
+  const cashflow = dashboard ? calculateMonthlyCashflow({
+    income: dashboard.actual.income,
+    expenses: dashboard.actual.expenses,
+    paidObligations: dashboard.obligations.paidInPeriod,
+    unpaidObligations: dashboard.obligations.unpaid,
+  }) : null;
   const visibleBudgets = budgets.filter(item => matchesMember(item.memberId));
   const analyticsMax = analytics ? Math.max(1, ...analytics.months.flatMap(item => [item.income, item.expenses])) : 1;
   const calendarEvents = [
@@ -655,36 +662,77 @@ export default function PersonalFinanceApp() {
       {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}<button type="button" aria-label={lang === 'ru' ? 'Закрыть уведомление' : 'Dismiss notification'} onClick={() => setNotice('')}>×</button></div>}
       {!openingBalanceConfigured && <div className="pf-opening-reminder"><span>{lang === 'ru' ? 'Укажите начальный остаток и дату начала учёта — тогда фактический баланс будет рассчитан корректно.' : 'Set your opening balance and tracking start date so the actual balance is calculated correctly.'}</span><button onClick={() => setTab('settings')}>{lang === 'ru' ? 'Настроить' : 'Set up'}</button></div>}
 
-      {tab === 'overview' && dashboard && <div className="pf-page">
-        <section className="pf-balance-grid">
-          <article className="pf-balance-card primary-balance"><span>{tr(lang, 'actualBalance')}</span><strong>{rub(dashboard.actual.balance)}</strong><small>{lang === 'ru' ? 'Реальные деньги на основе записей' : 'Real cash based on recorded transactions'}</small></article>
-          <article className="pf-balance-card forecast-balance"><span>{tr(lang, 'forecastBalance')}</span><strong>{rub(dashboard.forecast.balance)}</strong><small>{tr(lang, 'forecastInfo')}</small></article>
+      {tab === 'overview' && dashboard && cashflow && <div className="pf-page pf-overview">
+        <section className="pf-cashflow-hero">
+          <div className="pf-cashflow-main">
+            <span className="pf-eyebrow">{lang === 'ru' ? 'ВАШИ ДЕНЬГИ В ЭТОМ МЕСЯЦЕ' : 'YOUR MONEY THIS MONTH'}</span>
+            <span className="pf-cashflow-label">{lang === 'ru' ? 'Свободно сейчас' : 'Available now'}</span>
+            <strong className={cashflow.availableBalance < 0 ? 'negative' : ''}>{rub(cashflow.availableBalance)}</strong>
+            <p>{lang === 'ru' ? 'Доходы минус все уже оплаченные расходы и обязательные платежи.' : 'Income minus all expenses and commitments already paid.'}</p>
+            <div className="pf-cashflow-equation">
+              <span><small>{lang === 'ru' ? 'Получено' : 'Received'}</small><b className="positive">+{rub(cashflow.income)}</b></span>
+              <span><small>{lang === 'ru' ? 'Потрачено' : 'Spent'}</small><b>−{rub(cashflow.totalOutflow)}</b></span>
+            </div>
+          </div>
+          <div className="pf-cashflow-reserve">
+            <span className="pf-eyebrow">{lang === 'ru' ? 'ПОСЛЕ ОСТАВШИХСЯ ПЛАТЕЖЕЙ' : 'AFTER UPCOMING PAYMENTS'}</span>
+            <strong className={cashflow.afterPlannedPayments < 0 ? 'negative' : ''}>{rub(cashflow.afterPlannedPayments)}</strong>
+            <p>{lang === 'ru' ? 'Прогнозный остаток, если оплатить все обязательства этого месяца.' : 'Projected balance after paying every remaining commitment this month.'}</p>
+            <div className="pf-reserve-line"><span>{lang === 'ru' ? 'Осталось оплатить' : 'Still to pay'}</span><b>{rub(cashflow.unpaidObligations)}</b></div>
+          </div>
         </section>
-        <section className="pf-metric-grid">
-          <article><span>{tr(lang, 'received')}</span><strong className="positive">{rub(dashboard.actual.income)}</strong></article>
-          <article><span>{tr(lang, 'spent')}</span><strong>{rub(dashboard.actual.expenses)}</strong></article>
-          <article><span>{tr(lang, 'planned')}</span><strong>{rub(dashboard.forecast.plannedIncome)}</strong></article>
-          <article><span>{tr(lang, 'due')}</span><strong>{rub(dashboard.obligations.due)}</strong></article>
-        </section>
-        <section className="pf-two-col">
-          <article className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОБЯЗАТЕЛЬНЫЕ ПЛАТЕЖИ' : 'COMMITMENTS'}</span><h2>{lang === 'ru' ? 'Покрытие обязательств' : 'Obligation coverage'}</h2></div><span className="pf-heading-icon">◎</span></div>
-            <div className="pf-coverage-number">{dashboard.obligations.coverage.shortfall > 0 ? <><strong className="negative">{rub(dashboard.obligations.coverage.shortfall)}</strong><span>{tr(lang, 'shortfall')}</span></> : <><strong className="positive">{rub(dashboard.obligations.coverage.surplus)}</strong><span>{tr(lang, 'surplus')}</span></>}</div>
-            <div className="pf-coverage-track"><span style={{ width: `${dashboard.obligations.due ? Math.min(100, dashboard.obligations.coverage.receivedIncome / dashboard.obligations.due * 100) : 100}%` }}/></div>
-            <div className="pf-split"><span>{tr(lang, 'paid')}: {rub(dashboard.obligations.paid)}</span><span>{tr(lang, 'unpaid')}: {rub(dashboard.obligations.unpaid)}</span></div>
-            <p className="pf-muted">{tr(lang, 'coverageInfo')}</p>
-            <div className="pf-planned-coverage">{lang === 'ru' ? 'С учётом ожидаемых доходов:' : 'Including planned income:'} <strong>{rub(dashboard.obligations.plannedCoverage.income)}</strong> · {lang === 'ru' ? 'не хватает' : 'short'} <strong>{rub(dashboard.obligations.plannedCoverage.shortfall)}</strong></div>
+
+        <section className="pf-overview-metrics">
+          <article className="pf-overview-metric income-metric">
+            <span>{lang === 'ru' ? 'Доход за месяц' : 'Income this month'}</span>
+            <strong className="positive">{rub(cashflow.income)}</strong>
+            <small>{lang === 'ru' ? 'Только фактически полученные деньги' : 'Money actually received'}</small>
           </article>
-          <article className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'КАЛЕНДАРЬ ПЛАТЕЖЕЙ' : 'PAYMENT CALENDAR'}</span><h2>{tr(lang, 'upcoming')}</h2></div><button className="pf-link" onClick={() => setTab('obligations')}>{lang === 'ru' ? 'Все' : 'All'} →</button></div>
-            {dashboard.nextPayments.length ? dashboard.nextPayments.slice(0, 5).map(p => <div className="pf-list-row" key={p.id}><div><strong>{p.obligation.title}</strong><small>{dateLabel(p.dueDate, lang)} · {p.status === 'OVERDUE' ? tr(lang, 'overdue') : tr(lang, 'unpaid')}</small></div><b>{rub(p.plannedAmount)}</b></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyUpcoming')}</p>}
+          <article className="pf-overview-metric expense-metric">
+            <span>{lang === 'ru' ? 'Обычные расходы' : 'Everyday expenses'}</span>
+            <strong>{rub(cashflow.regularExpenses)}</strong>
+            <small>{lang === 'ru' ? 'Покупки и другие траты, без платежей ниже' : 'Purchases and other spending, excluding commitments'}</small>
+          </article>
+          <article className="pf-overview-metric obligation-metric">
+            <span>{lang === 'ru' ? 'Обязательные платежи оплачены' : 'Commitments paid'}</span>
+            <strong>{rub(cashflow.paidObligations)}</strong>
+            <small>{lang === 'ru' ? 'Уже вычтены из доступного остатка' : 'Already deducted from available balance'}</small>
           </article>
         </section>
-        <section className="pf-card pf-adjustment-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'НАСТРОЙКА БАЛАНСА' : 'BALANCE SETUP'}</span><h2>{tr(lang, 'opening')}</h2></div></div><p className="pf-muted">{tr(lang, 'openingHelp')}</p>
-          <form className="pf-inline-form" onSubmit={e => perform(e, `${PF}/balance-adjustments`, { amount: Number(openingAmount), date: moscowToday(), reason: openingReason }, lang === 'ru' ? 'Корректировка баланса сохранена.' : 'Balance adjustment saved.')}>
-            <label>{tr(lang, 'amount')}<input type="number" step="0.01" required value={openingAmount} onChange={e => setOpeningAmount(e.target.value)} placeholder="0.00"/></label>
-            <label>{tr(lang, 'reason')}<input required value={openingReason} onChange={e => setOpeningReason(e.target.value)}/></label>
-            <button className="pf-button primary" disabled={busy}>{tr(lang, 'save')}</button>
-          </form>
-          {adjustments.length > 0 && <small className="pf-muted">{lang === 'ru' ? 'Корректировок записано:' : 'Adjustments recorded:'} {adjustments.length}</small>}
+
+        <section className="pf-card pf-obligations-overview">
+          <div className="pf-card-heading">
+            <div>
+              <span className="pf-eyebrow">{lang === 'ru' ? 'ПЛАНИРУЕМЫЕ ПЛАТЕЖИ' : 'PLANNED COMMITMENTS'}</span>
+              <h2>{lang === 'ru' ? 'Обязательные платежи' : 'Required payments'}</h2>
+              <p className="pf-muted">{lang === 'ru' ? 'Отметьте платёж после фактической оплаты. Он будет учтён в расходах автоматически и только один раз.' : 'Mark a payment only after it is actually paid. It will be added to expenses automatically, exactly once.'}</p>
+            </div>
+            <button className="pf-link" onClick={() => setTab('obligations')}>{lang === 'ru' ? 'Все платежи' : 'All payments'} →</button>
+          </div>
+          {monthObligations.length ? <div className="pf-obligation-list">
+            {monthObligations.slice(0, 8).map(item => <div className="pf-obligation-item" key={item.id}>
+              <div className="pf-obligation-date"><strong>{item.dueDate.slice(8, 10)}</strong><small>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'short', timeZone: 'UTC' }).format(new Date(item.dueDate.slice(0,10) + 'T00:00:00.000Z'))}</small></div>
+              <div className="pf-obligation-details">
+                <strong>{item.obligation.title}</strong>
+                <small>{item.obligation.category} · {item.obligation.member?.name ?? tr(lang, 'shared')}</small>
+              </div>
+              <div className="pf-obligation-value">
+                <b>{rub(item.actualAmount ?? item.plannedAmount)}</b>
+                <span className={item.status === 'PAID' ? 'paid' : item.status === 'OVERDUE' ? 'overdue' : 'pending'}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : item.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : tr(lang, 'unpaid')}</span>
+              </div>
+              {item.status !== 'PAID' && item.status !== 'SKIPPED' && <button className="pf-button small primary" disabled={busy} onClick={() => markPaid(item.id, item.plannedAmount)}>{lang === 'ru' ? 'Оплачено' : 'Mark paid'}</button>}
+            </div>)}
+          </div> : <p className="pf-empty">{lang === 'ru' ? 'На этот месяц обязательные платежи не запланированы.' : 'No required payments are scheduled for this month.'}</p>}
+          {monthObligations.length > 8 && <button className="pf-button ghost" onClick={() => setTab('obligations')}>{lang === 'ru' ? 'Показать все платежи' : 'Show all payments'}</button>}
+          <div className="pf-obligation-summary">
+            <span>{lang === 'ru' ? 'Оплачено' : 'Paid'} <b>{rub(cashflow.paidObligations)}</b></span>
+            <span>{lang === 'ru' ? 'Осталось' : 'Remaining'} <b>{rub(cashflow.unpaidObligations)}</b></span>
+          </div>
+        </section>
+
+        <section className="pf-overview-footnote">
+          <span className="pf-info-mark">i</span>
+          <p>{lang === 'ru' ? 'Важно: плановые платежи не уменьшают доступный остаток заранее. Сумма списывается из остатка только после нажатия «Оплачено». После подтверждения платёж автоматически попадает в расходы — повторно добавлять его вручную не нужно.' : 'Important: scheduled payments do not reduce your available balance in advance. The amount is deducted only after you mark it as paid. The payment is automatically recorded as an expense, so do not add it manually again.'}</p>
         </section>
       </div>}
 
