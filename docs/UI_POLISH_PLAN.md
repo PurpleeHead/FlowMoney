@@ -24,3 +24,4 @@ This milestone follows the household collaboration branch and is limited to the 
 - The stacked pull-request target branch is included in the CI pull_request filter so checks run before review.
 
 - Manual staging QA should cover 320px, 360px, 390px, 768px and desktop widths; test every destructive action's cancel/confirm path and amount-entry validation.
+- Stage 9 responsive pass: long currency values and labels wrap within their cards; dialog content remains scrollable on short-height screens; the calendar keeps seven bounded columns.
