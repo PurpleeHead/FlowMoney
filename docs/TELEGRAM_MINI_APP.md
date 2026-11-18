@@ -24,7 +24,7 @@ After the web app is deployed to HTTPS:
 2. Select the bot.
 3. Set the button text to `Open nummioX`.
 4. Provide the deployed HTTPS app URL.
-5. In Bot Settings, configure the same URL as the bot's **Main Mini App**. The household invitation links use Telegram's `startapp` parameter, which is delivered to the Mini App as `initDataUnsafe.start_param` only when a Main Mini App is configured.
+5. In Bot Settings, configure the same URL as the bot's **Main Mini App**. Telegram deep links can use Telegram's `startapp` parameter, which is delivered to the Mini App as `initDataUnsafe.start_param` only when a Main Mini App is configured. This is optional: household invitations are also generated as ordinary web links and can be accepted in a browser after email/password sign-in, without a configured bot.
 
 For the bot profile, set the display name to `nummioX` and use this description: `Удобный учёт доходов, расходов, бюджета и накоплений семьи.`
 
