@@ -688,9 +688,9 @@ export default function PersonalFinanceApp() {
             <small>{lang === 'ru' ? 'Только фактически полученные деньги' : 'Money actually received'}</small>
           </article>
           <article className="pf-overview-metric expense-metric">
-            <span>{lang === 'ru' ? 'Обычные расходы' : 'Everyday expenses'}</span>
-            <strong>{rub(cashflow.regularExpenses)}</strong>
-            <small>{lang === 'ru' ? 'Покупки и другие траты, без платежей ниже' : 'Purchases and other spending, excluding commitments'}</small>
+            <span>{lang === 'ru' ? 'Расходы за месяц' : 'Expenses this month'}</span>
+            <strong>{rub(cashflow.totalOutflow)}</strong>
+            <small>{lang === 'ru' ? `В том числе обычные расходы: ${rub(cashflow.regularExpenses)}` : `Including everyday spending: ${rub(cashflow.regularExpenses)}`}</small>
           </article>
           <article className="pf-overview-metric obligation-metric">
             <span>{lang === 'ru' ? 'Обязательные платежи оплачены' : 'Commitments paid'}</span>
