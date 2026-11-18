@@ -645,7 +645,6 @@ export default function PersonalFinanceApp() {
         <button className="pf-button primary" disabled={busy}>{busy ? '…' : tr(lang, authMode === 'login' ? 'signIn' : 'signUp')}</button>
       </form>
       <button className="pf-link" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError(''); }}>{authMode === 'login' ? tr(lang, 'signUp') : tr(lang, 'signIn')}</button>
-      <button className="pf-language" onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 English' : '🇷🇺 Русский'}</button>
     </div>
   </main>;
 
