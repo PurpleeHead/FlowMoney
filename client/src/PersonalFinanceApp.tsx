@@ -257,7 +257,7 @@ export default function PersonalFinanceApp() {
       const loadStartInvitePreview = async () => {
         if (!startParam) return false;
         try {
-          const preview = await api<PendingHouseholdInvite>(`/household/invitations/preview?token=${encodeURIComponent(startParam)}`);
+          const preview = await api<PendingHouseholdInvite>('/household/invitations/preview', { method: 'POST', body: JSON.stringify({ token: startParam }) });
           if (preview.alreadyAccepted) {
             setNotice(lang === 'ru' ? `Ты уже присоединился к семье «${preview.householdName}».` : `You already joined ${preview.householdName}.`);
             return false;
