@@ -2,11 +2,11 @@
 
 ## Implementation status (2026-11-11)
 
-Backend schema, migration, request-level household resolution, invitation API, immediate revocation and initial Telegram invite UI are now being implemented on `feature/household-collaboration`. This is not production-enabled until the migration is reviewed and deployed through an approved release.
+Backend schema, migration, request-level household resolution, invitation API, immediate revocation, Telegram invite UI and household isolation tests are implemented on `feature/household-collaboration`. Secure linking of a verified Telegram identity to an existing authenticated email account is implemented in the follow-up staging change `feature/secure-telegram-account-linking`. These changes are staging-only and are not production-enabled until the migration and release are reviewed and explicitly approved.
 
 ## Why this is a separate milestone
 
-The current `HouseholdMember` records are attribution labels inside one account. They are not login identities. A second Telegram user currently receives a separate FlowMoney account and cannot see the first user's financial data. Do not describe the current model as shared multi-user access.
+`HouseholdMember` records remain attribution labels, while `HouseholdAccess` links a real authenticated account to one profile. Shared multi-user access is implemented on staging; the security requirements below describe the invariants that must remain true as the feature evolves.
 
 ## Target behavior
 
@@ -55,6 +55,7 @@ This approach avoids a destructive migration of every existing financial table a
 - The recipient sees a clear confirmation before switching from their empty personal household to the invited household.
 
 ## API surface to implement
+- `POST /api/auth/telegram/link` — link a signed Telegram Web App identity to the currently authenticated FlowMoney account; reject identities already linked elsewhere.
 
 - `POST /api/personal-finance/household/invitations` — owner creates invite.
 - `GET /api/personal-finance/household/invitations` — owner lists pending/recent invites without exposing token hashes.

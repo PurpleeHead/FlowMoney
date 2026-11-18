@@ -6,7 +6,7 @@ import ReceiptScanner from './components/ReceiptScanner';
 import './personalFinance.css';
 
 type Lang = 'ru' | 'en';
-type User = { id: string; email: string; displayName?: string };
+type User = { id: string; email: string; displayName?: string; telegramLinked?: boolean };
 type Member = { id: string; name: string; color?: string | null; isArchived: boolean };
 type Category = { id: string; name: string; slug: string; userId: string | null; isArchived: boolean };
 type IncomeSource = { id: string; title: string; amount: number | string; recurrence: string; recurrenceConfig: { day?: number; month?: number; weekdays?: number[]; intervalWeeks?: number; firstDay?: number; secondDay?: number }; startDate: string; endDate?: string | null; memberId?: string | null; isActive: boolean };
@@ -301,9 +301,10 @@ export default function PersonalFinanceApp() {
       setObligationMember(current => current || mappedProfile);
       setBudgetMember(current => current || mappedProfile);
     }
+    if (settingsData.timezone !== timezone) { const today = todayInTimezone(settingsData.timezone); setSelectedMonth(today.slice(0, 7)); setSelectedCalendarDate(today); }
     setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
-  }, [ranges, expenseCategory, filterMember, showSkippedObligations]);
+  }, [ranges, expenseCategory, filterMember, showSkippedObligations, timezone]);
 
   useEffect(() => {
     if (tab !== 'family' || household?.role !== 'OWNER') { setInvitations([]); return; }
@@ -395,6 +396,22 @@ export default function PersonalFinanceApp() {
 
   async function saveOpeningBalance() { const amount = Number(openingBalance); if (!Number.isFinite(amount)) { setError(lang === 'ru' ? 'Введите корректную сумму начального остатка.' : 'Enter a valid opening balance.'); return; } setBusy(true); setError(''); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ openingBalance: amount, openingBalanceDate }) }); await refresh(); setNotice(lang === 'ru' ? 'Начальный остаток сохранён.' : 'Opening balance saved.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function changeLanguage(next: Lang) { setLang(next); if (user) { try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ locale: next }) }); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } } }
+  async function linkTelegramAccount() {
+    const initData = window.Telegram?.WebApp?.initData;
+    if (!initData) {
+      setNotice(lang === 'ru' ? 'Открой nummioX внутри Telegram и войди в этот аккаунт, чтобы подтвердить привязку.' : 'Open nummioX inside Telegram and sign in to this account to verify the link.');
+      return;
+    }
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await api<{ success: boolean; user: { displayName?: string } }>('/auth/telegram/link', {
+        method: 'POST', body: JSON.stringify({ initData }),
+      });
+      setUser(current => current ? { ...current, telegramLinked: true, displayName: result.user.displayName ?? current.displayName } : current);
+      setNotice(lang === 'ru' ? 'Telegram успешно привязан к текущему аккаунту. Теперь можно входить обоими способами.' : 'Telegram is now linked to this account. You can sign in either way.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not link Telegram.'); }
+    finally { setBusy(false); }
+  }
   async function changeTimezone(next: string) { setTimezone(next); const today = todayInTimezone(next); setSelectedMonth(today.slice(0,7)); setSelectedCalendarDate(today); setIncomeStart(today); setExpenseDate(today); setObligationDate(today); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ timezone: next }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } }
   async function handleAuth(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
@@ -628,7 +645,6 @@ export default function PersonalFinanceApp() {
         <button className="pf-button primary" disabled={busy}>{busy ? '…' : tr(lang, authMode === 'login' ? 'signIn' : 'signUp')}</button>
       </form>
       <button className="pf-link" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError(''); }}>{authMode === 'login' ? tr(lang, 'signUp') : tr(lang, 'signIn')}</button>
-      <button className="pf-language" onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 English' : '🇷🇺 Русский'}</button>
     </div>
   </main>;
 
@@ -899,6 +915,7 @@ export default function PersonalFinanceApp() {
       {tab === 'settings' && <div className="pf-page">
         <section className="pf-card pf-settings-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЕРСОНАЛИЗАЦИЯ' : 'PREFERENCES'}</span><h2>{tr(lang,'settings')}</h2></div></div>
           <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Язык интерфейса' : 'Interface language'}</strong><small>{lang === 'ru' ? 'Язык названий и подсказок' : 'Labels and helper text language'}</small></span><select value={lang} onChange={e=>changeLanguage(e.target.value as Lang)}><option value="ru">Русский</option><option value="en">English</option></select></label>
+          <div className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Подключение Telegram' : 'Telegram connection'}</strong><small>{user.telegramLinked ? (lang === 'ru' ? 'Этот аккаунт уже связан с подтверждённым Telegram ID.' : 'This account is linked to a verified Telegram ID.') : (lang === 'ru' ? 'Для безопасной привязки открой приложение внутри Telegram и войди в этот аккаунт.' : 'To link securely, open the app inside Telegram and sign in to this account.')}</small></span>{user.telegramLinked ? <span className="pf-status-pill">{lang === 'ru' ? 'Подключён' : 'Connected'}</span> : <button className="pf-button small" disabled={busy || !window.Telegram?.WebApp?.initData} onClick={linkTelegramAccount}>{lang === 'ru' ? 'Подключить Telegram' : 'Link Telegram'}</button>}</div>
           <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Часовой пояс' : 'Time zone'}</strong><small>{lang === 'ru' ? 'Используется для текущей даты и календаря платежей' : 'Used for today and payment calendar dates'}</small></span><select value={timezone} onChange={e=>changeTimezone(e.target.value)}>{[['Europe/Moscow','Москва (UTC+3)'],['Europe/Minsk','Минск (UTC+3)'],['Europe/Warsaw','Варшава'],['Europe/Berlin','Берлин'],['Europe/London','Лондон'],['Asia/Dubai','Дубай'],['Asia/Bangkok','Бангкок'],['Asia/Ho_Chi_Minh','Хошимин'],['UTC','UTC']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
           {household?.role === 'OWNER' && <div className="pf-opening-balance"><div><strong>{lang === 'ru' ? 'Начальный остаток' : 'Opening balance'}</strong><small>{lang === 'ru' ? 'Сколько денег было на счетах и наличными на дату начала учёта' : 'Money held across accounts and cash on the start date'}</small></div><div className="pf-opening-fields"><label>{lang === 'ru' ? 'Сумма, ₽' : 'Amount, RUB'}<input type="number" step="0.01" value={openingBalance} onChange={e=>setOpeningBalance(e.target.value)}/></label><label>{lang === 'ru' ? 'Дата начала учёта' : 'Tracking start date'}<input type="date" max={todayInTimezone(timezone)} value={openingBalanceDate} onChange={e=>setOpeningBalanceDate(e.target.value)}/></label></div><button className="pf-button" disabled={busy || !openingBalanceDate} onClick={saveOpeningBalance}>{lang === 'ru' ? 'Сохранить начальный остаток' : 'Save opening balance'}</button><p className="pf-muted">{lang === 'ru' ? 'Фактический баланс будет считать доходы, расходы и корректировки только начиная с этой даты, чтобы не учитывать старую историю повторно.' : 'The actual balance includes income, expenses and adjustments from this date onward, avoiding double-counting older history.'}</p></div>}<div className="pf-opening-balance">
             <div><strong>{lang === 'ru' ? 'Корректировка общего баланса' : 'Overall balance adjustment'}</strong><small>{lang === 'ru' ? 'Разовая поправка для исторического баланса. Не меняет расчёт доходов и расходов выбранного месяца.' : 'A one-time adjustment for the historical balance. It does not change selected-month income or expenses.'}</small></div>
