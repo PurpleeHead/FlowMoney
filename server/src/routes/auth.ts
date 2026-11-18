@@ -129,6 +129,57 @@ router.post('/telegram', async (req, res, next) => {
   }
 });
 
+router.post('/telegram/link', auth, async (req: AuthedRequest, res, next) => {
+  try {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) return res.status(503).json({ message: 'Telegram sign-in is not configured yet.' });
+    const initData = typeof req.body?.initData === 'string' ? req.body.initData : '';
+    if (!initData || initData.length > 8192) {
+      return res.status(400).json({ message: 'Missing or invalid Telegram sign-in data.' });
+    }
+    const telegramUser = verifyTelegramInitData(initData, botToken);
+    if (!telegramUser) {
+      return res.status(401).json({ message: 'Telegram sign-in data is invalid or expired. Reopen the app from Telegram.' });
+    }
+
+    const accountId = req.user!.accountId;
+    const [account, existingIdentity] = await Promise.all([
+      prisma.user.findUnique({ where: { id: accountId }, select: { id: true, telegramId: true } }),
+      prisma.user.findUnique({ where: { telegramId: telegramUser.id }, select: { id: true } }),
+    ]);
+    if (!account) return res.status(404).json({ message: 'Account not found.' });
+    if (account.telegramId && account.telegramId !== telegramUser.id) {
+      return res.status(409).json({ message: 'This account is already linked to a different Telegram identity.' });
+    }
+    if (existingIdentity && existingIdentity.id !== accountId) {
+      return res.status(409).json({ message: 'This Telegram identity is already linked to another FlowMoney account. Sign in to that account instead.' });
+    }
+
+    try {
+      const updated = await prisma.user.update({
+        where: { id: accountId },
+        data: {
+          telegramId: telegramUser.id,
+          telegramUsername: telegramUser.username ?? null,
+          telegramFirstName: telegramUser.firstName ?? 'Telegram user',
+        },
+        select: { id: true, email: true, telegramFirstName: true, telegramUsername: true },
+      });
+      const displayName = updated.telegramFirstName || updated.telegramUsername || 'Telegram';
+      return res.json({ success: true, user: { id: updated.id, email: updated.email, displayName } });
+    } catch (error) {
+      // The unique Telegram ID constraint is authoritative when two accounts
+      // attempt to claim the same signed identity at the same time.
+      if (isUniqueConstraintError(error)) {
+        return res.status(409).json({ message: 'This Telegram identity is already linked to another FlowMoney account.' });
+      }
+      throw error;
+    }
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get('/me', auth, async (req: AuthedRequest, res, next) => {
   try {
     return res.json({ ...req.user, id: req.user!.accountId });
