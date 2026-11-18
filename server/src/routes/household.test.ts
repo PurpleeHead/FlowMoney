@@ -122,6 +122,11 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const availableOwnerProfile = await request('/api/household/profile', 'PATCH', { memberId: husbandProfile.id }, owner.token);
     assert.equal(availableOwnerProfile.status, 200, 'the owner may still assign an unoccupied profile to their own access');
 
+    const archiveLinkedProfile = await request('/api/personal-finance/members/' + encodeURIComponent(wifeProfile.id), 'PATCH', {
+      isArchived: true,
+    }, owner.token);
+    assert.equal(archiveLinkedProfile.status, 409, 'a profile linked to an active account must not be archived');
+
     const reusedInviteAccept = await request('/api/household/invitations/accept', 'POST', { token: inviteToken }, outsider.token);
     assert.equal(reusedInviteAccept.status, 400, 'an accepted invitation token must not be reusable');
     const memberCannotRevokeInvite = await request('/api/household/invitations/' + encodeURIComponent(duplicateProfileInvite.id), 'DELETE', undefined, spouse.token);
