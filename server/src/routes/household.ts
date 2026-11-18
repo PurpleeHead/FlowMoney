@@ -140,9 +140,9 @@ router.post('/invitations', invitationCreateLimit, async (req: AuthedRequest, re
   } catch (error) { return next(error); }
 });
 
-router.get('/invitations/preview', invitationAcceptLimit, async (req: AuthedRequest, res, next) => {
+router.post('/invitations/preview', invitationAcceptLimit, async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = z.object({ token: z.string().min(32).max(128) }).safeParse({ token: req.query.token });
+    const parsed = z.object({ token: z.string().min(32).max(128) }).safeParse({ token: req.body?.token });
     if (!parsed.success) return res.status(400).json({ message: 'The invitation link is invalid.' });
     const user = current(req);
     const invite = await prisma.householdInvite.findUnique({
