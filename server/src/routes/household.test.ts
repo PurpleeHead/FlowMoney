@@ -64,11 +64,14 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const duplicateProfileToken = new URL(duplicateProfileInvite.inviteLink).searchParams.get('startapp');
     assert.ok(duplicateProfileToken);
 
-    const previewResponse = await request('/api/household/invitations/preview?token=' + encodeURIComponent(inviteToken), 'GET', undefined, spouse.token);
+    const previewResponse = await request('/api/household/invitations/preview', 'POST', { token: inviteToken }, spouse.token);
     assert.equal(previewResponse.status, 200);
     const preview = await previewResponse.json() as { householdName: string; memberName: string; alreadyAccepted: boolean };
     assert.equal(preview.memberName, 'Wife');
     assert.equal(preview.alreadyAccepted, false);
+
+    const malformedPreview = await request('/api/household/invitations/preview', 'POST', { token: 'not-a-valid-token' }, spouse.token);
+    assert.equal(malformedPreview.status, 400, 'malformed invitation tokens must be rejected');
 
     const accepted = await request('/api/household/invitations/accept', 'POST', { token: inviteToken }, spouse.token);
     assert.equal(accepted.status, 200);
@@ -140,7 +143,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     }, spouse.token);
     assert.equal(blockedOpeningBalanceChange.status, 403, 'only the owner may change the shared opening balance');
 
-    const alreadyJoinedPreview = await request('/api/household/invitations/preview?token=' + encodeURIComponent(inviteToken), 'GET', undefined, spouse.token);
+    const alreadyJoinedPreview = await request('/api/household/invitations/preview', 'POST', { token: inviteToken }, spouse.token);
     assert.equal(alreadyJoinedPreview.status, 200);
     assert.equal((await alreadyJoinedPreview.json() as { alreadyAccepted: boolean }).alreadyAccepted, true);
 
