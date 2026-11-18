@@ -7,6 +7,12 @@ import { createApp } from '../app.js';
 import { prisma } from '../services/prisma.js';
 import { hashInvitationToken } from '../services/households.js';
 
+function tokenFromInviteLink(link: string): string | null {
+  const url = new URL(link);
+  return url.searchParams.get('startapp')
+    ?? new URLSearchParams(url.hash.replace(/^#/, '')).get('invite');
+}
+
 test('household invitations share finances, isolate other accounts and revoke access immediately', { skip: !process.env.DATABASE_URL }, async () => {
   process.env.JWT_SECRET = 'nummiox-household-integration-test-secret-32';
   const suffix = randomUUID();
@@ -57,13 +63,16 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const inviteResponse = await request('/api/household/invitations', 'POST', { memberId: wifeProfile.id }, owner.token);
     assert.equal(inviteResponse.status, 201);
     const invite = await inviteResponse.json() as { inviteLink: string; id: string };
-    const inviteToken = new URL(invite.inviteLink).searchParams.get('startapp');
+    const webInviteUrl = new URL(invite.inviteLink);
+    assert.equal(webInviteUrl.hash.startsWith('#invite='), true,
+      'household invitations should be shareable as ordinary web links');
+    const inviteToken = tokenFromInviteLink(invite.inviteLink);
     assert.ok(inviteToken);
     // A second invitation for the same profile can exist before the first is accepted.
     const duplicateProfileInviteResponse = await request('/api/household/invitations', 'POST', { memberId: wifeProfile.id }, owner.token);
     assert.equal(duplicateProfileInviteResponse.status, 201);
     const duplicateProfileInvite = await duplicateProfileInviteResponse.json() as { id: string; inviteLink: string };
-    const duplicateProfileToken = new URL(duplicateProfileInvite.inviteLink).searchParams.get('startapp');
+    const duplicateProfileToken = tokenFromInviteLink(duplicateProfileInvite.inviteLink);
     assert.ok(duplicateProfileToken);
 
     const previewResponse = await request('/api/household/invitations/preview', 'POST', { token: inviteToken }, spouse.token);
@@ -78,7 +87,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const expiredInviteResponse = await request('/api/household/invitations', 'POST', { memberId: reservedProfile.id }, owner.token);
     assert.equal(expiredInviteResponse.status, 201);
     const expiredInvite = await expiredInviteResponse.json() as { id: string; inviteLink: string };
-    const expiredToken = new URL(expiredInvite.inviteLink).searchParams.get('startapp');
+    const expiredToken = tokenFromInviteLink(expiredInvite.inviteLink);
     assert.ok(expiredToken);
     await prisma.householdInvite.update({
       where: { tokenHash: hashInvitationToken(expiredToken) },
@@ -92,7 +101,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const revokedInviteResponse = await request('/api/household/invitations', 'POST', { memberId: reservedProfile.id }, owner.token);
     assert.equal(revokedInviteResponse.status, 201);
     const revokedInvite = await revokedInviteResponse.json() as { id: string; inviteLink: string };
-    const revokedToken = new URL(revokedInvite.inviteLink).searchParams.get('startapp');
+    const revokedToken = tokenFromInviteLink(revokedInvite.inviteLink);
     assert.ok(revokedToken);
     const revokeInvite = await request('/api/household/invitations/' + encodeURIComponent(revokedInvite.id), 'DELETE', undefined, owner.token);
     assert.equal(revokeInvite.status, 204);
@@ -148,7 +157,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     ]);
     assert.deepEqual(concurrentInviteResponses.map(response => response.status), [201, 201]);
     const concurrentInvites = await Promise.all(concurrentInviteResponses.map(response => response.json() as Promise<{ inviteLink: string }>));
-    const concurrentTokens = concurrentInvites.map(invite => new URL(invite.inviteLink).searchParams.get('startapp'));
+    const concurrentTokens = concurrentInvites.map(invite => tokenFromInviteLink(invite.inviteLink));
     assert.ok(concurrentTokens.every(Boolean));
     const concurrentAccounts = await Promise.all([register('race-one'), register('race-two')]);
     const concurrentAcceptances = await Promise.all(concurrentAccounts.map((account, index) =>
@@ -287,7 +296,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const secondOwnerInviteResponse = await request('/api/household/invitations', 'POST', { memberId: secondOwnerProfile.id }, secondOwner.token);
     assert.equal(secondOwnerInviteResponse.status, 201);
     const secondOwnerInvite = await secondOwnerInviteResponse.json() as { inviteLink: string };
-    const secondOwnerToken = new URL(secondOwnerInvite.inviteLink).searchParams.get('startapp');
+    const secondOwnerToken = tokenFromInviteLink(secondOwnerInvite.inviteLink);
     assert.ok(secondOwnerToken);
     const ownerJoinAttempt = await request('/api/household/invitations/accept', 'POST', { token: secondOwnerToken }, owner.token);
     assert.equal(ownerJoinAttempt.status, 409, 'an owner must not orphan a household with active members');
@@ -308,7 +317,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const secondInvite = await request('/api/household/invitations', 'POST', { memberId: reservedProfile.id }, owner.token);
     assert.equal(secondInvite.status, 201);
     const secondInviteBody = await secondInvite.json() as { inviteLink: string };
-    const secondToken = new URL(secondInviteBody.inviteLink).searchParams.get('startapp');
+    const secondToken = tokenFromInviteLink(secondInviteBody.inviteLink);
     const blockedJoin = await request('/api/household/invitations/accept', 'POST', { token: secondToken }, dataAccount.token);
     assert.equal(blockedJoin.status, 409, 'accounts with existing financial records must not be silently merged');
 

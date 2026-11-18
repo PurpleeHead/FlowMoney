@@ -134,9 +134,19 @@ router.post('/invitations', invitationCreateLimit, async (req: AuthedRequest, re
       },
       select: { id: true, expiresAt: true },
     });
+    const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    const webInviteUrl = new URL('/', clientOrigin);
+    webInviteUrl.hash = new URLSearchParams({ invite: rawToken }).toString();
     const botUsername = (process.env.TELEGRAM_BOT_USERNAME || 'nummioX_bot').replace(/^@/, '');
-    const inviteLink = `https://t.me/${botUsername}?startapp=${rawToken}`;
-    return res.status(201).json({ ...invite, member, inviteLink });
+    const telegramInviteLink = process.env.TELEGRAM_BOT_TOKEN
+      ? `https://t.me/${botUsername}?startapp=${rawToken}`
+      : undefined;
+    return res.status(201).json({
+      ...invite,
+      member,
+      inviteLink: webInviteUrl.toString(),
+      ...(telegramInviteLink ? { telegramInviteLink } : {}),
+    });
   } catch (error) { return next(error); }
 });
 
