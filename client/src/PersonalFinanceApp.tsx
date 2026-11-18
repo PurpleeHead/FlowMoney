@@ -84,13 +84,61 @@ export default function PersonalFinanceApp() {
   const [actionDialog, setActionDialog] = useState<ActionDialog | null>(null);
   const [actionDialogValue, setActionDialogValue] = useState('');
   const actionDialogResolver = useRef<((value: boolean | string | null) => void) | null>(null);
+  const actionDialogRef = useRef<HTMLElement | null>(null);
 
-  function finishActionDialog(value: boolean | string | null) {
+  const finishActionDialog = useCallback((value: boolean | string | null) => {
     const resolve = actionDialogResolver.current;
     actionDialogResolver.current = null;
     setActionDialog(null);
     resolve?.(value);
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!actionDialog) return;
+    const dialog = actionDialogRef.current;
+    if (!dialog) return;
+
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+    const getFocusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
+      .filter(element => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true');
+    const initialFocus = actionDialog.kind === 'prompt'
+      ? dialog.querySelector<HTMLInputElement>('input:not([disabled])')
+      : dialog.querySelector<HTMLButtonElement>('button[type="button"]:not([disabled])');
+    (initialFocus ?? getFocusable()[0] ?? dialog).focus();
+
+    const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        finishActionDialog(actionDialog.kind === 'confirm' ? false : null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = getFocusable();
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleDialogKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleDialogKeyDown);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [actionDialog, finishActionDialog]);
 
   function confirmAction(message: string, title = (lang === 'ru' ? 'Подтвердите действие' : 'Confirm action')): Promise<boolean> {
     return new Promise(resolve => {
@@ -591,12 +639,12 @@ export default function PersonalFinanceApp() {
             <label>{tr(lang, 'member')}<select value={expenseMember} onChange={e => setExpenseMember(e.target.value)}>{memberOptions}</select></label>
             <div className="pf-form-actions">{editingExpenseId && <button type="button" className="pf-button ghost" onClick={() => { setEditingExpenseId(null); setExpenseTitle(''); setExpenseAmount(''); setExpenseDate(moscowToday()); }}>{tr(lang, 'cancel')}</button>}<button className="pf-button primary" disabled={busy}>{tr(lang, 'save')}</button></div>
           </form>
-          <form className="pf-inline-form category-create" onSubmit={addCategory}><label>{tr(lang, 'addCategory')}<input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder={lang === 'ru' ? 'Например, Питомцы' : 'e.g. Pets'}/></label><button className="pf-button ghost" disabled={busy}>+</button></form>{categories.filter(category=>Boolean(category.userId)).map(category=><div className="pf-category-manage" key={category.id}><span>{category.name}</span><div><button className="pf-edit" onClick={()=>renameCategory(category)}>✎</button><button className="pf-delete" onClick={()=>archiveCategory(category)}>×</button></div></div>)}
+          <form className="pf-inline-form category-create" onSubmit={addCategory}><label>{tr(lang, 'addCategory')}<input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder={lang === 'ru' ? 'Например, Питомцы' : 'e.g. Pets'}/></label><button className="pf-button ghost" aria-label={lang === 'ru' ? 'Добавить категорию' : 'Add category'} disabled={busy}>+</button></form>{categories.filter(category=>Boolean(category.userId)).map(category=><div className="pf-category-manage" key={category.id}><span>{category.name}</span><div><button className="pf-edit" aria-label={lang === 'ru' ? 'Переименовать категорию' : 'Rename category'} onClick={()=>renameCategory(category)}>✎</button><button className="pf-delete" aria-label={lang === 'ru' ? 'Архивировать категорию' : 'Archive category'} onClick={()=>archiveCategory(category)}>×</button></div></div>)}
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ИСТОРИЯ ОПЕРАЦИЙ' : 'TRANSACTION HISTORY'}</span><h2>{tr(lang, 'expenses')}</h2></div><span className="pf-count">{visibleExpenses.length}</span></div><div className="pf-expense-filters"><select className="pf-member-filter" value={expensePeriod} onChange={e=>{const next=e.target.value as 'month'|'all'|'custom';setExpensePeriod(next);if(next==='custom'){setExpenseFrom(ranges.from);setExpenseTo(ranges.to);}}}><option value="month">{lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}</option><option value="all">{lang === 'ru' ? 'Вся история' : 'All history'}</option><option value="custom">{lang === 'ru' ? 'Произвольный период' : 'Custom date range'}</option></select><select className="pf-member-filter" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}><option value="all">{lang === 'ru' ? 'Все категории' : 'All categories'}</option><option value="uncategorized">{lang === 'ru' ? 'Без категории' : 'Uncategorized'}</option>{categories.map(x=><option key={x.id} value={x.id}>{categoryName(x,lang)}</option>)}</select></div>
           {expensePeriod === 'custom' && <div className="pf-field-row pf-expense-custom-range"><label>{lang === 'ru' ? 'С даты' : 'From'}<input type="date" value={expenseFrom} onChange={e=>setExpenseFrom(e.target.value)}/></label><label>{lang === 'ru' ? 'По дату' : 'To'}<input type="date" value={expenseTo} onChange={e=>setExpenseTo(e.target.value)}/></label></div>}
           {expensePeriod === 'custom' && !validExpenseCustomRange && <p className="pf-alert error" role="alert">{lang === 'ru' ? 'Проверьте даты периода.' : 'Check the selected date range.'}</p>}
-          {visibleExpenses.length ? visibleExpenses.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category ? categoryName(item.category, lang) : (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label="Delete">×</button></div></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'noData')}</p>}{hasMoreExpenses && <div className="pf-load-more"><button className="pf-button ghost" disabled={busy} onClick={loadMoreExpenses}>{busy ? (lang === 'ru' ? 'Загрузка…' : 'Loading…') : (lang === 'ru' ? 'Загрузить ещё' : 'Load more')}</button></div>}
+          {visibleExpenses.length ? visibleExpenses.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category ? categoryName(item.category, lang) : (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b><button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button><button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label={lang === 'ru' ? 'Удалить расход' : 'Delete expense'}>×</button></div></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'noData')}</p>}{hasMoreExpenses && <div className="pf-load-more"><button className="pf-button ghost" disabled={busy} onClick={loadMoreExpenses}>{busy ? (lang === 'ru' ? 'Загрузка…' : 'Loading…') : (lang === 'ru' ? 'Загрузить ещё' : 'Load more')}</button></div>}
         </section>
       </div>}
 
@@ -677,7 +725,7 @@ export default function PersonalFinanceApp() {
             <label>{tr(lang,'member')}<select value={budgetMember} onChange={e=>setBudgetMember(e.target.value)}>{memberOptions}</select></label>
             <button className="pf-button primary" disabled={busy}>{tr(lang,'save')}</button>
           </form>
-          {visibleBudgets.map(item=>{const used=memberExpenses.filter(x=>x.date>=ranges.from&&x.date<=ranges.to&&(!item.categoryId||x.category?.id===item.categoryId)&&((x.memberId??null)===(item.memberId??null))).reduce((sum,x)=>sum+Number(x.amount),0);const limit=Number(item.limitAmount);const progress=limit>0?Math.min(100,used/limit*100):0;return <div className="pf-budget-item" key={item.id}><div className="pf-list-row"><div><strong>{item.category ? categoryName(item.category,lang) : (lang === 'ru' ? 'Общий бюджет' : 'Overall budget')}</strong><small>{item.member?.name ?? tr(lang,'shared')}</small></div><div className="pf-row-action"><b>{rub(used)} / {rub(limit)}</b><button className="pf-delete" onClick={()=>deleteBudget(item.id)}>×</button></div></div><div className="pf-coverage-track"><span style={{width:progress+'%',background:used>limit?'#ff8796':undefined}}/></div></div>})}
+          {visibleBudgets.map(item=>{const used=memberExpenses.filter(x=>x.date>=ranges.from&&x.date<=ranges.to&&(!item.categoryId||x.category?.id===item.categoryId)&&((x.memberId??null)===(item.memberId??null))).reduce((sum,x)=>sum+Number(x.amount),0);const limit=Number(item.limitAmount);const progress=limit>0?Math.min(100,used/limit*100):0;return <div className="pf-budget-item" key={item.id}><div className="pf-list-row"><div><strong>{item.category ? categoryName(item.category,lang) : (lang === 'ru' ? 'Общий бюджет' : 'Overall budget')}</strong><small>{item.member?.name ?? tr(lang,'shared')}</small></div><div className="pf-row-action"><b>{rub(used)} / {rub(limit)}</b><button className="pf-delete" aria-label={lang === 'ru' ? 'Удалить бюджет' : 'Delete budget'} onClick={()=>deleteBudget(item.id)}>×</button></div></div><div className="pf-coverage-track"><span style={{width:progress+'%',background:used>limit?'#ff8796':undefined}}/></div></div>})}
           {!visibleBudgets.length && <p className="pf-empty" role="status" aria-live="polite">{tr(lang,'noData')}</p>}
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'НАКОПЛЕНИЯ' : 'SAVINGS'}</span><h2>{lang === 'ru' ? 'Финансовая цель' : 'Savings goal'}</h2></div></div>
@@ -687,7 +735,7 @@ export default function PersonalFinanceApp() {
             <label>{lang === 'ru' ? 'Желаемая дата' : 'Target date'}<input type="date" value={goalDate} onChange={e=>setGoalDate(e.target.value)}/></label>
             <button className="pf-button primary" disabled={busy}>{tr(lang,'add')}</button>
           </form>
-          {goals.map(goal=>{const progress=Math.min(100,Number(goal.currentAmount)/Number(goal.targetAmount)*100);return <div className="pf-goal" key={goal.id}><div><strong>{goal.title}</strong><b>{rub(goal.currentAmount)} / {rub(goal.targetAmount)}</b></div><div className="pf-coverage-track"><span style={{width: progress + '%'}}/></div><div className="pf-goal-bottom"><small>{Math.round(progress)}% {lang === 'ru' ? 'накоплено' : 'saved'}{goal.targetDate ? ' · '+dateLabel(goal.targetDate,lang) : ''}</small><div className="pf-row-action"><button className="pf-button small" disabled={busy || goal.status === 'COMPLETED'} onClick={()=>addGoalContribution(goal)}>{lang === 'ru' ? 'Пополнить' : 'Add funds'}</button><button className="pf-delete" onClick={()=>deleteGoal(goal.id)}>×</button></div></div></div>})}
+          {goals.map(goal=>{const progress=Math.min(100,Number(goal.currentAmount)/Number(goal.targetAmount)*100);return <div className="pf-goal" key={goal.id}><div><strong>{goal.title}</strong><b>{rub(goal.currentAmount)} / {rub(goal.targetAmount)}</b></div><div className="pf-coverage-track"><span style={{width: progress + '%'}}/></div><div className="pf-goal-bottom"><small>{Math.round(progress)}% {lang === 'ru' ? 'накоплено' : 'saved'}{goal.targetDate ? ' · '+dateLabel(goal.targetDate,lang) : ''}</small><div className="pf-row-action"><button className="pf-button small" disabled={busy || goal.status === 'COMPLETED'} onClick={()=>addGoalContribution(goal)}>{lang === 'ru' ? 'Пополнить' : 'Add funds'}</button><button className="pf-delete" aria-label={lang === 'ru' ? 'Удалить цель' : 'Delete goal'} onClick={()=>deleteGoal(goal.id)}>×</button></div></div></div>})}
           {!goals.length && <p className="pf-empty" role="status" aria-live="polite">{tr(lang,'noData')}</p>}
         </section>
       </div>}
@@ -705,7 +753,7 @@ export default function PersonalFinanceApp() {
           <p className="pf-muted">{lang === 'ru' ? 'Все участники этого пространства видят одни и те же доходы, расходы, счета, бюджеты и накопления. У каждого свой вход через Telegram.' : 'Everyone in this space shares the same income, expenses, accounts, budgets and savings. Each person signs in with their own Telegram account.'}</p>
           <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПРОФИЛИ ДЛЯ УЧЁТА' : 'ATTRIBUTION PROFILES'}</span><h2>{lang === 'ru' ? 'Кто совершил операцию' : 'Who made the transaction'}</h2></div></div>
           {household?.role === 'OWNER' && <form className="pf-inline-form" onSubmit={addMember}><label>{tr(lang, 'newMember')}<input required value={newMemberName} onChange={e => setNewMemberName(e.target.value)}/></label><button className="pf-button primary" disabled={busy}>{tr(lang, 'addMember')}</button></form>}
-          {activeMembers.map(m => <div className="pf-list-row" key={m.id}><div><strong>{m.name}</strong><small>{lang === 'ru' ? 'Профиль для распределения доходов и расходов' : 'Profile for attributing income and expenses'}</small></div>{household?.role === 'OWNER' && <div className="pf-row-action"><span className="pf-member-dot"/><button className="pf-edit" onClick={()=>renameMember(m)}>✎</button><button className="pf-delete" onClick={()=>archiveMember(m)}>×</button></div>}</div>)}
+          {activeMembers.map(m => <div className="pf-list-row" key={m.id}><div><strong>{m.name}</strong><small>{lang === 'ru' ? 'Профиль для распределения доходов и расходов' : 'Profile for attributing income and expenses'}</small></div>{household?.role === 'OWNER' && <div className="pf-row-action"><span className="pf-member-dot"/><button className="pf-edit" aria-label={lang === 'ru' ? 'Переименовать профиль' : 'Rename profile'} onClick={()=>renameMember(m)}>✎</button><button className="pf-delete" aria-label={lang === 'ru' ? 'Архивировать профиль' : 'Archive profile'} onClick={()=>archiveMember(m)}>×</button></div>}</div>)}
         </section>
         <section className="pf-card">
           {household?.role === 'OWNER' && <div className="pf-household-sharing">
@@ -720,18 +768,18 @@ export default function PersonalFinanceApp() {
             {invitations.length > 0 && <div className="pf-invitation-list">{invitations.map(invite => {
               const pending = !invite.acceptedAt && !invite.revokedAt && new Date(invite.expiresAt).getTime() > Date.now();
               const status = invite.acceptedAt ? (lang === 'ru' ? 'Принято' : 'Accepted') : invite.revokedAt ? (lang === 'ru' ? 'Отозвано' : 'Revoked') : pending ? (lang === 'ru' ? 'Ожидает ответа' : 'Pending') : (lang === 'ru' ? 'Истекло' : 'Expired');
-              return <div className="pf-list-row" key={invite.id}><div><strong>{invite.member.name}</strong><small>{status} · {new Date(invite.expiresAt).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-GB')}</small></div>{pending && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отозвать приглашение' : 'Revoke invitation'} onClick={()=>revokeHouseholdInvitation(invite.id)}>×</button>}</div>;
+              return <div className="pf-list-row" key={invite.id}><div><strong>{invite.member.name}</strong><small>{status} · {new Date(invite.expiresAt).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-GB')}</small></div>{pending && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отозвать приглашение' : 'Revoke invitation'} aria-label={lang === 'ru' ? 'Отозвать приглашение' : 'Revoke invitation'} onClick={()=>revokeHouseholdInvitation(invite.id)}>×</button>}</div>;
             })}</div>}
           </div>}
           <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ДОСТУП К БЮДЖЕТУ' : 'BUDGET ACCESS'}</span><h2>{lang === 'ru' ? 'Участники с аккаунтами' : 'Connected accounts'}</h2></div></div>
-          {household?.members.map(access=><div className="pf-list-row" key={access.userId}><div><strong>{access.member?.name ?? (access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец семьи' : 'Household owner') : (lang === 'ru' ? 'Участник' : 'Member'))}</strong><small>{access.identity.telegramUsername ? '@'+access.identity.telegramUsername : access.identity.telegramFirstName ?? (lang === 'ru' ? 'Telegram-пользователь' : 'Telegram user')} · {access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец' : 'Owner') : (lang === 'ru' ? 'Общий доступ' : 'Shared access')}</small></div>{household.role === 'OWNER' && access.role !== 'OWNER' && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отключить доступ' : 'Revoke access'} onClick={()=>revokeHouseholdAccess(access.userId)}>×</button>}</div>)}
+          {household?.members.map(access=><div className="pf-list-row" key={access.userId}><div><strong>{access.member?.name ?? (access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец семьи' : 'Household owner') : (lang === 'ru' ? 'Участник' : 'Member'))}</strong><small>{access.identity.telegramUsername ? '@'+access.identity.telegramUsername : access.identity.telegramFirstName ?? (lang === 'ru' ? 'Telegram-пользователь' : 'Telegram user')} · {access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец' : 'Owner') : (lang === 'ru' ? 'Общий доступ' : 'Shared access')}</small></div>{household.role === 'OWNER' && access.role !== 'OWNER' && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отключить доступ' : 'Revoke access'} aria-label={lang === 'ru' ? 'Отключить доступ' : 'Revoke access'} onClick={()=>revokeHouseholdAccess(access.userId)}>×</button>}</div>)}
           <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОБЩИЕ ПРАВИЛА' : 'HOUSEHOLD RULES'}</span><h2>{lang === 'ru' ? 'Как считается бюджет' : 'How the budget works'}</h2></div></div>
           <ul className="pf-rules"><li>{lang === 'ru' ? 'Доходы учитываются в фактическом остатке только после отметки «Получено».' : 'Income affects actual balance only after being marked received.'}</li><li>{lang === 'ru' ? 'Обязательство становится расходом один раз после отметки «Оплачено».' : 'An obligation becomes an expense once when marked paid.'}</li><li>{lang === 'ru' ? 'Пустой участник означает общий расход или доход семьи.' : 'An empty member means a shared household item.'}</li><li>{lang === 'ru' ? 'Все суммы ведутся только в рублях.' : 'All amounts are tracked in RUB only.'}</li></ul>
         </section>
       </div>}
       <footer className="pf-footer">nummioX <span>·</span> {lang === 'ru' ? 'Семейные финансы без догадок' : 'Family finances, without guesswork'}</footer>
-      {actionDialog && <div className="pf-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) finishActionDialog(actionDialog.kind === 'confirm' ? false : null); }} onKeyDown={event => { if (event.key === 'Escape') finishActionDialog(actionDialog.kind === 'confirm' ? false : null); }}>
-        <section className="pf-dialog" role="dialog" aria-modal="true" aria-labelledby="pf-dialog-title" aria-describedby="pf-dialog-message">
+      {actionDialog && <div className="pf-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) finishActionDialog(actionDialog.kind === 'confirm' ? false : null); }}>
+        <section ref={actionDialogRef} className="pf-dialog" role="dialog" aria-modal="true" aria-labelledby="pf-dialog-title" aria-describedby="pf-dialog-message" tabIndex={-1}>
           <div className={`pf-dialog-mark ${actionDialog.destructive ? 'danger' : ''}`} aria-hidden="true">{actionDialog.kind === 'prompt' ? '✎' : '!'}</div>
           <div className="pf-dialog-copy">
             <span className="pf-eyebrow">{actionDialog.kind === 'prompt' ? (lang === 'ru' ? 'ДАННЫЕ ОПЕРАЦИИ' : 'TRANSACTION DETAILS') : (lang === 'ru' ? 'ПРОВЕРЬ ДЕЙСТВИЕ' : 'PLEASE CONFIRM')}</span>
