@@ -742,7 +742,7 @@ export default function PersonalFinanceApp() {
               <input autoFocus type={actionDialog.inputType ?? 'text'} inputMode={actionDialog.inputType === 'number' ? 'decimal' : 'text'} step={actionDialog.inputType === 'number' ? '0.01' : undefined} min={actionDialog.inputType === 'number' ? '0.01' : undefined} value={actionDialogValue} onChange={event => setActionDialogValue(event.target.value)} />
             </label>}
             <div className="pf-dialog-actions">
-              <button type="button" className="pf-button ghost" onClick={() => finishActionDialog(actionDialog.kind === 'confirm' ? false : null)}>{tr(lang, 'cancel')}</button>
+              <button type="button" autoFocus={actionDialog.kind === 'confirm'} className="pf-button ghost" onClick={() => finishActionDialog(actionDialog.kind === 'confirm' ? false : null)}>{tr(lang, 'cancel')}</button>
               <button type="submit" className={`pf-button ${actionDialog.destructive ? 'danger' : 'primary'}`}>{actionDialog.kind === 'prompt' ? (lang === 'ru' ? 'Продолжить' : 'Continue') : (lang === 'ru' ? 'Подтвердить' : 'Confirm')}</button>
             </div>
           </form>
