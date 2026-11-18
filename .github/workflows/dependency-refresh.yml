@@ -19,6 +19,8 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Upgrade npm for lockfile generation
+        run: npm install --global npm@11
       - name: Regenerate lockfile from compatible manifest ranges
         run: |
           rm package-lock.json
