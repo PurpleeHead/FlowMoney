@@ -391,3 +391,54 @@ button:disabled { cursor: not-allowed; opacity: .56; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+
+/* Interactive calendar and receipt OCR */
+.pf-calendar-day-button {
+  appearance: none; width: 100%; color: var(--pf-text); font: inherit; text-align: left;
+  cursor: pointer; transition: border-color .16s, background .16s, box-shadow .16s;
+}
+.pf-calendar-day-button:hover { border-color: #a9c3b1; background: #f7faf7; }
+.pf-calendar-day-button.selected { border-color: var(--pf-accent); background: #edf6f0; box-shadow: inset 0 0 0 1px var(--pf-accent); }
+.pf-calendar-day-button:focus-visible { outline: 3px solid rgba(39,131,99,.25); outline-offset: 2px; }
+.pf-calendar-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; color: var(--pf-muted); font-size: 10px; }
+.pf-calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.pf-calendar-legend i { width: 7px; height: 7px; border-radius: 50%; background: #aebbb2; }
+.pf-calendar-legend i.income { background: var(--pf-accent); }
+.pf-calendar-legend i.expense { background: #bd806c; }
+.pf-calendar-legend i.obligation { background: #c39b57; }
+.receipt-panel {
+  min-width: 0; margin-top: 18px; padding: 20px; border: 1px solid var(--pf-line);
+  border-radius: 15px; background: #f9fbf9; color: var(--pf-text);
+}
+.receipt-panel .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.receipt-panel .section-heading h3 { margin: 4px 0; color: var(--pf-primary-strong); font: 700 15px 'Manrope',sans-serif; }
+.receipt-panel .section-heading p { margin: 5px 0 0; color: var(--pf-muted); font-size: 10px; line-height: 1.5; }
+.receipt-panel .eyebrow { color: var(--pf-accent); font-size: 9px; font-weight: 800; letter-spacing: 1px; }
+.receipt-panel .scan-controls, .receipt-panel .receipt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 12px 0; }
+.receipt-panel .upload-button, .receipt-panel .button {
+  min-height: 37px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 0 12px; border: 1px solid var(--pf-line-strong); border-radius: 9px;
+  background: #fff; color: var(--pf-primary); font-size: 10px; font-weight: 700; cursor: pointer;
+}
+.receipt-panel .upload-button input { display: none; }
+.receipt-panel select, .receipt-panel textarea, .receipt-panel input {
+  min-width: 0; max-width: 100%; border: 1px solid var(--pf-line-strong); border-radius: 9px;
+  background: #fff; color: var(--pf-text); padding: 9px 10px; font: inherit; font-size: 11px;
+}
+.receipt-panel .field-label { display: grid; gap: 7px; margin-top: 12px; color: var(--pf-muted); font-size: 10px; font-weight: 700; }
+.receipt-panel textarea { width: 100%; resize: vertical; line-height: 1.5; }
+.receipt-panel .status { display: flex; align-items: center; gap: 7px; color: var(--pf-accent); font-size: 10px; line-height: 1.5; }
+.receipt-panel .detected-items { display: grid; gap: 8px; margin-top: 12px; }
+.receipt-panel .detected-items > strong { color: var(--pf-primary-strong); font-size: 10px; }
+.receipt-panel .detected-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(100px,.5fr); align-items: center; gap: 9px; }
+.receipt-panel .receipt-edit-name { width: 100%; }
+.receipt-panel .receipt-edit-amount label { display: flex; align-items: center; gap: 5px; font-size: 10px; }
+.receipt-panel .receipt-edit-price { width: 100%; }
+.receipt-panel .receipt-conversions { display: block; margin-top: 3px; color: var(--pf-muted); font-size: 9px; }
+.receipt-panel .button.primary { border-color: var(--pf-primary); background: var(--pf-primary); color: #fff; }
+.receipt-panel .button:disabled { cursor: not-allowed; opacity: .5; }
+@media (max-width: 520px) {
+  .receipt-panel { padding: 14px; }
+  .receipt-panel .detected-row { grid-template-columns: minmax(0,1fr); }
+}
