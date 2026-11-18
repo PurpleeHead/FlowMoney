@@ -112,6 +112,11 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const availableOwnerProfile = await request('/api/household/profile', 'PATCH', { memberId: husbandProfile.id }, owner.token);
     assert.equal(availableOwnerProfile.status, 200, 'the owner may still assign an unoccupied profile to their own access');
 
+
+    const reusedInviteAccept = await request('/api/household/invitations/accept', 'POST', { token: inviteToken }, outsider.token);
+    assert.equal(reusedInviteAccept.status, 400, 'an accepted invitation token must not be reusable');
+    const memberCannotRevokeInvite = await request('/api/household/invitations/' + encodeURIComponent(duplicateProfileInvite.id), 'DELETE', undefined, spouse.token);
+    assert.equal(memberCannotRevokeInvite.status, 403, 'only the owner may revoke invitations');
     const duplicateProfileAccount = await register('duplicate-profile');
     const duplicateProfileAccept = await request('/api/household/invitations/accept', 'POST', {
       token: duplicateProfileToken,
