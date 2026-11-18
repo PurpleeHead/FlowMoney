@@ -62,7 +62,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     // A second invitation for the same profile can exist before the first is accepted.
     const duplicateProfileInviteResponse = await request('/api/household/invitations', 'POST', { memberId: wifeProfile.id }, owner.token);
     assert.equal(duplicateProfileInviteResponse.status, 201);
-    const duplicateProfileInvite = await duplicateProfileInviteResponse.json() as { inviteLink: string };
+    const duplicateProfileInvite = await duplicateProfileInviteResponse.json() as { id: string; inviteLink: string };
     const duplicateProfileToken = new URL(duplicateProfileInvite.inviteLink).searchParams.get('startapp');
     assert.ok(duplicateProfileToken);
 
@@ -111,7 +111,6 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(occupiedOwnerProfile.status, 409, 'an active member profile cannot be assigned to a second account');
     const availableOwnerProfile = await request('/api/household/profile', 'PATCH', { memberId: husbandProfile.id }, owner.token);
     assert.equal(availableOwnerProfile.status, 200, 'the owner may still assign an unoccupied profile to their own access');
-
 
     const reusedInviteAccept = await request('/api/household/invitations/accept', 'POST', { token: inviteToken }, outsider.token);
     assert.equal(reusedInviteAccept.status, 400, 'an accepted invitation token must not be reusable');
