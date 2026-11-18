@@ -23,7 +23,7 @@ const translationRequest = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['text'],
-      message: \`Text must contain no more than \${MAX_TRANSLATION_LINES} non-empty lines.\`,
+      message: 'Text contains too many non-empty lines.',
     });
   }
 });
@@ -35,7 +35,7 @@ async function translateWithConfiguredProvider(text: string, source: string, tar
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(process.env.TRANSLATE_API_KEY ? { 'Authorization': \`Bearer \${process.env.TRANSLATE_API_KEY}\` } : {}),
+      ...(process.env.TRANSLATE_API_KEY ? { 'Authorization': 'Bearer ' + process.env.TRANSLATE_API_KEY } : {}),
     },
     body: JSON.stringify({ q: text, source, target, format: 'text', api_key: process.env.TRANSLATE_API_KEY || undefined }),
     signal: AbortSignal.timeout(15000),
@@ -72,7 +72,7 @@ async function translateWithFreeFallback(text: string, source: string, target: s
       const chunk = tasks[taskIndex];
       const url = new URL('https://api.mymemory.translated.net/get');
       url.searchParams.set('q', chunk);
-      url.searchParams.set('langpair', \`\${source}|\${target}\`);
+      url.searchParams.set('langpair', source + '|' + target);
       const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
       if (!response.ok) throw new Error('Free translation fallback is unavailable');
       const data = await response.json() as { responseStatus?: number; responseData?: { translatedText?: string } };
