@@ -14,6 +14,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import personalFinanceRoutes from './routes/personalFinance.js';
 import householdRoutes from './routes/household.js';
 import { errorHandler } from './middleware/errors.js';
+import { prisma } from './services/prisma.js';
 
 export function createApp() {
   const app = express();
@@ -26,7 +27,16 @@ export function createApp() {
   app.use(cors({ origin: (origin, callback) => { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error('Origin not allowed by CORS')); } }));
   app.use(express.json({ limit: '1mb' }));
   app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 40, standardHeaders: true, legacyHeaders: false }));
-  app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'nummiox-api' }));
+  app.get('/api/health', async (_req, res) => {
+    try {
+      // Render uses this endpoint as its readiness probe. Check the actual
+      // PostgreSQL adapter, not only whether the Express process is alive.
+      await prisma.$queryRaw`SELECT 1`;
+      return res.json({ status: 'ok', service: 'nummiox-api', database: 'ok' });
+    } catch {
+      return res.status(503).json({ status: 'error', service: 'nummiox-api', database: 'unavailable' });
+    }
+  });
   app.use('/api/auth', authRoutes);
   app.use('/api/exchanges', exchangeRoutes);
   app.use('/api/expenses', expenseRoutes);
