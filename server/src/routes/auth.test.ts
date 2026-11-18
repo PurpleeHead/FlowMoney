@@ -781,3 +781,80 @@ test('Telegram Mini App authentication creates one account per verified Telegram
     else process.env.TELEGRAM_BOT_TOKEN = previousBotToken;
   }
 });
+
+
+test('Telegram identity can only be linked from an authenticated account using signed initData', { skip: !process.env.DATABASE_URL }, async () => {
+  process.env.JWT_SECRET = 'flowmoney-telegram-link-test-secret-32-chars';
+  const botToken = 'flowmoney-test-telegram-bot-token';
+  process.env.TELEGRAM_BOT_TOKEN = botToken;
+  const suffix = randomUUID();
+  const server = createApp().listen(0, '127.0.0.1');
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  const address = server.address() as AddressInfo;
+  const baseUrl = 'http://127.0.0.1:' + address.port;
+  const post = (path: string, body: unknown, token?: string) => fetch(baseUrl + path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: 'Bearer ' + token } : {}) },
+    body: JSON.stringify(body),
+  });
+  const signedInitData = (telegramId: number) => {
+    const params = new URLSearchParams({
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      query_id: 'nummiox-link-test',
+      user: JSON.stringify({ id: telegramId, first_name: 'Linked User', username: 'linked_user' }),
+    });
+    const checkString = [...params.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => key + '=' + value)
+      .join('\\n');
+    const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
+    params.set('hash', createHmac('sha256', secret).update(checkString).digest('hex'));
+    return params.toString();
+  };
+
+  try {
+    const firstResponse = await post('/api/auth/register', {
+      email: 'telegram-link-first-' + suffix + '@example.test',
+      password: 'Safe-test-password-123!',
+    });
+    const secondResponse = await post('/api/auth/register', {
+      email: 'telegram-link-second-' + suffix + '@example.test',
+      password: 'Safe-test-password-123!',
+    });
+    assert.equal(firstResponse.status, 201);
+    assert.equal(secondResponse.status, 201);
+    const first = await firstResponse.json() as { token: string; user: { id: string; email: string } };
+    const second = await secondResponse.json() as { token: string; user: { id: string } };
+    const initData = signedInitData(987654321);
+
+    const unauthenticated = await post('/api/auth/telegram/link', { initData });
+    assert.equal(unauthenticated.status, 401, 'identity linking must require an active authenticated session');
+
+    const forged = await post('/api/auth/telegram/link', { initData: initData + 'tampered' }, first.token);
+    assert.equal(forged.status, 401, 'unsigned or tampered Telegram data must be rejected');
+
+    const linked = await post('/api/auth/telegram/link', { initData }, first.token);
+    assert.equal(linked.status, 200);
+    const linkedBody = await linked.json() as { success: boolean; user: { id: string; email: string } };
+    assert.equal(linkedBody.success, true);
+    assert.equal(linkedBody.user.id, first.user.id);
+    assert.equal(linkedBody.user.email, first.user.email, 'linking must preserve the existing FlowMoney account');
+
+    const telegramLogin = await post('/api/auth/telegram', { initData });
+    assert.equal(telegramLogin.status, 200);
+    const telegramLoginBody = await telegramLogin.json() as { user: { id: string } };
+    assert.equal(telegramLoginBody.user.id, first.user.id, 'Telegram login must return the linked account');
+
+    const claimedBySecond = await post('/api/auth/telegram/link', { initData }, second.token);
+    assert.equal(claimedBySecond.status, 409, 'one Telegram identity must not be linked to two accounts');
+
+    const differentIdentity = await post('/api/auth/telegram/link', { initData: signedInitData(987654322) }, first.token);
+    assert.equal(differentIdentity.status, 409, 'linking must not silently replace an account’s existing Telegram identity');
+
+    const unverifiedIdentityClaim = await post('/api/auth/telegram/link', { telegramId: '987654323' }, second.token);
+    assert.equal(unverifiedIdentityClaim.status, 400, 'client-supplied Telegram IDs must never authorize account linking');
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    delete process.env.TELEGRAM_BOT_TOKEN;
+  }
+});
