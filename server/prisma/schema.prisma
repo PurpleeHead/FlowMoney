@@ -88,6 +88,7 @@ model Expense {
   receipt   Receipt? @relation(fields: [receiptId], references: [id], onDelete: SetNull)
 
   @@index([userId, date])
+  @@index([receiptId])
 }
 
 model Receipt {
@@ -145,6 +146,7 @@ model IncomeSource {
   entries     IncomeEntry[]
 
   @@index([userId, isActive])
+  @@index([memberId])
 }
 
 model IncomeEntry {
@@ -166,6 +168,7 @@ model IncomeEntry {
 
   @@unique([sourceId, plannedDate])
   @@index([userId, plannedDate, status])
+  @@index([memberId])
 }
 
 model ExpenseCategory {
@@ -202,6 +205,8 @@ model LedgerExpense {
 
   @@index([userId, date])
   @@index([userId, categoryId, date])
+  @@index([categoryId])
+  @@index([memberId])
 }
 
 model Obligation {
@@ -224,6 +229,7 @@ model Obligation {
   occurrences       ObligationOccurrence[]
 
   @@index([userId, isActive])
+  @@index([memberId])
 }
 
 model ObligationOccurrence {
@@ -258,6 +264,7 @@ model BalanceAdjustment {
   member    HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
 
   @@index([userId, date])
+  @@index([memberId])
 }
 
 model Budget {
@@ -274,6 +281,8 @@ model Budget {
   category    ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([userId, periodMonth])
+  @@index([memberId])
+  @@index([categoryId])
 }
 
 model SavingsGoal {
@@ -341,4 +350,6 @@ model HouseholdInvite {
   @@index([householdId, createdAt])
   @@index([createdByUserId, createdAt])
   @@index([expiresAt, acceptedAt, revokedAt])
+  @@index([acceptedByUserId])
+  @@index([memberId])
 }
