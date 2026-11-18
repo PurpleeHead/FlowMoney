@@ -17,6 +17,9 @@ import { errorHandler } from './middleware/errors.js';
 
 export function createApp() {
   const app = express();
+  // Render terminates TLS and forwards one trusted proxy hop. This lets Express
+  // and express-rate-limit use the real client IP instead of rejecting X-Forwarded-For.
+  app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { scriptSrc: ["'self'", 'https://telegram.org'] } } }));
   const allowedOrigins = new Set([process.env.CLIENT_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173', 'https://purpleehead.github.io'].filter((value): value is string => Boolean(value)));
