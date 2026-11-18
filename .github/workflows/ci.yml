@@ -52,11 +52,11 @@ jobs:
           npm audit --workspace=@flowmoney/server --omit=dev --json > npm-audit-server-runtime.json || true
           node -e "const a=require('./npm-audit-server-runtime.json'); console.log(JSON.stringify({serverRuntimeDependencySummary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
       - name: Validate Prisma schema
-        run: npx prisma validate --schema server/prisma/schema.prisma
+        run: npm run db:validate
       - name: Generate Prisma Client
         run: npm run db:generate
       - name: Apply committed migrations to ephemeral PostgreSQL
-        run: npx prisma migrate deploy --schema server/prisma/schema.prisma
+        run: npm run db:migrate
       - name: Build server and client
         run: npm run build
       - name: Run server and client tests
