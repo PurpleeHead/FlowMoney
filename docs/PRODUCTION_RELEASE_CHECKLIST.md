@@ -61,6 +61,7 @@ Do not use a staging `DATABASE_URL` for a production migration. Do not copy cred
 - [ ] Categories, budgets, obligations and savings goals work.
 - [ ] Household owner/member permissions and immediate revocation work.
 - [ ] A third account cannot read another household's data.
+- [ ] Create a household invitation, open its web link in a separate browser session, sign in/register, preview it, and accept it.
 - [ ] No database connection, Prisma or unhandled API errors appear in Render logs.
 - [ ] Verify production data and balances were not altered by smoke tests; remove only explicitly created test records.
 
@@ -73,7 +74,7 @@ Do not use a staging `DATABASE_URL` for a production migration. Do not copy cred
 
 ## 6. Deliberately deferred
 
-Telegram BotFather token rotation and Main Mini App configuration are deferred by the user. If Telegram Mini App is required for the initial public launch, this becomes a launch blocker; otherwise it can be enabled in a separate approved release after the web application is stable.
+Telegram BotFather token rotation and Main Mini App configuration are deferred by the user. Browser-based household invitations now use secure `#invite=...` links and can be accepted after email/password sign-in, so family invitations do not require the bot. Telegram Main Mini App configuration is only a blocker if Telegram itself is required as an initial sign-in or launch channel; otherwise it can be enabled in a separate approved release after the web application is stable.
 
 ## 7. Manual product QA
 
