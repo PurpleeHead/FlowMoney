@@ -2,6 +2,24 @@
 
 Production remains a separate, explicitly approved release. Staging merges and deployments do not authorize a merge to `main`, a production migration, or a production deploy.
 
+## 0. Verified staging baseline — 18 November 2026
+
+The following items are verified on staging only. They do not certify or authorize production changes.
+
+- [x] Staging deployment is live on commit `da2cc7bfe4fc5bb6960bc0905b4650d8ff0347db`.
+- [x] Render uses Node.js 22.23.3 from `.node-version`.
+- [x] Prisma 7.10.1 client generation and all 8 committed migrations complete; no pending migrations remain.
+- [x] The staging health probe runs a real PostgreSQL query through the runtime Prisma adapter and Render reports the service live.
+- [x] CI passes on PostgreSQL 17: schema validation, migration replay, server/client builds, 21 server tests, 2 client test files and PowerShell syntax checks.
+- [x] Isolated server and client production dependency audits report zero vulnerabilities.
+- [x] RLS is enabled on all 19 public tables; `anon` and `authenticated` have no public-schema/table access.
+- [x] All 11 previously missing foreign-key indexes are present; Supabase no longer reports unindexed foreign keys.
+
+**Known non-blocking item:** the full development-toolchain audit still reports 5 high-severity findings (0 critical) in build/test dependencies. The isolated production dependency trees remain clean. A forced downgrade of Vitest introduced critical advisories, so it was not applied.
+
+**Still required before production:** manual visual QA in RU/EN at the listed viewport widths, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. Telegram setup remains deferred as recorded below.
+
+---
 ## 1. Before production access is changed
 
 - [ ] Confirm the production Render service, branch, region and current deployment.
