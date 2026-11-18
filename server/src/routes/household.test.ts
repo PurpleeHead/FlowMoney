@@ -42,6 +42,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(husbandProfileResponse.status, 201);
     assert.equal(wifeProfileResponse.status, 201);
     assert.equal(reservedProfileResponse.status, 201);
+    const husbandProfile = await husbandProfileResponse.json() as { id: string };
     const wifeProfile = await wifeProfileResponse.json() as { id: string };
     const reservedProfile = await reservedProfileResponse.json() as { id: string };
 
@@ -67,6 +68,12 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(accepted.status, 200);
     const acceptedBody = await accepted.json() as { householdName: string; memberName: string };
     assert.equal(acceptedBody.memberName, 'Wife');
+
+    // An owner cannot assign their own access to a profile already assigned to a member.
+    const occupiedOwnerProfile = await request('/api/household/profile', 'PATCH', { memberId: wifeProfile.id }, owner.token);
+    assert.equal(occupiedOwnerProfile.status, 409, 'an active member profile cannot be assigned to a second account');
+    const availableOwnerProfile = await request('/api/household/profile', 'PATCH', { memberId: husbandProfile.id }, owner.token);
+    assert.equal(availableOwnerProfile.status, 200, 'the owner may still assign an unoccupied profile to their own access');
 
     const duplicateProfileAccount = await register('duplicate-profile');
     const duplicateProfileAccept = await request('/api/household/invitations/accept', 'POST', {
