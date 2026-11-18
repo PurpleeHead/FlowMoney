@@ -2,7 +2,7 @@
 
 ## Implementation status (2026-11-11)
 
-Backend schema, migration, request-level household resolution, invitation API, immediate revocation and initial Telegram invite UI are now being implemented on `feature/household-collaboration`. This is not production-enabled until the migration is reviewed and deployed through an approved release.
+Backend schema, migration, request-level household resolution, invitation API, immediate revocation, Telegram invite UI and household isolation tests are implemented on `feature/household-collaboration`. Secure linking of a verified Telegram identity to an existing authenticated email account is being completed as a follow-up staging change. This is not production-enabled until the migration is reviewed and deployed through an approved release.
 
 ## Why this is a separate milestone
 
