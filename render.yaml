@@ -2,6 +2,7 @@ services:
   - type: web
     name: flowmoney-app
     runtime: node
+    branch: main
     autoDeployTrigger: checksPass
     plan: free
     region: singapore
