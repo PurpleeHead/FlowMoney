@@ -2,6 +2,25 @@
 
 Production remains a separate, explicitly approved release. Staging merges and deployments do not authorize a merge to `main`, a production migration, or a production deploy.
 
+## 0. Verified staging baseline — 18 November 2026
+
+The following items are verified on staging only. They do not certify or authorize production changes.
+
+- [x] Staging application runtime is live on commit `85192b4b5b1953b54b15d4bd726f520ddd1296a3` (including the Prisma 7 runtime, RLS lockdown, foreign-key indexes and database readiness probe).
+- [x] Render uses Node.js 22.23.3 from `.node-version`.
+- [x] Prisma 7.10.1 client generation and all 8 committed migrations complete; no pending migrations remain.
+- [x] The staging health probe runs a real PostgreSQL query through the runtime Prisma adapter and Render reports the service live.
+- [x] CI passes on PostgreSQL 17: schema validation, migration replay, server/client builds, 21 server tests, 2 client test files and PowerShell syntax checks.
+- [x] Isolated server and client production dependency audits report zero vulnerabilities.
+- [x] RLS is enabled on all 19 public tables; `anon` and `authenticated` have no public-schema/table access.
+- [x] All 11 previously missing foreign-key indexes are present; Supabase no longer reports unindexed foreign keys.
+- [x] Household invitations can be opened in a normal browser without a configured Telegram bot; Telegram deep links remain optional and deferred.
+
+**Known non-blocking item:** the full development-toolchain audit still reports 5 high-severity findings (0 critical) in build/test dependencies. The isolated production dependency trees remain clean. A forced downgrade of Vitest introduced critical advisories, so it was not applied.
+
+**Still required before production:** manual visual QA in RU/EN at the listed viewport widths, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. Telegram setup remains deferred as recorded below.
+
+---
 ## 1. Before production access is changed
 
 - [ ] Confirm the production Render service, branch, region and current deployment.
@@ -43,6 +62,7 @@ Do not use a staging `DATABASE_URL` for a production migration. Do not copy cred
 - [ ] Categories, budgets, obligations and savings goals work.
 - [ ] Household owner/member permissions and immediate revocation work.
 - [ ] A third account cannot read another household's data.
+- [ ] Create a household invitation, open its web link in a separate browser session, sign in/register, preview it, and accept it.
 - [ ] No database connection, Prisma or unhandled API errors appear in Render logs.
 - [ ] Verify production data and balances were not altered by smoke tests; remove only explicitly created test records.
 
@@ -55,7 +75,7 @@ Do not use a staging `DATABASE_URL` for a production migration. Do not copy cred
 
 ## 6. Deliberately deferred
 
-Telegram BotFather token rotation and Main Mini App configuration are deferred by the user. If Telegram Mini App is required for the initial public launch, this becomes a launch blocker; otherwise it can be enabled in a separate approved release after the web application is stable.
+Telegram BotFather token rotation and Main Mini App configuration are deferred by the user. Browser-based household invitations now use secure `#invite=...` links and can be accepted after email/password sign-in, so family invitations do not require the bot. Telegram Main Mini App configuration is only a blocker if Telegram itself is required as an initial sign-in or launch channel; otherwise it can be enabled in a separate approved release after the web application is stable.
 
 ## 7. Manual product QA
 
