@@ -50,6 +50,12 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const invite = await inviteResponse.json() as { inviteLink: string; id: string };
     const inviteToken = new URL(invite.inviteLink).searchParams.get('startapp');
     assert.ok(inviteToken);
+    // A second invitation for the same profile can exist before the first is accepted.
+    const duplicateProfileInviteResponse = await request('/api/household/invitations', 'POST', { memberId: wifeProfile.id }, owner.token);
+    assert.equal(duplicateProfileInviteResponse.status, 201);
+    const duplicateProfileInvite = await duplicateProfileInviteResponse.json() as { inviteLink: string };
+    const duplicateProfileToken = new URL(duplicateProfileInvite.inviteLink).searchParams.get('startapp');
+    assert.ok(duplicateProfileToken);
 
     const previewResponse = await request('/api/household/invitations/preview?token=' + encodeURIComponent(inviteToken), 'GET', undefined, spouse.token);
     assert.equal(previewResponse.status, 200);
@@ -61,6 +67,12 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(accepted.status, 200);
     const acceptedBody = await accepted.json() as { householdName: string; memberName: string };
     assert.equal(acceptedBody.memberName, 'Wife');
+
+    const duplicateProfileAccount = await register('duplicate-profile');
+    const duplicateProfileAccept = await request('/api/household/invitations/accept', 'POST', {
+      token: duplicateProfileToken,
+    }, duplicateProfileAccount.token);
+    assert.equal(duplicateProfileAccept.status, 409, 'one household profile must not be assigned to two active accounts');
 
     // Personal display preferences are per account, while the opening balance is shared
     // and may only be changed by the household owner.
