@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { api, getToken, setToken } from './lib/api';
 import { getHouseholdInviteToken } from './lib/householdInvites';
 import { calculateMonthlyCashflow } from './lib/monthlyCashflow';
+import ReceiptScanner from './components/ReceiptScanner';
 import './personalFinance.css';
 
 type Lang = 'ru' | 'en';
@@ -184,6 +185,7 @@ export default function PersonalFinanceApp() {
   const [openingBalanceDate, setOpeningBalanceDate] = useState(moscowToday());
   const [openingBalanceConfigured, setOpeningBalanceConfigured] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(moscowToday().slice(0, 7));
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(moscowToday());
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
@@ -393,7 +395,7 @@ export default function PersonalFinanceApp() {
 
   async function saveOpeningBalance() { const amount = Number(openingBalance); if (!Number.isFinite(amount)) { setError(lang === 'ru' ? 'Введите корректную сумму начального остатка.' : 'Enter a valid opening balance.'); return; } setBusy(true); setError(''); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ openingBalance: amount, openingBalanceDate }) }); await refresh(); setNotice(lang === 'ru' ? 'Начальный остаток сохранён.' : 'Opening balance saved.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function changeLanguage(next: Lang) { setLang(next); if (user) { try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ locale: next }) }); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } } }
-  async function changeTimezone(next: string) { setTimezone(next); const today = todayInTimezone(next); setSelectedMonth(today.slice(0,7)); setIncomeStart(today); setExpenseDate(today); setObligationDate(today); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ timezone: next }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } }
+  async function changeTimezone(next: string) { setTimezone(next); const today = todayInTimezone(next); setSelectedMonth(today.slice(0,7)); setSelectedCalendarDate(today); setIncomeStart(today); setExpenseDate(today); setObligationDate(today); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ timezone: next }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } }
   async function handleAuth(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
     try {
@@ -481,6 +483,30 @@ export default function PersonalFinanceApp() {
     setBusy(true); setError('');
     try { await api(`${PF}/obligation-occurrences/${id}/pay`, { method: 'POST', body: JSON.stringify({ actualAmount }) }); await refresh(); setNotice(lang === 'ru' ? 'Фактический платёж сохранён и учтён в расходах один раз.' : 'Actual payment saved and recorded as one expense.'); }
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function saveScannedReceipt(items: Array<{name:string;price:number;quantity:number}>, rawText: string) {
+    if (!items.length) return;
+    const rawAmount = await promptAction(
+      lang === 'ru' ? 'Распознанные цены могут быть в другой валюте. Введи итоговую сумму чека в рублях — именно она попадёт в бюджет.' : 'Detected prices may use another currency. Enter the receipt total in RUB; this amount will be added to your budget.',
+      '', lang === 'ru' ? 'Сумма чека в рублях' : 'Receipt total in RUB', 'number', lang === 'ru' ? 'Добавить расход' : 'Add expense'
+    );
+    if (rawAmount === null) return;
+    const amount = Number(rawAmount.trim().replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) { setError(lang === 'ru' ? 'Введи корректную сумму чека в рублях.' : 'Enter a valid receipt total in RUB.'); return; }
+    const names = items.slice(0, 3).map(item => item.name.trim()).filter(Boolean);
+    const title = (lang === 'ru' ? 'Чек: ' : 'Receipt: ') + (names.join(', ') || (lang === 'ru' ? 'покупки' : 'purchases'));
+    const itemSummary = items.map(item => item.name + ' × ' + item.quantity + ': ' + item.price).join('; ');
+    setBusy(true); setError('');
+    try {
+      await api(PF + '/expenses', { method: 'POST', body: JSON.stringify({
+        title: title.slice(0, 140), amount, date: expenseDate,
+        categoryId: expenseCategory || null, memberId: expenseMember || null,
+        note: ('OCR receipt items: ' + itemSummary + '\n\n' + rawText).slice(0, 500),
+      }) });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Чек распознан и добавлен как один расход. Проверь сумму и категорию.' : 'Receipt added as one expense. Review its amount and category.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save receipt expense.'); }
+    finally { setBusy(false); }
   }
   async function removeExpense(id: string) {
     if (!(await confirmAction(lang === 'ru' ? 'Расход будет удалён из финансовой истории.' : 'This expense will be removed from your financial history.', lang === 'ru' ? 'Удалить расход?' : 'Delete expense?'))) return;
@@ -639,10 +665,11 @@ export default function PersonalFinanceApp() {
   const visibleBudgets = budgets.filter(item => matchesMember(item.memberId));
   const analyticsMax = analytics ? Math.max(1, ...analytics.months.flatMap(item => [item.income, item.expenses])) : 1;
   const calendarEvents = [
-    ...visibleIncome.filter(x => x.plannedDate >= ranges.from && x.plannedDate <= ranges.to).map(x => ({ date: x.plannedDate.slice(0,10), title: x.source?.title ?? (lang === 'ru' ? 'Доход' : 'Income'), amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'income' as const, status: x.status })),
-    ...memberExpenses.filter(x => !x.obligationOccurrence && x.date >= ranges.from && x.date <= ranges.to).map(x => ({ date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
-    ...monthObligations.map(x => ({ date: x.dueDate.slice(0,10), title: x.obligation.title, amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'obligation' as const, status: x.status })),
+    ...visibleIncome.filter(x => x.plannedDate >= ranges.from && x.plannedDate <= ranges.to).map(x => ({ id: x.id, date: x.plannedDate.slice(0,10), title: x.source?.title ?? (lang === 'ru' ? 'Доход' : 'Income'), amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'income' as const, status: x.status })),
+    ...memberExpenses.filter(x => !x.obligationOccurrence && x.date >= ranges.from && x.date <= ranges.to).map(x => ({ id: x.id, date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
+    ...monthObligations.map(x => ({ id: x.id, date: x.dueDate.slice(0,10), title: x.obligation.title, amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'obligation' as const, status: x.status })),
   ].sort((a,b) => a.date.localeCompare(b.date));
+  const selectedCalendarEvents = calendarEvents.filter(item => item.date === selectedCalendarDate);
   const monthParts = ranges.from.split('-').map(Number);
   const calendarDayCount = new Date(Date.UTC(monthParts[0], monthParts[1], 0)).getUTCDate();
   const calendarOffset = new Date(Date.UTC(monthParts[0], monthParts[1]-1, 1)).getUTCDay();
@@ -657,7 +684,7 @@ export default function PersonalFinanceApp() {
       <div className="pf-sidebar-bottom"><div className="pf-avatar">{(user.displayName || user.email)[0].toUpperCase()}</div><div className="pf-user"><strong>{user.displayName || user.email.split('@')[0]}</strong><small>{user.email.endsWith('@telegram.flowmoney.invalid') ? 'Telegram' : user.email}</small></div>{!window.Telegram?.WebApp?.initData && <button className="pf-icon-button" type="button" title={tr(lang, 'logout')} aria-label={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button>}</div>
     </aside>
     <main className="pf-main" id="pf-main-content" tabIndex={-1}>
-      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions"><input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) setSelectedMonth(e.target.value); }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.isArchived ? `${m.name} · ${lang === 'ru' ? 'архив' : 'archived'}` : m.name}</option>)}</select><button className="pf-language" onClick={() => changeLanguage(lang === 'ru' ? 'en' : 'ru')}>{lang === 'ru' ? '🇬🇧 EN' : '🇷🇺 RU'}</button><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
+      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions"><input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) { setSelectedMonth(e.target.value); setSelectedCalendarDate(e.target.value + '-01'); } }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.isArchived ? `${m.name} · ${lang === 'ru' ? 'архив' : 'archived'}` : m.name}</option>)}</select><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
       {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}<button type="button" aria-label={lang === 'ru' ? 'Закрыть сообщение об ошибке' : 'Dismiss error message'} onClick={() => setError('')}>×</button></div>}
       {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}<button type="button" aria-label={lang === 'ru' ? 'Закрыть уведомление' : 'Dismiss notification'} onClick={() => setNotice('')}>×</button></div>}
 
@@ -765,6 +792,7 @@ export default function PersonalFinanceApp() {
             <label>{tr(lang, 'member')}<select value={expenseMember} onChange={e => setExpenseMember(e.target.value)}>{memberOptions}</select></label>
             <div className="pf-form-actions">{editingExpenseId && <button type="button" className="pf-button ghost" onClick={() => { setEditingExpenseId(null); setExpenseTitle(''); setExpenseAmount(''); setExpenseDate(moscowToday()); }}>{tr(lang, 'cancel')}</button>}<button className="pf-button primary" disabled={busy}>{tr(lang, 'save')}</button></div>
           </form>
+          <ReceiptScanner lang={lang} vndPerUsdt={0} vndPerRub={0} onSave={saveScannedReceipt}/>
           <form className="pf-inline-form category-create" onSubmit={addCategory}><label>{tr(lang, 'addCategory')}<input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder={lang === 'ru' ? 'Например, Питомцы' : 'e.g. Pets'}/></label><button className="pf-button ghost" aria-label={lang === 'ru' ? 'Добавить категорию' : 'Add category'} disabled={busy}>+</button></form>{categories.filter(category=>Boolean(category.userId)).map(category=><div className="pf-category-manage" key={category.id}><span>{category.name}</span><div><button className="pf-edit" aria-label={lang === 'ru' ? 'Переименовать категорию' : 'Rename category'} onClick={()=>renameCategory(category)}>✎</button><button className="pf-delete" aria-label={lang === 'ru' ? 'Архивировать категорию' : 'Archive category'} onClick={()=>archiveCategory(category)}>×</button></div></div>)}
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ИСТОРИЯ ОПЕРАЦИЙ' : 'TRANSACTION HISTORY'}</span><h2>{tr(lang, 'expenses')}</h2></div><span className="pf-count">{visibleExpenses.length}</span></div><div className="pf-expense-filters"><select className="pf-member-filter" value={expensePeriod} onChange={e=>{const next=e.target.value as 'month'|'all'|'custom';setExpensePeriod(next);if(next==='custom'){setExpenseFrom(ranges.from);setExpenseTo(ranges.to);}}}><option value="month">{lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}</option><option value="all">{lang === 'ru' ? 'Вся история' : 'All history'}</option><option value="custom">{lang === 'ru' ? 'Произвольный период' : 'Custom date range'}</option></select><select className="pf-member-filter" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}><option value="all">{lang === 'ru' ? 'Все категории' : 'All categories'}</option><option value="uncategorized">{lang === 'ru' ? 'Без категории' : 'Uncategorized'}</option>{categories.map(x=><option key={x.id} value={x.id}>{categoryName(x,lang)}</option>)}</select></div>
