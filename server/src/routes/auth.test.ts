@@ -75,7 +75,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.ok(loggedIn.token);
 
     const excessiveTranslation = await post('/api/translate', {
-      text: Array.from({ length: 81 }, (_, index) => `Receipt line ${index + 1}`).join('\\n'),
+      text: Array.from({ length: 81 }, (_, index) => `Receipt line ${index + 1}`).join('\n'),
     }, first.token);
     assert.equal(excessiveTranslation.status, 400,
       'translation must reject excessive line counts before making outbound provider requests');
