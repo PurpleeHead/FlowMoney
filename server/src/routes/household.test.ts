@@ -81,6 +81,38 @@ test('household invitations share finances, isolate other accounts and revoke ac
     }, duplicateProfileAccount.token);
     assert.equal(duplicateProfileAccept.status, 409, 'one household profile must not be assigned to two active accounts');
 
+    // Concurrent acceptance of two invitations for one profile must still produce
+    // exactly one active assignment; the database partial unique index is the last guard.
+    const concurrentProfileResponse = await request('/api/personal-finance/members', 'POST', { name: 'Concurrent profile' }, owner.token);
+    assert.equal(concurrentProfileResponse.status, 201);
+    const concurrentProfile = await concurrentProfileResponse.json() as { id: string };
+    const concurrentInviteResponses = await Promise.all([
+      request('/api/household/invitations', 'POST', { memberId: concurrentProfile.id }, owner.token),
+      request('/api/household/invitations', 'POST', { memberId: concurrentProfile.id }, owner.token),
+    ]);
+    assert.deepEqual(concurrentInviteResponses.map(response => response.status), [201, 201]);
+    const concurrentInvites = await Promise.all(concurrentInviteResponses.map(response => response.json() as Promise<{ inviteLink: string }>));
+    const concurrentTokens = concurrentInvites.map(invite => new URL(invite.inviteLink).searchParams.get('startapp'));
+    assert.ok(concurrentTokens.every(Boolean));
+    const concurrentAccounts = await Promise.all([register('race-one'), register('race-two')]);
+    const concurrentAcceptances = await Promise.all(concurrentAccounts.map((account, index) =>
+      request('/api/household/invitations/accept', 'POST', { token: concurrentTokens[index] }, account.token),
+    ));
+    assert.deepEqual(
+      concurrentAcceptances.map(response => response.status).sort((a, b) => a - b),
+      [200, 409],
+      'simultaneous acceptance must allow only one account to claim a household profile',
+    );
+    const householdAfterConcurrentAccept = await request('/api/household', 'GET', undefined, owner.token);
+    const householdMembersAfterConcurrentAccept = await householdAfterConcurrentAccept.json() as {
+      members: Array<{ member: { id: string } | null }>;
+    };
+    assert.equal(
+      householdMembersAfterConcurrentAccept.members.filter(access => access.member?.id === concurrentProfile.id).length,
+      1,
+      'the profile must have exactly one active account assignment after a race',
+    );
+
     // Personal display preferences are per account, while the opening balance is shared
     // and may only be changed by the household owner.
     const ownerSettingsBefore = await request('/api/personal-finance/settings', 'GET', undefined, owner.token);
