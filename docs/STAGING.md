@@ -1,52 +1,62 @@
 # nummioX staging environment
 
-## Purpose and isolation
+## Live architecture
 
-The staging environment is dedicated to feature-branch verification. It uses its own PostgreSQL database and its own JWT secret. It must never use the production DATABASE_URL, JWT_SECRET, CLIENT_ORIGIN or Telegram token.
+- Render service: `nummiox-staging`
+- URL: https://nummiox-staging.onrender.com
+- Region: Singapore
+- Plan: Free
+- Deploy branch: `feature/household-collaboration`
+- Auto-deploy: only after GitHub checks pass
+- Health check: `/api/health` (includes a database readiness query)
 
-The separate Render Blueprint is `render.staging.yaml` and provisions:
+The live staging database is the separate Supabase project `nummioX-staging-db` in Singapore (`ap-southeast-1`). Render connects through the Supabase shared session pooler on port 5432. The complete `DATABASE_URL` is a Render server-side secret and must never be copied into source control, browser variables, logs, or chat.
 
-- Web service: `nummiox-staging`
-- PostgreSQL: `nummiox-staging-db`
-- Region: Frankfurt for both resources
-- Service plan: Free
-- Database plan: Free, 1 GB, PostgreSQL 16
-- Branch: `feature/household-collaboration`
-- Deploy only after GitHub checks pass
-- Prisma migrations run in the staging service's pre-deploy phase only
+The staging service has its own `JWT_SECRET` and `CLIENT_ORIGIN`. Never point it at the production database or production origin.
 
-The free Postgres plan expires after 30 days. It is suitable for temporary QA, not persistent production data. The free web service can spin down when idle.
+## Build and migrations
 
-## Create / sync
+The live Render staging service builds with:
 
-Create a Render Blueprint from this repository with:
+```sh
+npm ci && npm run db:generate && npm run db:migrate && npm run build
+```
 
-- Repository: `https://github.com/PurpleeHead/FlowMoney`
-- Branch: `feature/household-collaboration`
-- Blueprint file: `render.staging.yaml`
-- Existing resources: create new (never adopt production resources)
-- Auto-sync: disabled until the first staging deployment is verified
+Prisma 7 configuration is in `server/prisma7.config.ts`. Migrations are applied by the staging build, not by application startup. CI separately validates the schema, generates the client, applies all committed migrations to an ephemeral PostgreSQL database, builds both workspaces, and runs server/client tests.
 
-Review the planned resources before applying. The Blueprint references its own database using Render's internal connection string and generates a unique JWT secret. It does not reference or modify the production service or database.
+The current staging database has eight successful Prisma migrations, including:
+- Prisma 7-compatible client and PostgreSQL driver adapter
+- public-schema access lockdown and RLS
+- indexes for remaining foreign-key columns
 
-## Secret configuration
+## Database access boundary
 
-After the staging service exists, open its Environment page and add:
+All finance data is accessed through the authenticated Express API. The browser must not query Supabase tables directly.
 
-- `TELEGRAM_BOT_TOKEN`: the newly rotated token from BotFather
+- RLS is enabled on all 19 current public tables.
+- `anon` and `authenticated` have no schema usage or table read/write grants.
+- No client RLS policies are defined intentionally; the public Data API is not an application access path.
+- The server-only PostgreSQL role retains access. The `service_role` remains privileged and must never be exposed to the client.
+- CI checks that every public table has RLS enabled. New public tables must preserve this rule.
 
-Never commit the token, put it in this file, send it in chat, or use a `VITE_*` variable. The token previously exposed in chat must remain revoked.
+Supabase's remaining `rls_enabled_no_policy` notices are informational and expected for this backend-only access model. Performance advisor notices about unused indexes are expected on an almost-empty staging database; do not remove the foreign-key indexes just because they have not yet been exercised.
 
-`TELEGRAM_BOT_USERNAME=nummioX_bot` is already configured by the Blueprint. The staging service URL must be added as the Main Mini App URL in BotFather only after its first successful deployment and HTTPS health check. Do not change the production bot URL as part of staging verification.
+## Telegram
 
-## Test plan
+Telegram Mini App setup is intentionally deferred. Email/password web authentication remains available. Before enabling Telegram, rotate the previously exposed bot token in BotFather and add the new token directly to the staging Render secret. Never send the token in chat or commit it.
 
-1. Confirm `/api/health` returns `status: ok`.
-2. Confirm the database contains the expected Prisma migration history.
-3. Register two independent Telegram accounts and accept an invitation from one to the other.
-4. Verify both accounts see the same household finances and each can attribute transactions to their linked member profile.
-5. Verify a third account cannot read or mutate those records.
-6. Verify invitation expiry, single use, revocation, existing-data join rejection and immediate access revocation.
-7. Verify that production service settings and production database remain unchanged.
+## Important configuration warning
 
-No production migration or deployment is part of this procedure.
+The checked-in `render.staging.yaml` still contains an older Render-Postgres `fromDatabase` template. It does **not** describe the live Supabase-backed staging database. Do not re-sync or apply that Blueprint until it has been reconciled with the live architecture and reviewed separately.
+
+## Staging smoke-test plan
+
+1. Confirm Render reports the service as live and the `/api/health` database readiness check passes.
+2. Verify email/password registration and login.
+3. Create and edit income, expense, account, budget, and savings records.
+4. Verify category selection, receipt translation, analytics, and date filters.
+5. Verify household invitation, acceptance, shared visibility, profile attribution, revocation, and outsider isolation.
+6. Check Russian and English copy and responsive layouts at 320, 360, 390, 768, and desktop widths.
+7. Confirm production resources and data remain untouched.
+
+The free Render web service may spin down while idle; the first request after inactivity can be slower. Staging is for verification, not the production data store.
