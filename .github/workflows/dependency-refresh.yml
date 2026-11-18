@@ -19,8 +19,10 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Apply non-breaking npm security fixes
-        run: npm audit fix --no-fund || true
+      - name: Regenerate lockfile and apply compatible fixes
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-fund --no-audit
+          npm audit fix --no-fund || true
       - name: Report remaining advisories
         run: |
           npm audit --json > /tmp/npm-audit.json || true
