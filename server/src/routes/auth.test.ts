@@ -806,7 +806,7 @@ test('Telegram identity can only be linked from an authenticated account using s
     const checkString = [...params.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => key + '=' + value)
-      .join('\\n');
+      .join('\n');
     const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
     params.set('hash', createHmac('sha256', secret).update(checkString).digest('hex'));
     return params.toString();
