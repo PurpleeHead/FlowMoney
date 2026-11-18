@@ -47,10 +47,31 @@ jobs:
         run: |
           npm audit --json > npm-audit.json || true
           node -e "const a=require('./npm-audit.json'); console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
-      - name: Report production dependency audit (omit dev)
+      - name: Audit isolated production dependency trees
         run: |
-          npm audit --omit=dev --json > npm-audit-production.json || true
-          node -e "const a=require('./npm-audit-production.json'); console.log(JSON.stringify({productionDependencySummary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
+          node <<'NODE'
+          const fs = require('node:fs');
+          for (const workspace of ['server', 'client']) {
+            const source = JSON.parse(fs.readFileSync(`${workspace}/package.json`, 'utf8'));
+            const directory = `/tmp/nummiox-${workspace}-production-audit`;
+            fs.mkdirSync(directory, { recursive: true });
+            fs.writeFileSync(
+              `${directory}/package.json`,
+              JSON.stringify({
+                name: `nummiox-${workspace}-production-audit`,
+                version: '1.0.0',
+                private: true,
+                dependencies: source.dependencies ?? {},
+              }, null, 2),
+            );
+          }
+          NODE
+          for workspace in server client; do
+            directory="/tmp/nummiox-${workspace}-production-audit"
+            npm install --prefix "$directory" --package-lock-only --ignore-scripts --no-fund --no-audit
+            npm audit --prefix "$directory" --json > "$directory/audit.json" || true
+            node -e "const a=require('$directory/audit.json'); console.log(JSON.stringify({workspace:'$workspace',summary:a.metadata?.vulnerabilities,packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
+          done
       - name: Validate Prisma schema
         run: npx prisma validate --schema server/prisma/schema.prisma
       - name: Generate Prisma Client
