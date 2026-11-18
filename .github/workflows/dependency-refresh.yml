@@ -19,14 +19,18 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Regenerate lockfile and apply compatible fixes
+      - name: Regenerate lockfile from compatible manifest ranges
         run: |
+          rm package-lock.json
           npm install --package-lock-only --ignore-scripts --no-fund --no-audit
-          npm audit fix --no-fund || true
       - name: Report remaining advisories
         run: |
           npm audit --json > /tmp/npm-audit.json || true
           node -e "const a=require('/tmp/npm-audit.json'); console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,via:v.via,fixAvailable:v.fixAvailable}))},null,2))"
+      - name: Report server runtime advisories
+        run: |
+          npm audit --workspace=@flowmoney/server --omit=dev --json > /tmp/server-runtime-audit.json || true
+          node -e "const a=require('/tmp/server-runtime-audit.json'); console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,via:v.via,fixAvailable:v.fixAvailable}))},null,2))"
       - name: Commit compatible dependency updates
         run: |
           git config user.name "github-actions[bot]"
