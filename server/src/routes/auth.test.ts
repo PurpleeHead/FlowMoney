@@ -14,6 +14,7 @@ test('authentication works and household records stay isolated between accounts'
   const thirdEmail = `flowmoney-test-race-${suffix}@example.test`;
   const fourthEmail = `flowmoney-test-foreign-${suffix}@example.test`;
   const fifthEmail = `flowmoney-test-expense-foreign-${suffix}@example.test`;
+  const bcryptBoundaryEmail = `flowmoney-test-bcrypt-boundary-${suffix}@example.test`;
   const server = createApp().listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
   const address = server.address() as AddressInfo;
@@ -51,6 +52,22 @@ test('authentication works and household records stay isolated between accounts'
 
     const duplicate = await post('/api/auth/register', { email: firstEmail.toUpperCase(), password: 'Safe-test-password-123!' });
     assert.equal(duplicate.status, 409);
+
+    const bcryptBoundary = await post('/api/auth/register', {
+      email: bcryptBoundaryEmail,
+      password: 'a'.repeat(72),
+    });
+    assert.equal(bcryptBoundary.status, 201, 'a password of exactly 72 UTF-8 bytes must be accepted');
+    const overlongAsciiPassword = await post('/api/auth/register', {
+      email: `flowmoney-test-overlong-${suffix}@example.test`,
+      password: 'a'.repeat(73),
+    });
+    assert.equal(overlongAsciiPassword.status, 400, 'passwords over bcrypt’s 72-byte limit must be rejected');
+    const overlongUtf8Password = await post('/api/auth/register', {
+      email: `flowmoney-test-overlong-utf8-${suffix}@example.test`,
+      password: 'я'.repeat(37),
+    });
+    assert.equal(overlongUtf8Password.status, 400, 'the password limit must count UTF-8 bytes, not JavaScript characters');
 
     const login = await post('/api/auth/login', { email: firstEmail, password: 'Safe-test-password-123!' });
     assert.equal(login.status, 200);
@@ -684,7 +701,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.deepEqual(concurrentRegistrations.map(response => response.status).sort((a, b) => a - b), [201, 409]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-    await prisma.user.deleteMany({ where: { email: { in: [firstEmail, secondEmail, thirdEmail, fourthEmail, fifthEmail] } } });
+    await prisma.user.deleteMany({ where: { email: { in: [firstEmail, secondEmail, thirdEmail, fourthEmail, fifthEmail, bcryptBoundaryEmail] } } });
   }
 });
 
