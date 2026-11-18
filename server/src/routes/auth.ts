@@ -31,6 +31,11 @@ router.post('/register', async (req, res, next) => {
       return res.status(400).json({ message: 'Enter a valid email and a password of at least 8 characters.' });
     }
     const { email, password } = parsed.data;
+    // bcrypt only uses the first 72 UTF-8 bytes. Reject longer new passwords so
+    // users never believe bytes that are silently ignored are part of their secret.
+    if (Buffer.byteLength(password, 'utf8') > 72) {
+      return res.status(400).json({ message: 'Password must not exceed 72 UTF-8 bytes.' });
+    }
     if (await prisma.user.findUnique({ where: { email } })) {
       return res.status(409).json({ message: 'An account with this email already exists.' });
     }
