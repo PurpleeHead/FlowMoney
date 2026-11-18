@@ -907,7 +907,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     // Date-only ledger entries use the user's current calendar day; receivedAt is a timestamp.
     const balanceDateCutoff = new Date(now.getTime() + 86400000 - 1);
     const balanceTimestampCutoff = new Date();
-    const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
+    const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, paidObligationsPeriod, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingIncomeRange.from, lte: balanceTimestampCutoff } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } }, _sum: { actualAmount: true } }),
       // The forecast starts at today, not at the selected reporting period's first day.
@@ -915,6 +915,8 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
+      // Separate paid commitments by the date cash actually left the account, not by due date.
+      prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: 'PAID', paidAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } }, _sum: { actualAmount: true } }),
       prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, actualAmount: true, status: true } }),
@@ -942,7 +944,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       actual: { income: receivedThisMonth, expenses: Number(periodExpenses._sum.amount ?? 0), balance: actualBalance },
       forecast: { plannedIncome, unpaidObligations, balance: actualBalance + plannedIncome - unpaidObligations },
       obligations: {
-        due: dueTotal, paid: paidMonth, unpaid: unpaidMonth,
+        due: dueTotal, paid: paidMonth, paidInPeriod: Number(paidObligationsPeriod._sum.actualAmount ?? 0), unpaid: unpaidMonth,
         coverage: { receivedIncome: receivedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth), surplus: Math.max(0, receivedThisMonth - dueTotal) },
         plannedCoverage: { income: receivedThisMonth + plannedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth - plannedThisMonth) },
       },
