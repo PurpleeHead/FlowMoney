@@ -16,6 +16,8 @@ const dateSchema = z.string()
   }, 'Invalid calendar date.');
 const money = z.number().finite().positive().max(1_000_000_000);
 const optionalMember = z.string().cuid().nullable().optional();
+// Category IDs include both Prisma-generated custom IDs and stable system IDs from migrations.
+const optionalCategoryId = z.string().trim().min(1).max(128).nullable().optional();
 const recurrence = z.enum(['ONCE', 'DAILY', 'WEEKLY', 'TWICE_MONTHLY', 'MONTHLY', 'YEARLY']);
 const configSchema = z.object({
   weekdays: z.array(z.number().int().min(0).max(6)).optional(),
@@ -408,7 +410,7 @@ router.post('/income-entries', async (req: AuthedRequest, res, next) => {
 
 const expenseSchema = z.object({
   title: z.string().trim().min(1).max(140), amount: money, date: dateSchema,
-  categoryId: z.string().cuid().nullable().optional(), memberId: optionalMember,
+  categoryId: optionalCategoryId, memberId: optionalMember,
   note: z.string().max(500).nullable().optional(),
 });
 router.get('/expenses', async (req: AuthedRequest, res, next) => {
@@ -692,7 +694,7 @@ router.post('/balance-adjustments', async (req: AuthedRequest, res, next) => {
 
 const budgetSchema = z.object({
   periodMonth: dateSchema, limitAmount: money, memberId: optionalMember,
-  categoryId: z.string().cuid().nullable().optional(),
+  categoryId: optionalCategoryId,
 });
 router.get('/budgets', async (req: AuthedRequest, res, next) => {
   try {
