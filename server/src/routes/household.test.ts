@@ -330,3 +330,43 @@ test('household invitations share finances, isolate other accounts and revoke ac
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   }
 });
+
+
+test('public database tables enforce RLS and block direct Supabase API roles', { skip: !process.env.DATABASE_URL }, async () => {
+  const tables = await prisma.$queryRaw<Array<{ table_name: string; rls_enabled: boolean }>>`
+    SELECT c.relname AS table_name, c.relrowsecurity AS rls_enabled
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
+    ORDER BY c.relname
+  `;
+  assert.ok(tables.length > 0, 'the public schema should contain the application tables');
+  assert.deepEqual(
+    tables.filter(table => !table.rls_enabled).map(table => table.table_name),
+    [],
+    'every public table must have row-level security enabled',
+  );
+
+  const access = await prisma.$queryRaw<Array<{
+    anon_schema_usage: boolean;
+    anon_can_read_user: boolean;
+    authenticated_schema_usage: boolean;
+    authenticated_can_read_user: boolean;
+  }>>`
+    SELECT
+      CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+        THEN has_schema_privilege('anon', 'public', 'USAGE') ELSE false END AS anon_schema_usage,
+      CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+        THEN has_table_privilege('anon', 'public."User"', 'SELECT') ELSE false END AS anon_can_read_user,
+      CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated')
+        THEN has_schema_privilege('authenticated', 'public', 'USAGE') ELSE false END AS authenticated_schema_usage,
+      CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated')
+        THEN has_table_privilege('authenticated', 'public."User"', 'SELECT') ELSE false END AS authenticated_can_read_user
+  `;
+  assert.deepEqual(access[0], {
+    anon_schema_usage: false,
+    anon_can_read_user: false,
+    authenticated_schema_usage: false,
+    authenticated_can_read_user: false,
+  });
+});
