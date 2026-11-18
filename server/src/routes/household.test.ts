@@ -99,6 +99,24 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const sharedData = await sharedFromSpouse.json() as { expenses: Array<{ title: string }> };
     assert.ok(sharedData.expenses.some(item => item.title === 'Shared groceries'));
 
+    // An owner with active members must not be allowed to join another household,
+    // because that would revoke their owner access and orphan the existing household.
+    const secondOwner = await register('second-owner');
+    const secondOwnerProfileResponse = await request('/api/personal-finance/members', 'POST', { name: 'Second household member' }, secondOwner.token);
+    assert.equal(secondOwnerProfileResponse.status, 201);
+    const secondOwnerProfile = await secondOwnerProfileResponse.json() as { id: string };
+    const secondOwnerInviteResponse = await request('/api/household/invitations', 'POST', { memberId: secondOwnerProfile.id }, secondOwner.token);
+    assert.equal(secondOwnerInviteResponse.status, 201);
+    const secondOwnerInvite = await secondOwnerInviteResponse.json() as { inviteLink: string };
+    const secondOwnerToken = new URL(secondOwnerInvite.inviteLink).searchParams.get('startapp');
+    assert.ok(secondOwnerToken);
+    const ownerJoinAttempt = await request('/api/household/invitations/accept', 'POST', { token: secondOwnerToken }, owner.token);
+    assert.equal(ownerJoinAttempt.status, 409, 'an owner must not orphan a household with active members');
+    const ownerHouseholdAfterBlockedJoin = await request('/api/household', 'GET', undefined, owner.token);
+    assert.equal(ownerHouseholdAfterBlockedJoin.status, 200, 'the original owner access must remain active');
+    const spouseHouseholdAfterBlockedJoin = await request('/api/household', 'GET', undefined, spouse.token);
+    assert.equal(spouseHouseholdAfterBlockedJoin.status, 200, 'the existing member must remain attached to the original household');
+
     const outsiderData = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, outsider.token);
     assert.equal(outsiderData.status, 200);
     const isolated = await outsiderData.json() as { expenses: Array<{ title: string }> };
