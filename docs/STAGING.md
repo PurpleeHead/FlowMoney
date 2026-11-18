@@ -1,52 +1,62 @@
 # nummioX staging environment
 
-## Purpose and isolation
+## Current resources
 
-The staging environment is dedicated to feature-branch verification. It uses its own PostgreSQL database and its own JWT secret. It must never use the production DATABASE_URL, JWT_SECRET, CLIENT_ORIGIN or Telegram token.
+Staging is isolated from production and is the only environment used for feature-branch deployments.
 
-The separate Render Blueprint is `render.staging.yaml` and provisions:
+- Render web service: `nummiox-staging`
+- URL: `https://nummiox-staging.onrender.com`
+- Render service ID: `srv-dbq6q26tlv9c73eooo7g`
+- Region / plan: Singapore / Free
+- Deploy branch: `feature/household-collaboration`
+- Auto-deploy: only after GitHub checks pass
+- Database: dedicated Supabase project `nummioX-staging-db`
+- Supabase project ref: `ygfzftyxgizeyrkgrfsx`
+- Supabase region: `ap-southeast-1`
+- PostgreSQL: 17.11
 
-- Web service: `nummiox-staging`
-- PostgreSQL: `nummiox-staging-db`
-- Region: Frankfurt for both resources
-- Service plan: Free
-- Database plan: Free, 1 GB, PostgreSQL 16
-- Branch: `feature/household-collaboration`
-- Deploy only after GitHub checks pass
-- Prisma migrations run in the staging service's pre-deploy phase only
+The Render service's `DATABASE_URL` is a secret that connects to the dedicated Supabase staging database through its pooler. Its value must remain in Render's environment settings; never commit it, print it in logs, or send it in chat. The staging JWT secret is independently generated in Render. `CLIENT_ORIGIN` must remain the staging URL.
 
-The free Postgres plan expires after 30 days. It is suitable for temporary QA, not persistent production data. The free web service can spin down when idle.
+The database is not a Render-managed PostgreSQL resource. The staging Blueprint therefore declares `DATABASE_URL` as a manual secret and does not provision a second database.
 
-## Create / sync
+## Build and migration behavior
 
-Create a Render Blueprint from this repository with:
+The staging Render build command is:
 
-- Repository: `https://github.com/PurpleeHead/FlowMoney`
-- Branch: `feature/household-collaboration`
-- Blueprint file: `render.staging.yaml`
-- Existing resources: create new (never adopt production resources)
-- Auto-sync: disabled until the first staging deployment is verified
+```sh
+npm ci && npm run db:generate && npm run db:migrate && npm run build
+```
 
-Review the planned resources before applying. The Blueprint references its own database using Render's internal connection string and generates a unique JWT secret. It does not reference or modify the production service or database.
+Prisma migrations run during the staging build. This is intentional for staging only. The production Blueprint does **not** run migrations automatically; production migrations require a separate backup, rehearsal and explicit approval.
 
-## Secret configuration
+The repository pins Node.js through `.node-version`. GitHub Actions reads the same file so CI and Render use the same runtime.
 
-After the staging service exists, open its Environment page and add:
+## Database security boundary
 
-- `TELEGRAM_BOT_TOKEN`: the newly rotated token from BotFather
+- All 19 application/public tables have Row Level Security enabled.
+- The browser does not access Supabase Data API tables directly.
+- `anon` and `authenticated` have no usage on the `public` schema and no direct table access.
+- Server-side `postgres` and privileged `service_role` access are preserved.
+- RLS is intentionally enabled without client policies because finance data is served through the authenticated Express API.
+- New application tables must enable RLS in their migration. CI checks this invariant.
 
-Never commit the token, put it in this file, send it in chat, or use a `VITE_*` variable. The token previously exposed in chat must remain revoked.
+The dedicated staging database currently has eight successful Prisma migrations, including the household access lockdown and foreign-key indexes.
 
-`TELEGRAM_BOT_USERNAME=nummioX_bot` is already configured by the Blueprint. The staging service URL must be added as the Main Mini App URL in BotFather only after its first successful deployment and HTTPS health check. Do not change the production bot URL as part of staging verification.
+## Telegram
 
-## Test plan
+Telegram Mini App end-to-end setup is deliberately deferred. Before testing it, rotate the previously exposed bot token in BotFather, add the new token directly to the staging Render secret `TELEGRAM_BOT_TOKEN`, and configure the staging Main Mini App URL. Never paste the token into chat or commit it.
 
-1. Confirm `/api/health` returns `status: ok`.
-2. Confirm the database contains the expected Prisma migration history.
-3. Register two independent Telegram accounts and accept an invitation from one to the other.
-4. Verify both accounts see the same household finances and each can attribute transactions to their linked member profile.
-5. Verify a third account cannot read or mutate those records.
-6. Verify invitation expiry, single use, revocation, existing-data join rejection and immediate access revocation.
-7. Verify that production service settings and production database remain unchanged.
+## Staging verification
 
-No production migration or deployment is part of this procedure.
+- [ ] Render deployment is `live` and its `/api/health` readiness probe confirms PostgreSQL connectivity.
+- [ ] Prisma migrations are all applied with no failed or rolled-back entries.
+- [ ] Registration and email/password login work.
+- [ ] Income, expenses, categories, budgets, obligations and savings goals can be created, edited and deleted.
+- [ ] Household invitation, acceptance, profile attribution and immediate revocation work.
+- [ ] A third account cannot read or mutate another household's records.
+- [ ] Russian and English copy is correct.
+- [ ] Manual responsive QA covers 320px, 360px, 390px, 768px and desktop.
+- [ ] Keyboard navigation, dialogs, focus indicators and cancel/confirm paths work.
+- [ ] Telegram-specific login and invite deep links are tested after BotFather setup.
+
+No production service, production database or production migration is part of staging verification.
