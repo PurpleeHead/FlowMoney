@@ -203,17 +203,36 @@ router.patch('/members/:id', async (req: AuthedRequest, res, next) => {
     if (req.user!.role !== 'OWNER') return res.status(403).json({ message: 'Only the household owner can manage member profiles.' });
     const parsed = z.object({ name: z.string().trim().min(1).max(60).optional(), color: z.string().max(24).nullable().optional(), isArchived: z.boolean().optional() }).safeParse(req.body);
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid member update.' });
-    if (parsed.data.isArchived === true) {
-      const linked = await prisma.householdAccess.findFirst({
-        where: { householdId: req.user!.householdId, memberId: String(req.params.id), revokedAt: null },
-        select: { id: true },
+    // Archive checks and writes must be one serializable transaction. Otherwise an
+    // invitation can be accepted between the access check and the profile update,
+    // leaving an active account linked to an archived profile.
+    const outcome = await prisma.$transaction(async tx => {
+      if (parsed.data.isArchived === true) {
+        const linked = await tx.householdAccess.findFirst({
+          where: { householdId: req.user!.householdId, memberId: String(req.params.id), revokedAt: null },
+          select: { id: true },
+        });
+        if (linked) return { status: 'linked' as const };
+      }
+      const result = await tx.householdMember.updateMany({
+        where: { id: String(req.params.id), userId: uid(req) },
+        data: parsed.data,
       });
-      if (linked) return res.status(409).json({ message: 'Revoke the linked account before archiving this profile.' });
+      if (!result.count) return { status: 'missing' as const };
+      const member = await tx.householdMember.findFirst({
+        where: { id: String(req.params.id), userId: uid(req) },
+      });
+      return { status: 'ok' as const, member };
+    }, { isolationLevel: 'Serializable' });
+    if (outcome.status === 'linked') {
+      return res.status(409).json({ message: 'Revoke the linked account before archiving this profile.' });
     }
-    const result = await prisma.householdMember.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: parsed.data });
-    if (!result.count) return res.status(404).json({ message: 'Household member not found.' });
-    return res.json(await prisma.householdMember.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
+    if (outcome.status === 'missing') return res.status(404).json({ message: 'Household member not found.' });
+    return res.json(outcome.member);
   } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2034') {
+      return res.status(409).json({ message: 'This household profile changed while you were updating it. Refresh and try again.' });
+    }
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
       return res.status(409).json({ message: 'A household member with this name already exists.' });
     }
