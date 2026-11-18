@@ -6,7 +6,7 @@ Production remains a separate, explicitly approved release. Staging merges and d
 
 The following items are verified on staging only. They do not certify or authorize production changes.
 
-- [x] Staging application runtime is live on commit `85192b4b5b1953b54b15d4bd726f520ddd1296a3` (including the Prisma 7 runtime, RLS lockdown, foreign-key indexes and database readiness probe).
+- [x] Staging application runtime is live on commit `11575fb0dbfcaf99ea36c62376cdc179ea0f164e` (including the Prisma 7 runtime, RLS lockdown, foreign-key indexes, database readiness probe and browser-based household invitations).
 - [x] Render uses Node.js 22.23.3 from `.node-version`.
 - [x] Prisma 7.10.1 client generation and all 8 committed migrations complete; no pending migrations remain.
 - [x] The staging health probe runs a real PostgreSQL query through the runtime Prisma adapter and Render reports the service live.
