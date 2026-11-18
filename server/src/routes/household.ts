@@ -95,7 +95,14 @@ router.patch('/profile', async (req: AuthedRequest, res, next) => {
       data: { memberId: parsed.data.memberId },
     });
     return res.json({ memberId: parsed.data.memberId });
-  } catch (error) { return next(error); }
+  } catch (error) {
+    // The partial unique index is the final guard against two requests assigning
+    // the same active household profile at once. Return a conflict, not a 500.
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+      return res.status(409).json({ message: 'This profile is already linked to another active account.' });
+    }
+    return next(error);
+  }
 });
 
 router.post('/invitations', invitationCreateLimit, async (req: AuthedRequest, res, next) => {
