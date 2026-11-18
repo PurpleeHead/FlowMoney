@@ -488,7 +488,7 @@ export default function PersonalFinanceApp() {
       <p>{lang === 'ru' ? `${pendingInvite.ownerName} приглашает тебя в пространство «${pendingInvite.householdName}».` : `${pendingInvite.ownerName} invited you to “${pendingInvite.householdName}”.`}</p>
       <div className="pf-invite-summary"><strong>{pendingInvite.memberName}</strong><small>{lang === 'ru' ? 'Твой профиль в общем бюджете' : 'Your profile in the shared budget'}</small></div>
       <p className="pf-muted">{lang === 'ru' ? 'После подтверждения ты получишь доступ к общим доходам, расходам, бюджетам и накоплениям. Твои существующие личные финансовые записи не будут объединяться автоматически.' : 'After confirmation, you will see shared income, expenses, budgets and savings. Existing personal financial records will not be merged automatically.'}</p>
-      {error && <div className="pf-alert error">{error}</div>}
+      {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
       <button className="pf-button primary" disabled={busy} onClick={acceptPendingInvite}>{busy ? '…' : (lang === 'ru' ? 'Принять приглашение' : 'Accept invitation')}</button>
     </div>
   </main>;
