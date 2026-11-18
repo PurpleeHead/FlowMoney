@@ -63,6 +63,9 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const inviteResponse = await request('/api/household/invitations', 'POST', { memberId: wifeProfile.id }, owner.token);
     assert.equal(inviteResponse.status, 201);
     const invite = await inviteResponse.json() as { inviteLink: string; id: string };
+    const webInviteUrl = new URL(invite.inviteLink);
+    assert.equal(webInviteUrl.hash.startsWith('#invite='), true,
+      'household invitations should be shareable as ordinary web links');
     const inviteToken = tokenFromInviteLink(invite.inviteLink);
     assert.ok(inviteToken);
     // A second invitation for the same profile can exist before the first is accepted.
