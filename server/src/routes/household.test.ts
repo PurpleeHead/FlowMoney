@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../app.js';
+import { prisma } from '../services/prisma.js';
+import { hashInvitationToken } from '../services/households.js';
 
 test('household invitations share finances, isolate other accounts and revoke access immediately', { skip: !process.env.DATABASE_URL }, async () => {
   process.env.JWT_SECRET = 'nummiox-household-integration-test-secret-32';
@@ -21,7 +23,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       // Keep the integration test focused on household behavior rather than
       // exhausting the production per-IP invitation creation rate limit.
-      ...(path === '/api/household/invitations' && method === 'POST'
+      ...(path.startsWith('/api/household/invitations') && method !== 'GET'
         ? { 'x-forwarded-for': `198.51.100.${invitationRequestIp++}` }
         : {}),
     },
@@ -72,6 +74,32 @@ test('household invitations share finances, isolate other accounts and revoke ac
 
     const malformedPreview = await request('/api/household/invitations/preview', 'POST', { token: 'not-a-valid-token' }, spouse.token);
     assert.equal(malformedPreview.status, 400, 'malformed invitation tokens must be rejected');
+
+    const expiredInviteResponse = await request('/api/household/invitations', 'POST', { memberId: reservedProfile.id }, owner.token);
+    assert.equal(expiredInviteResponse.status, 201);
+    const expiredInvite = await expiredInviteResponse.json() as { id: string; inviteLink: string };
+    const expiredToken = new URL(expiredInvite.inviteLink).searchParams.get('startapp');
+    assert.ok(expiredToken);
+    await prisma.householdInvite.update({
+      where: { tokenHash: hashInvitationToken(expiredToken) },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+    const expiredPreview = await request('/api/household/invitations/preview', 'POST', { token: expiredToken }, outsider.token);
+    assert.equal(expiredPreview.status, 404, 'expired invitations must not be previewed');
+    const expiredAccept = await request('/api/household/invitations/accept', 'POST', { token: expiredToken }, outsider.token);
+    assert.equal(expiredAccept.status, 400, 'expired invitations must not be accepted');
+
+    const revokedInviteResponse = await request('/api/household/invitations', 'POST', { memberId: reservedProfile.id }, owner.token);
+    assert.equal(revokedInviteResponse.status, 201);
+    const revokedInvite = await revokedInviteResponse.json() as { id: string; inviteLink: string };
+    const revokedToken = new URL(revokedInvite.inviteLink).searchParams.get('startapp');
+    assert.ok(revokedToken);
+    const revokeInvite = await request('/api/household/invitations/' + encodeURIComponent(revokedInvite.id), 'DELETE', undefined, owner.token);
+    assert.equal(revokeInvite.status, 204);
+    const revokedPreview = await request('/api/household/invitations/preview', 'POST', { token: revokedToken }, outsider.token);
+    assert.equal(revokedPreview.status, 404, 'revoked invitations must not be previewed');
+    const revokedAccept = await request('/api/household/invitations/accept', 'POST', { token: revokedToken }, outsider.token);
+    assert.equal(revokedAccept.status, 400, 'revoked invitations must not be accepted');
 
     const accepted = await request('/api/household/invitations/accept', 'POST', { token: inviteToken }, spouse.token);
     assert.equal(accepted.status, 200);
