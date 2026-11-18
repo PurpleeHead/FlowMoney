@@ -301,9 +301,10 @@ export default function PersonalFinanceApp() {
       setObligationMember(current => current || mappedProfile);
       setBudgetMember(current => current || mappedProfile);
     }
+    if (settingsData.timezone !== timezone) { const today = todayInTimezone(settingsData.timezone); setSelectedMonth(today.slice(0, 7)); setSelectedCalendarDate(today); }
     setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
-  }, [ranges, expenseCategory, filterMember, showSkippedObligations]);
+  }, [ranges, expenseCategory, filterMember, showSkippedObligations, timezone]);
 
   useEffect(() => {
     if (tab !== 'family' || household?.role !== 'OWNER') { setInvitations([]); return; }
