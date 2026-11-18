@@ -46,7 +46,7 @@ router.post('/register', async (req, res, next) => {
       await tx.householdAccess.create({ data: { householdId: household.id, userId: created.id, role: 'OWNER' } });
       return created;
     });
-    return res.status(201).json({ token: token(user.id, user.email), user: { id: user.id, email: user.email } });
+    return res.status(201).json({ token: token(user.id, user.email), user: { id: user.id, email: user.email, telegramLinked: false } });
   } catch (error) {
     // Two requests can pass the pre-check at once; the database unique constraint is authoritative.
     if (isUniqueConstraintError(error)) {
@@ -65,7 +65,7 @@ router.post('/login', async (req, res, next) => {
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       return res.status(401).json({ message: 'Email or password is incorrect.' });
     }
-    return res.json({ token: token(user.id, user.email), user: { id: user.id, email: user.email } });
+    return res.json({ token: token(user.id, user.email), user: { id: user.id, email: user.email, telegramLinked: Boolean(user.telegramId) } });
   } catch (error) {
     return next(error);
   }
@@ -122,7 +122,7 @@ router.post('/telegram', async (req, res, next) => {
     const displayName = user.telegramFirstName || user.telegramUsername || 'Telegram';
     return res.json({
       token: token(user.id, user.email, displayName),
-      user: { id: user.id, email: user.email, displayName },
+      user: { id: user.id, email: user.email, displayName, telegramLinked: true },
     });
   } catch (error) {
     return next(error);
@@ -182,7 +182,8 @@ router.post('/telegram/link', auth, async (req: AuthedRequest, res, next) => {
 
 router.get('/me', auth, async (req: AuthedRequest, res, next) => {
   try {
-    return res.json({ ...req.user, id: req.user!.accountId });
+    const account = await prisma.user.findUnique({ where: { id: req.user!.accountId }, select: { telegramId: true } });
+    return res.json({ ...req.user, id: req.user!.accountId, telegramLinked: Boolean(account?.telegramId) });
   } catch (error) {
     return next(error);
   }
