@@ -2,7 +2,7 @@ name: nummioX CI
 
 on:
   push:
-    branches: [feature/personal-finance-rework, feature/telegram-mini-app, feature/nummiox-branding, feature/household-collaboration]
+    branches: [feature/personal-finance-rework, feature/telegram-mini-app, feature/nummiox-branding, feature/household-collaboration, feature/nummiox-ui-polish]
   pull_request:
     branches: [main, feature/telegram-mini-app, feature/nummiox-branding, feature/household-collaboration]
 

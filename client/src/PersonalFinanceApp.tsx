@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, getToken, setToken } from './lib/api';
 import './personalFinance.css';
 
@@ -28,6 +28,15 @@ type Dashboard = {
   nextPayments: ObligationOccurrence[];
 };
 type Tab = 'overview' | 'income' | 'expenses' | 'obligations' | 'calendar' | 'analytics' | 'budgets' | 'family' | 'settings';
+type ActionDialog = {
+  kind: 'confirm' | 'prompt';
+  title: string;
+  message: string;
+  initialValue?: string;
+  inputType?: 'text' | 'number';
+  destructive?: boolean;
+  submitLabel?: string;
+};
 
 const PF = '/personal-finance';
 const translations: Record<string, { ru: string; en: string }> = {
@@ -72,6 +81,39 @@ function dateLabel(value: string, lang: Lang) {
 }
 
 export default function PersonalFinanceApp() {
+  const [actionDialog, setActionDialog] = useState<ActionDialog | null>(null);
+  const [actionDialogValue, setActionDialogValue] = useState('');
+  const actionDialogResolver = useRef<((value: boolean | string | null) => void) | null>(null);
+
+  function finishActionDialog(value: boolean | string | null) {
+    const resolve = actionDialogResolver.current;
+    actionDialogResolver.current = null;
+    setActionDialog(null);
+    resolve?.(value);
+  }
+
+  function confirmAction(message: string, title = (lang === 'ru' ? 'Подтвердите действие' : 'Confirm action')): Promise<boolean> {
+    return new Promise(resolve => {
+      setActionDialogValue('');
+      actionDialogResolver.current = value => resolve(value === true);
+      setActionDialog({ kind: 'confirm', title, message, destructive: true });
+    });
+  }
+
+  function promptAction(
+    message: string,
+    initialValue = '',
+    title = (lang === 'ru' ? 'Введите значение' : 'Enter a value'),
+    inputType: 'text' | 'number' = 'text',
+    submitLabel = (lang === 'ru' ? 'Сохранить' : 'Save')
+  ): Promise<string | null> {
+    return new Promise(resolve => {
+      setActionDialogValue(initialValue);
+      actionDialogResolver.current = value => resolve(typeof value === 'string' ? value : null);
+      setActionDialog({ kind: 'prompt', title, message, inputType, submitLabel });
+    });
+  }
+
   const [lang, setLang] = useState<Lang>('ru');
   const [timezone, setTimezone] = useState('Europe/Moscow');
   const [openingBalance, setOpeningBalance] = useState('0');
@@ -298,7 +340,7 @@ export default function PersonalFinanceApp() {
     finally { setBusy(false); }
   }
   async function markReceived(id: string, plannedAmount: number | string) {
-    const rawAmount = window.prompt(lang === 'ru' ? 'Сколько фактически получено, ₽?' : 'How much was actually received, RUB?', String(plannedAmount));
+    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму, которая действительно поступила.' : 'Enter the amount that was actually received.', String(plannedAmount), lang === 'ru' ? 'Подтверждение поступления' : 'Confirm received income', 'number', lang === 'ru' ? 'Подтвердить поступление' : 'Confirm receipt');
     if (rawAmount === null) return;
     const actualAmount = Number(rawAmount.trim().replace(',', '.'));
     if (!Number.isFinite(actualAmount) || actualAmount <= 0) { setError(lang === 'ru' ? 'Введите положительную фактическую сумму.' : 'Enter a positive actual amount.'); return; }
@@ -314,7 +356,7 @@ export default function PersonalFinanceApp() {
   async function skipIncomeEntry(id: string) { setBusy(true); try { await api(`${PF}/income-entries/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'SKIPPED' }) }); await refresh(); setNotice(lang === 'ru' ? 'Плановое поступление пропущено.' : 'Planned income skipped.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function restoreIncomeEntry(id: string) { setBusy(true); try { await api(`${PF}/income-entries/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'PLANNED' }) }); await refresh(); setNotice(lang === 'ru' ? 'Поступление возвращено в план.' : 'Income entry restored to plan.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function deleteOneTimeIncome(id: string) {
-    if (!window.confirm(lang === 'ru' ? 'Удалить это плановое поступление? Полученные доходы удалить нельзя.' : 'Delete this planned income? Received income cannot be deleted.')) return;
+    if (!(await confirmAction(lang === 'ru' ? 'Плановое поступление будет удалено. Полученные доходы не затрагиваются.' : 'This planned income entry will be deleted. Received income is not affected.', lang === 'ru' ? 'Удалить поступление?' : 'Delete income entry?'))) return;
     setBusy(true); setError('');
     try {
       await api(`${PF}/income-entries/${id}`, { method: 'DELETE' });
@@ -326,17 +368,17 @@ export default function PersonalFinanceApp() {
   async function reactivateIncomeSource(id: string) { setBusy(true); try { await api(`${PF}/income-sources/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: true }) }); await refresh(); setNotice(lang === 'ru' ? 'Источник дохода восстановлен, будущие поступления добавлены в план.' : 'Income source restored and future entries scheduled.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function reactivateObligation(id: string) { setBusy(true); try { await api(`${PF}/obligations/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: true }) }); await refresh(); setNotice(lang === 'ru' ? 'Обязательство восстановлено, будущие платежи добавлены в график.' : 'Obligation restored and future payments scheduled.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function deleteIncomeSource(id: string) {
-    if (!window.confirm(lang === 'ru' ? 'Отключить этот источник дохода и отменить будущие поступления?' : 'Archive this income source and skip future entries?')) return;
+    if (!(await confirmAction(lang === 'ru' ? 'Источник будет архивирован, а будущие поступления по нему перестанут планироваться.' : 'This income source will be archived and future entries will no longer be scheduled.', lang === 'ru' ? 'Архивировать источник дохода?' : 'Archive income source?'))) return;
     setBusy(true); try { await api(`${PF}/income-sources/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
   async function deleteObligation(id: string) {
-    if (!window.confirm(lang === 'ru' ? 'Отключить это обязательство?' : 'Archive this obligation?')) return;
+    if (!(await confirmAction(lang === 'ru' ? 'Обязательство будет архивировано. История платежей сохранится.' : 'This obligation will be archived. Payment history will remain.', lang === 'ru' ? 'Архивировать обязательство?' : 'Archive obligation?'))) return;
     setBusy(true); try { await api(`${PF}/obligations/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
   async function skipObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/skip`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function restoreObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/restore`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); setNotice(lang === 'ru' ? 'Платёж возвращён в график.' : 'Payment restored to schedule.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function markPaid(id: string, plannedAmount: number | string) {
-    const rawAmount = window.prompt(lang === 'ru' ? 'Сколько фактически заплатили, ₽?' : 'How much was actually paid, RUB?', String(plannedAmount));
+    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму, которую действительно заплатили.' : 'Enter the amount that was actually paid.', String(plannedAmount), lang === 'ru' ? 'Подтверждение оплаты' : 'Confirm payment', 'number', lang === 'ru' ? 'Подтвердить оплату' : 'Confirm payment');
     if (rawAmount === null) return;
     const actualAmount = Number(rawAmount.trim().replace(',', '.'));
     if (!Number.isFinite(actualAmount) || actualAmount <= 0) { setError(lang === 'ru' ? 'Введите положительную фактическую сумму.' : 'Enter a positive actual amount.'); return; }
@@ -345,11 +387,11 @@ export default function PersonalFinanceApp() {
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
   async function removeExpense(id: string) {
-    if (!window.confirm(lang === 'ru' ? 'Удалить этот расход?' : 'Delete this expense?')) return;
+    if (!(await confirmAction(lang === 'ru' ? 'Расход будет удалён из финансовой истории.' : 'This expense will be removed from your financial history.', lang === 'ru' ? 'Удалить расход?' : 'Delete expense?'))) return;
     setBusy(true); try { await api(`${PF}/expenses/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
-  async function renameMember(member: Member) { const name = window.prompt(lang === 'ru' ? 'Имя участника' : 'Member name', member.name); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
-  async function archiveMember(member: Member) { if (!window.confirm(lang === 'ru' ? 'Убрать участника из списка? Старые операции сохранят привязку.' : 'Archive this member? Historical transactions keep the attribution.')) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); await refresh(); if (filterMember === member.id) setFilterMember('all'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function renameMember(member: Member) { const name = await promptAction(lang === 'ru' ? 'Укажи новое имя участника.' : 'Enter the member’s new name.', member.name, lang === 'ru' ? 'Изменить имя участника' : 'Rename member'); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function archiveMember(member: Member) { if (!(await confirmAction(lang === 'ru' ? 'Участник исчезнет из активного списка, но старые операции сохранят его привязку.' : 'This member will leave the active list, while historical transactions keep their attribution.', lang === 'ru' ? 'Архивировать участника?' : 'Archive member?'))) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); await refresh(); if (filterMember === member.id) setFilterMember('all'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function acceptPendingInvite() {
     if (!pendingInvite) return;
     const token = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
@@ -384,6 +426,7 @@ export default function PersonalFinanceApp() {
     finally { setBusy(false); }
   }
   async function revokeHouseholdInvitation(invitationId: string) {
+    if (!(await confirmAction(lang === 'ru' ? 'Ссылка перестанет работать. Уже принятые приглашения это не затронет.' : 'This invitation link will stop working. Already accepted invitations are not affected.', lang === 'ru' ? 'Отозвать приглашение?' : 'Revoke invitation?'))) return;
     setBusy(true); setError('');
     try {
       await api('/household/invitations/' + encodeURIComponent(invitationId), { method: 'DELETE' });
@@ -393,7 +436,7 @@ export default function PersonalFinanceApp() {
     finally { setBusy(false); }
   }
   async function revokeHouseholdAccess(userId: string) {
-    if (!window.confirm(lang === 'ru' ? 'Отключить этому пользователю доступ к семейным финансам?' : 'Revoke this user’s access to the shared finances?')) return;
+    if (!(await confirmAction(lang === 'ru' ? 'Пользователь сразу потеряет доступ к общим доходам, расходам и другим данным семьи. История не удалится.' : 'This user will immediately lose access to shared household finances. No financial records will be deleted.', lang === 'ru' ? 'Отозвать доступ?' : 'Revoke access?'))) return;
     setBusy(true); setError('');
     try {
       await api('/household/access/' + encodeURIComponent(userId), { method: 'DELETE' });
@@ -407,11 +450,11 @@ export default function PersonalFinanceApp() {
     try { await api(`${PF}/members`, { method: 'POST', body: JSON.stringify({ name: newMemberName.trim() }) }); setNewMemberName(''); await refresh(); }
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
-  async function deleteBudget(id: string) { setBusy(true); try { await api(`${PF}/budgets/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
-  async function deleteGoal(id: string) { setBusy(true); try { await api(`${PF}/savings-goals/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
-  async function addGoalContribution(goal: SavingsGoal) { const raw = window.prompt(lang === 'ru' ? 'Сколько добавить к накоплениям?' : 'How much would you like to add?'); if (raw === null) return; const amount = Number(raw); if (!Number.isFinite(amount) || amount <= 0) { setError(lang === 'ru' ? 'Введите положительную сумму.' : 'Enter a positive amount.'); return; } setBusy(true); try { await api(`${PF}/savings-goals/${goal.id}`, { method: 'PATCH', body: JSON.stringify({ currentAmount: Number(goal.currentAmount) + amount, status: Number(goal.currentAmount) + amount >= Number(goal.targetAmount) ? 'COMPLETED' : 'ACTIVE' }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
-  async function renameCategory(category: Category) { const name = window.prompt(lang === 'ru' ? 'Новое название категории' : 'New category name', category.name); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/categories/${category.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
-  async function archiveCategory(category: Category) { if (!window.confirm(lang === 'ru' ? 'Архивировать категорию? Старые расходы сохранят её.' : 'Archive this category? Historical expenses will keep it.')) return; setBusy(true); try { await api(`${PF}/categories/${category.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); if (filterCategory === category.id) setFilterCategory('all'); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function deleteBudget(id: string) { if (!(await confirmAction(lang === 'ru' ? 'Бюджет и его лимит будут удалены.' : 'This budget and its limit will be deleted.', lang === 'ru' ? 'Удалить бюджет?' : 'Delete budget?'))) return; setBusy(true); try { await api(`${PF}/budgets/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function deleteGoal(id: string) { if (!(await confirmAction(lang === 'ru' ? 'Цель накопления и её текущий прогресс будут удалены.' : 'This savings goal and its current progress will be deleted.', lang === 'ru' ? 'Удалить цель?' : 'Delete savings goal?'))) return; setBusy(true); try { await api(`${PF}/savings-goals/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function addGoalContribution(goal: SavingsGoal) { const raw = await promptAction(lang === 'ru' ? 'Укажи сумму пополнения цели.' : 'Enter the amount to add to this goal.', '', lang === 'ru' ? 'Пополнить накопления' : 'Add to savings', 'number', lang === 'ru' ? 'Пополнить' : 'Add funds'); if (raw === null) return; const amount = Number(raw); if (!Number.isFinite(amount) || amount <= 0) { setError(lang === 'ru' ? 'Введите положительную сумму.' : 'Enter a positive amount.'); return; } setBusy(true); try { await api(`${PF}/savings-goals/${goal.id}`, { method: 'PATCH', body: JSON.stringify({ currentAmount: Number(goal.currentAmount) + amount, status: Number(goal.currentAmount) + amount >= Number(goal.targetAmount) ? 'COMPLETED' : 'ACTIVE' }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function renameCategory(category: Category) { const name = await promptAction(lang === 'ru' ? 'Укажи новое название категории.' : 'Enter the category’s new name.', category.name, lang === 'ru' ? 'Переименовать категорию' : 'Rename category'); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/categories/${category.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function archiveCategory(category: Category) { if (!(await confirmAction(lang === 'ru' ? 'Категория исчезнет из активного списка, но останется в старых расходах.' : 'This category will leave the active list but remain attached to historical expenses.', lang === 'ru' ? 'Архивировать категорию?' : 'Archive category?'))) return; setBusy(true); try { await api(`${PF}/categories/${category.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); if (filterCategory === category.id) setFilterCategory('all'); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function addCategory(event: FormEvent) {
     event.preventDefault(); const name = newCategoryName.trim(); if (!name) return;
     const slug = name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `category-${Date.now()}`;
@@ -687,6 +730,26 @@ export default function PersonalFinanceApp() {
         </section>
       </div>}
       <footer className="pf-footer">nummioX <span>·</span> {lang === 'ru' ? 'Семейные финансы без догадок' : 'Family finances, without guesswork'}</footer>
+      {actionDialog && <div className="pf-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) finishActionDialog(actionDialog.kind === 'confirm' ? false : null); }} onKeyDown={event => { if (event.key === 'Escape') finishActionDialog(actionDialog.kind === 'confirm' ? false : null); }}>
+        <section className="pf-dialog" role="dialog" aria-modal="true" aria-labelledby="pf-dialog-title" aria-describedby="pf-dialog-message">
+          <div className={`pf-dialog-mark ${actionDialog.destructive ? 'danger' : ''}`} aria-hidden="true">{actionDialog.kind === 'prompt' ? '✎' : '!'}</div>
+          <div className="pf-dialog-copy">
+            <span className="pf-eyebrow">{actionDialog.kind === 'prompt' ? (lang === 'ru' ? 'ДАННЫЕ ОПЕРАЦИИ' : 'TRANSACTION DETAILS') : (lang === 'ru' ? 'ПРОВЕРЬ ДЕЙСТВИЕ' : 'PLEASE CONFIRM')}</span>
+            <h2 id="pf-dialog-title">{actionDialog.title}</h2>
+            <p id="pf-dialog-message">{actionDialog.message}</p>
+          </div>
+          <form onSubmit={event => { event.preventDefault(); finishActionDialog(actionDialog.kind === 'prompt' ? actionDialogValue : true); }}>
+            {actionDialog.kind === 'prompt' && <label className="pf-dialog-field">
+              <span>{actionDialog.inputType === 'number' ? (lang === 'ru' ? 'Сумма, ₽' : 'Amount, RUB') : (lang === 'ru' ? 'Название' : 'Name')}</span>
+              <input autoFocus type={actionDialog.inputType ?? 'text'} inputMode={actionDialog.inputType === 'number' ? 'decimal' : 'text'} step={actionDialog.inputType === 'number' ? '0.01' : undefined} min={actionDialog.inputType === 'number' ? '0.01' : undefined} value={actionDialogValue} onChange={event => setActionDialogValue(event.target.value)} />
+            </label>}
+            <div className="pf-dialog-actions">
+              <button type="button" autoFocus={actionDialog.kind === 'confirm'} className="pf-button ghost" onClick={() => finishActionDialog(actionDialog.kind === 'confirm' ? false : null)}>{tr(lang, 'cancel')}</button>
+              <button type="submit" className={`pf-button ${actionDialog.destructive ? 'danger' : 'primary'}`}>{actionDialog.kind === 'prompt' ? (actionDialog.submitLabel ?? (lang === 'ru' ? 'Сохранить' : 'Save')) : (lang === 'ru' ? 'Подтвердить' : 'Confirm')}</button>
+            </div>
+          </form>
+        </section>
+      </div>}
     </main>
   </div>;
 }
