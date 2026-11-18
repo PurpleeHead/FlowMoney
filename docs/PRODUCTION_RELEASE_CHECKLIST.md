@@ -14,6 +14,7 @@ The following items are verified on staging only. They do not certify or authori
 - [x] Isolated server and client production dependency audits report zero vulnerabilities.
 - [x] RLS is enabled on all 19 public tables; `anon` and `authenticated` have no public-schema/table access.
 - [x] All 11 previously missing foreign-key indexes are present; Supabase no longer reports unindexed foreign keys.
+- [x] Household invitations can be opened in a normal browser without a configured Telegram bot; Telegram deep links remain optional and deferred.
 
 **Known non-blocking item:** the full development-toolchain audit still reports 5 high-severity findings (0 critical) in build/test dependencies. The isolated production dependency trees remain clean. A forced downgrade of Vitest introduced critical advisories, so it was not applied.
 
