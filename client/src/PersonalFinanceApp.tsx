@@ -35,6 +35,7 @@ type ActionDialog = {
   initialValue?: string;
   inputType?: 'text' | 'number';
   destructive?: boolean;
+  submitLabel?: string;
 };
 
 const PF = '/personal-finance';
@@ -103,12 +104,13 @@ export default function PersonalFinanceApp() {
     message: string,
     initialValue = '',
     title = (lang === 'ru' ? 'Введите значение' : 'Enter a value'),
-    inputType: 'text' | 'number' = 'text'
+    inputType: 'text' | 'number' = 'text',
+    submitLabel = (lang === 'ru' ? 'Сохранить' : 'Save')
   ): Promise<string | null> {
     return new Promise(resolve => {
       setActionDialogValue(initialValue);
       actionDialogResolver.current = value => resolve(typeof value === 'string' ? value : null);
-      setActionDialog({ kind: 'prompt', title, message, inputType });
+      setActionDialog({ kind: 'prompt', title, message, inputType, submitLabel });
     });
   }
 
@@ -338,7 +340,7 @@ export default function PersonalFinanceApp() {
     finally { setBusy(false); }
   }
   async function markReceived(id: string, plannedAmount: number | string) {
-    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму, которая действительно поступила.' : 'Enter the amount that was actually received.', String(plannedAmount), lang === 'ru' ? 'Подтверждение поступления' : 'Confirm received income', 'number');
+    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму, которая действительно поступила.' : 'Enter the amount that was actually received.', String(plannedAmount), lang === 'ru' ? 'Подтверждение поступления' : 'Confirm received income', 'number', lang === 'ru' ? 'Подтвердить поступление' : 'Confirm receipt');
     if (rawAmount === null) return;
     const actualAmount = Number(rawAmount.trim().replace(',', '.'));
     if (!Number.isFinite(actualAmount) || actualAmount <= 0) { setError(lang === 'ru' ? 'Введите положительную фактическую сумму.' : 'Enter a positive actual amount.'); return; }
@@ -376,7 +378,7 @@ export default function PersonalFinanceApp() {
   async function skipObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/skip`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function restoreObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/restore`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); setNotice(lang === 'ru' ? 'Платёж возвращён в график.' : 'Payment restored to schedule.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function markPaid(id: string, plannedAmount: number | string) {
-    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму, которую действительно заплатили.' : 'Enter the amount that was actually paid.', String(plannedAmount), lang === 'ru' ? 'Подтверждение оплаты' : 'Confirm payment', 'number');
+    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму, которую действительно заплатили.' : 'Enter the amount that was actually paid.', String(plannedAmount), lang === 'ru' ? 'Подтверждение оплаты' : 'Confirm payment', 'number', lang === 'ru' ? 'Подтвердить оплату' : 'Confirm payment');
     if (rawAmount === null) return;
     const actualAmount = Number(rawAmount.trim().replace(',', '.'));
     if (!Number.isFinite(actualAmount) || actualAmount <= 0) { setError(lang === 'ru' ? 'Введите положительную фактическую сумму.' : 'Enter a positive actual amount.'); return; }
@@ -450,7 +452,7 @@ export default function PersonalFinanceApp() {
   }
   async function deleteBudget(id: string) { if (!(await confirmAction(lang === 'ru' ? 'Бюджет и его лимит будут удалены.' : 'This budget and its limit will be deleted.', lang === 'ru' ? 'Удалить бюджет?' : 'Delete budget?'))) return; setBusy(true); try { await api(`${PF}/budgets/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function deleteGoal(id: string) { if (!(await confirmAction(lang === 'ru' ? 'Цель накопления и её текущий прогресс будут удалены.' : 'This savings goal and its current progress will be deleted.', lang === 'ru' ? 'Удалить цель?' : 'Delete savings goal?'))) return; setBusy(true); try { await api(`${PF}/savings-goals/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
-  async function addGoalContribution(goal: SavingsGoal) { const raw = await promptAction(lang === 'ru' ? 'Укажи сумму пополнения цели.' : 'Enter the amount to add to this goal.', '', lang === 'ru' ? 'Пополнить накопления' : 'Add to savings', 'number'); if (raw === null) return; const amount = Number(raw); if (!Number.isFinite(amount) || amount <= 0) { setError(lang === 'ru' ? 'Введите положительную сумму.' : 'Enter a positive amount.'); return; } setBusy(true); try { await api(`${PF}/savings-goals/${goal.id}`, { method: 'PATCH', body: JSON.stringify({ currentAmount: Number(goal.currentAmount) + amount, status: Number(goal.currentAmount) + amount >= Number(goal.targetAmount) ? 'COMPLETED' : 'ACTIVE' }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function addGoalContribution(goal: SavingsGoal) { const raw = await promptAction(lang === 'ru' ? 'Укажи сумму пополнения цели.' : 'Enter the amount to add to this goal.', '', lang === 'ru' ? 'Пополнить накопления' : 'Add to savings', 'number', lang === 'ru' ? 'Пополнить' : 'Add funds'); if (raw === null) return; const amount = Number(raw); if (!Number.isFinite(amount) || amount <= 0) { setError(lang === 'ru' ? 'Введите положительную сумму.' : 'Enter a positive amount.'); return; } setBusy(true); try { await api(`${PF}/savings-goals/${goal.id}`, { method: 'PATCH', body: JSON.stringify({ currentAmount: Number(goal.currentAmount) + amount, status: Number(goal.currentAmount) + amount >= Number(goal.targetAmount) ? 'COMPLETED' : 'ACTIVE' }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function renameCategory(category: Category) { const name = await promptAction(lang === 'ru' ? 'Укажи новое название категории.' : 'Enter the category’s new name.', category.name, lang === 'ru' ? 'Переименовать категорию' : 'Rename category'); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/categories/${category.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function archiveCategory(category: Category) { if (!(await confirmAction(lang === 'ru' ? 'Категория исчезнет из активного списка, но останется в старых расходах.' : 'This category will leave the active list but remain attached to historical expenses.', lang === 'ru' ? 'Архивировать категорию?' : 'Archive category?'))) return; setBusy(true); try { await api(`${PF}/categories/${category.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); if (filterCategory === category.id) setFilterCategory('all'); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function addCategory(event: FormEvent) {
@@ -743,7 +745,7 @@ export default function PersonalFinanceApp() {
             </label>}
             <div className="pf-dialog-actions">
               <button type="button" autoFocus={actionDialog.kind === 'confirm'} className="pf-button ghost" onClick={() => finishActionDialog(actionDialog.kind === 'confirm' ? false : null)}>{tr(lang, 'cancel')}</button>
-              <button type="submit" className={`pf-button ${actionDialog.destructive ? 'danger' : 'primary'}`}>{actionDialog.kind === 'prompt' ? (lang === 'ru' ? 'Продолжить' : 'Continue') : (lang === 'ru' ? 'Подтвердить' : 'Confirm')}</button>
+              <button type="submit" className={`pf-button ${actionDialog.destructive ? 'danger' : 'primary'}`}>{actionDialog.kind === 'prompt' ? (actionDialog.submitLabel ?? (lang === 'ru' ? 'Сохранить' : 'Save')) : (lang === 'ru' ? 'Подтвердить' : 'Confirm')}</button>
             </div>
           </form>
         </section>
