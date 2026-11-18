@@ -65,7 +65,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(overlongAsciiPassword.status, 400, 'passwords over bcrypt’s 72-byte limit must be rejected');
     const overlongUtf8Password = await post('/api/auth/register', {
       email: `flowmoney-test-overlong-utf8-${suffix}@example.test`,
-      password: 'я'.repeat(25),
+      password: 'я'.repeat(37),
     });
     assert.equal(overlongUtf8Password.status, 400, 'the password limit must count UTF-8 bytes, not JavaScript characters');
 
