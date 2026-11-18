@@ -13,11 +13,17 @@ test('household invitations share finances, isolate other accounts and revoke ac
   const address = server.address() as AddressInfo;
   const base = `http://127.0.0.1:${address.port}`;
 
+  let invitationRequestIp = 1;
   const request = (path: string, method = 'GET', body?: unknown, token?: string) => fetch(base + path, {
     method,
     headers: {
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
+      // Keep the integration test focused on household behavior rather than
+      // exhausting the production per-IP invitation creation rate limit.
+      ...(path === '/api/household/invitations' && method === 'POST'
+        ? { 'x-forwarded-for': `198.51.100.${invitationRequestIp++}` }
+        : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
