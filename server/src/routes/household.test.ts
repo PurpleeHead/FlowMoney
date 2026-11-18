@@ -147,6 +147,29 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const memberInviteAttempt = await request('/api/household/invitations', 'POST', { memberId: reservedProfile.id }, spouse.token);
     assert.equal(memberInviteAttempt.status, 403, 'only the household owner can invite users');
 
+    // Built-in categories use stable IDs (e.g. "system-category-groceries"),
+    // not Prisma CUIDs. They must be accepted just like user-created categories.
+    const systemCategoryExpense = await request('/api/personal-finance/expenses', 'POST', {
+      title: 'Groceries with built-in category',
+      amount: 1800,
+      date: '2026-11-11',
+      categoryId: 'system-category-groceries',
+      memberId: wifeProfile.id,
+    }, owner.token);
+    assert.equal(systemCategoryExpense.status, 201, 'built-in system category IDs must pass expense validation');
+    const systemCategoryExpenseBody = await systemCategoryExpense.json() as { categoryId: string | null };
+    assert.equal(systemCategoryExpenseBody.categoryId, 'system-category-groceries');
+
+    const systemCategoryBudget = await request('/api/personal-finance/budgets', 'POST', {
+      periodMonth: '2026-11-01',
+      limitAmount: 5000,
+      categoryId: 'system-category-groceries',
+      memberId: wifeProfile.id,
+    }, owner.token);
+    assert.ok([200, 201].includes(systemCategoryBudget.status), 'built-in system category IDs must pass budget validation');
+    const systemCategoryBudgetBody = await systemCategoryBudget.json() as { categoryId: string | null };
+    assert.equal(systemCategoryBudgetBody.categoryId, 'system-category-groceries');
+
     const expense = await request('/api/personal-finance/expenses', 'POST', {
       title: 'Shared groceries', amount: 2450, date: '2026-11-11', memberId: wifeProfile.id,
     }, owner.token);
