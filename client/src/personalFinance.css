@@ -442,3 +442,11 @@ button:disabled { cursor: not-allowed; opacity: .56; }
   .receipt-panel { padding: 14px; }
   .receipt-panel .detected-row { grid-template-columns: minmax(0,1fr); }
 }
+
+
+.pf-status-pill {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  min-height: 29px; padding: 0 11px; border-radius: 20px;
+  background: var(--pf-accent-soft); color: var(--pf-accent);
+  font-size: 10px; font-weight: 800;
+}
