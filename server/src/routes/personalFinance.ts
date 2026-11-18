@@ -844,12 +844,15 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
       prisma.incomeEntry.findMany({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedRange.from, lt: receivedRange.toExclusive } }, include: { member: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...(memberId ? { obligation: { is: { memberId: memberId === 'shared' ? null : memberId } } } : {}), dueDate: { gte: from, lte: to }, status: { not: 'SKIPPED' } }, include: { obligation: true } }),
     ]);
-    const categoryTotals = new Map<string, number>();
+    const categoryTotals = new Map<string, { id: string; slug: string; name: string; amount: number }>();
     const memberTotals = new Map<string, { id: string | null; name: string; income: number; expenses: number }>();
     const monthTotals = new Map<string, { income: number; expenses: number }>();
     for (const item of expenses) {
-      const category = item.category?.name ?? 'Uncategorized';
-      categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + Number(item.amount));
+      const categoryId = item.category?.id ?? 'uncategorized';
+      const slug = item.category?.slug ?? 'uncategorized';
+      const category = categoryTotals.get(categoryId) ?? { id: categoryId, slug, name: item.category?.name ?? 'Uncategorized', amount: 0 };
+      category.amount += Number(item.amount);
+      categoryTotals.set(categoryId, category);
       const id = item.memberId ?? null, key = id ?? '__shared__', name = item.member?.name ?? 'Shared';
       const totals = memberTotals.get(key) ?? { id, name, income: 0, expenses: 0 };
       totals.expenses += Number(item.amount); memberTotals.set(key, totals);
@@ -865,7 +868,7 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
     }
     return res.json({
       totals: { income: incomes.reduce((sum, item) => sum + Number(item.actualAmount ?? 0), 0), expenses: expenses.reduce((sum, item) => sum + Number(item.amount), 0), obligations: obligations.reduce((sum, item) => sum + Number(item.status === 'PAID' ? (item.actualAmount ?? item.plannedAmount) : item.plannedAmount), 0) },
-      categories: [...categoryTotals].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
+      categories: [...categoryTotals.values()].sort((a, b) => b.amount - a.amount),
       members: [...memberTotals.values()].map(totals => ({ ...totals, net: totals.income - totals.expenses })).sort((a, b) => a.name.localeCompare(b.name)),
       months: [...monthTotals].sort((a, b) => a[0].localeCompare(b[0])).map(([month, totals]) => ({ month, ...totals, net: totals.income - totals.expenses })),
     });

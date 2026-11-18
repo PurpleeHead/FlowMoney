@@ -450,3 +450,34 @@ button:disabled { cursor: not-allowed; opacity: .56; }
   background: var(--pf-accent-soft); color: var(--pf-accent);
   font-size: 10px; font-weight: 800;
 }
+
+
+/* Analytics: keep long localized labels readable without colliding with amounts. */
+.pf-analytics .pf-category-bar > div:first-child {
+  align-items: flex-start;
+}
+.pf-analytics .pf-category-bar > div:first-child > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.pf-analytics .pf-category-bar > div:first-child > b {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.pf-analytics .pf-list-row > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pf-analytics .pf-list-row small,
+.pf-analytics .pf-trend-row small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.pf-analytics .pf-trend-label > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
