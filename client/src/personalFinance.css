@@ -161,3 +161,86 @@ button{cursor:pointer}
 .pf-invite-summary small {
   color: var(--pf-muted, #a6a1b6);
 }
+
+
+/* Consistent in-app confirmation and input dialogs. */
+.pf-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: max(18px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom));
+  background: rgba(7, 6, 13, .76);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: pf-dialog-fade .16s ease-out;
+}
+.pf-dialog {
+  width: min(100%, 440px);
+  min-width: 0;
+  padding: 26px;
+  border: 1px solid rgba(190, 170, 255, .18);
+  border-radius: 22px;
+  background: linear-gradient(145deg, #211c30, #15121f 72%);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .58), 0 0 0 1px rgba(255,255,255,.025) inset;
+  animation: pf-dialog-rise .2s ease-out;
+}
+.pf-dialog-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 18px;
+  border: 1px solid rgba(167,139,250,.25);
+  border-radius: 14px;
+  background: rgba(139,108,238,.14);
+  color: #c7b5ff;
+  font: 800 20px Manrope, sans-serif;
+}
+.pf-dialog-mark.danger {
+  color: #ffabb5;
+  border-color: rgba(255,135,150,.25);
+  background: rgba(255,135,150,.1);
+}
+.pf-dialog-copy h2 { margin: 7px 0 9px; color: #f7f3ff; font: 700 20px Manrope, sans-serif; letter-spacing: -.35px; overflow-wrap: anywhere; }
+.pf-dialog-copy p { margin: 0 0 20px; color: #aaa2bd; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.pf-dialog-field { display: grid; gap: 8px; margin: 0 0 20px; color: #c9c1d9; font-size: 12px; font-weight: 600; }
+.pf-dialog-field input { width: 100%; min-width: 0; border: 1px solid rgba(255,255,255,.13); border-radius: 11px; padding: 13px 14px; background: #100e19; color: #fff; outline: none; font: inherit; font-size: 16px; }
+.pf-dialog-field input:focus { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.13); }
+.pf-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.pf-dialog-actions .pf-button { min-width: 116px; }
+.pf-button.danger { color: #fff; background: linear-gradient(135deg, #d65c72, #a83d56); box-shadow: 0 7px 22px rgba(190,66,86,.18); }
+.pf-button.danger:hover { filter: brightness(1.08); }
+@keyframes pf-dialog-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pf-dialog-rise { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* Layout containment: prevent long values and nested grids from widening the viewport. */
+html, body, #root { width: 100%; max-width: 100%; }
+.pf-shell, .pf-main, .pf-page, .pf-card, .pf-two-col > *, .pf-balance-grid > *, .pf-metric-grid > * { min-width: 0; }
+.pf-shell { width: 100%; max-width: 100%; }
+.pf-main { width: min(100%, 1500px); }
+.pf-topbar, .pf-card-heading, .pf-list-row, .pf-goal > div:first-child, .pf-goal-bottom { min-width: 0; }
+.pf-topbar h1, .pf-card-heading h2, .pf-list-row strong, .pf-list-row small, .pf-goal strong { overflow-wrap: anywhere; }
+.pf-list-row > *, .pf-row-action { min-width: 0; }
+.pf-row-action { flex-wrap: wrap; }
+.pf-form, .pf-inline-form, .pf-setting-row, .pf-opening-fields, .pf-invite-link { min-width: 0; }
+.pf-form input, .pf-form select, .pf-inline-form input, .pf-setting-row select { max-width: 100%; }
+.pf-calendar-day { min-width: 0; overflow: hidden; }
+.pf-calendar-day > span { overflow-wrap: anywhere; }
+@media (max-width: 680px) {
+  .pf-main { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .pf-topbar { align-items: flex-start; }
+  .pf-card-heading { align-items: flex-start; flex-wrap: wrap; }
+  .pf-list-row { align-items: flex-start; }
+  .pf-list-row > div:first-child { flex: 1 1 150px; }
+  .pf-row-action { flex: 0 1 auto; }
+  .pf-dialog { padding: 22px 19px; border-radius: 18px; }
+}
+@media (max-width: 380px) {
+  .pf-main { padding-left: 10px; padding-right: 10px; }
+  .pf-card { padding: 14px; }
+  .pf-metric-grid article { padding: 11px; }
+  .pf-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .pf-dialog-actions .pf-button { min-width: 0; padding-left: 9px; padding-right: 9px; }
+}
