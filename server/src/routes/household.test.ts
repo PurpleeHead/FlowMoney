@@ -50,6 +50,12 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const invite = await inviteResponse.json() as { inviteLink: string; id: string };
     const inviteToken = new URL(invite.inviteLink).searchParams.get('startapp');
     assert.ok(inviteToken);
+    // A second invitation for the same profile can exist before the first is accepted.
+    const duplicateProfileInviteResponse = await request('/api/household/invitations', 'POST', { memberId: wifeProfile.id }, owner.token);
+    assert.equal(duplicateProfileInviteResponse.status, 201);
+    const duplicateProfileInvite = await duplicateProfileInviteResponse.json() as { inviteLink: string };
+    const duplicateProfileToken = new URL(duplicateProfileInvite.inviteLink).searchParams.get('startapp');
+    assert.ok(duplicateProfileToken);
 
     const previewResponse = await request('/api/household/invitations/preview?token=' + encodeURIComponent(inviteToken), 'GET', undefined, spouse.token);
     assert.equal(previewResponse.status, 200);
@@ -61,6 +67,12 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(accepted.status, 200);
     const acceptedBody = await accepted.json() as { householdName: string; memberName: string };
     assert.equal(acceptedBody.memberName, 'Wife');
+
+    const duplicateProfileAccount = await register('duplicate-profile');
+    const duplicateProfileAccept = await request('/api/household/invitations/accept', 'POST', {
+      token: duplicateProfileToken,
+    }, duplicateProfileAccount.token);
+    assert.equal(duplicateProfileAccept.status, 409, 'one household profile must not be assigned to two active accounts');
 
     // Personal display preferences are per account, while the opening balance is shared
     // and may only be changed by the household owner.
@@ -98,6 +110,24 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(sharedFromSpouse.status, 200);
     const sharedData = await sharedFromSpouse.json() as { expenses: Array<{ title: string }> };
     assert.ok(sharedData.expenses.some(item => item.title === 'Shared groceries'));
+
+    // An owner with active members must not be allowed to join another household,
+    // because that would revoke their owner access and orphan the existing household.
+    const secondOwner = await register('second-owner');
+    const secondOwnerProfileResponse = await request('/api/personal-finance/members', 'POST', { name: 'Second household member' }, secondOwner.token);
+    assert.equal(secondOwnerProfileResponse.status, 201);
+    const secondOwnerProfile = await secondOwnerProfileResponse.json() as { id: string };
+    const secondOwnerInviteResponse = await request('/api/household/invitations', 'POST', { memberId: secondOwnerProfile.id }, secondOwner.token);
+    assert.equal(secondOwnerInviteResponse.status, 201);
+    const secondOwnerInvite = await secondOwnerInviteResponse.json() as { inviteLink: string };
+    const secondOwnerToken = new URL(secondOwnerInvite.inviteLink).searchParams.get('startapp');
+    assert.ok(secondOwnerToken);
+    const ownerJoinAttempt = await request('/api/household/invitations/accept', 'POST', { token: secondOwnerToken }, owner.token);
+    assert.equal(ownerJoinAttempt.status, 409, 'an owner must not orphan a household with active members');
+    const ownerHouseholdAfterBlockedJoin = await request('/api/household', 'GET', undefined, owner.token);
+    assert.equal(ownerHouseholdAfterBlockedJoin.status, 200, 'the original owner access must remain active');
+    const spouseHouseholdAfterBlockedJoin = await request('/api/household', 'GET', undefined, spouse.token);
+    assert.equal(spouseHouseholdAfterBlockedJoin.status, 200, 'the existing member must remain attached to the original household');
 
     const outsiderData = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, outsider.token);
     assert.equal(outsiderData.status, 200);

@@ -227,6 +227,29 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
       if (activeAccess && (activeAccess.role !== 'OWNER' || activeAccess.household.ownerUserId !== user.accountId)) {
         return { error: 'already-member' as const };
       }
+      if (activeAccess?.role === 'OWNER' && activeAccess.household.ownerUserId === user.accountId) {
+        const otherActiveMembers = await tx.householdAccess.count({
+          where: {
+            householdId: activeAccess.householdId,
+            revokedAt: null,
+            userId: { not: user.accountId },
+          },
+        });
+        // An owner may leave an empty personal household when joining another one,
+        // but must never orphan an existing household with active members.
+        if (otherActiveMembers > 0) return { error: 'owner-has-members' as const };
+      }
+      const assignedProfile = await tx.householdAccess.findFirst({
+        where: {
+          householdId: invite.householdId,
+          memberId: invite.memberId,
+          revokedAt: null,
+        },
+        select: { userId: true },
+      });
+      if (assignedProfile && assignedProfile.userId !== user.accountId) {
+        return { error: 'profile-occupied' as const };
+      }
 
       const [wallets, exchanges, expenses, receipts, incomeSources, incomeEntries, ledgerExpenses, obligations, obligationOccurrences, adjustments, budgets, goals, customCategories, memberProfiles, accountSettings] = await Promise.all([
         tx.wallet.count({ where: { userId: user.accountId } }),
@@ -284,6 +307,8 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
         invalid: [400, 'This invitation is invalid, expired, revoked or already used.'],
         self: [400, 'The household owner cannot accept their own invitation.'],
         'already-member': [409, 'This account already belongs to another shared household.'],
+        'owner-has-members': [409, 'The household owner cannot leave while other members still have access. Transfer ownership or remove members first.'],
+        'profile-occupied': [409, 'This household profile is already linked to an active account. Ask the owner to revoke that access before reusing the profile.'],
         'has-data': [409, 'This account already contains financial records. Join is blocked to prevent accidental data merging.'],
       } as const;
       const [status, message] = messages[accepted.error as keyof typeof messages];
