@@ -74,6 +74,12 @@ test('authentication works and household records stay isolated between accounts'
     const loggedIn = await login.json() as { token: string };
     assert.ok(loggedIn.token);
 
+    const excessiveTranslation = await post('/api/translate', {
+      text: Array.from({ length: 81 }, (_, index) => `Receipt line ${index + 1}`).join('\\n'),
+    }, first.token);
+    assert.equal(excessiveTranslation.status, 400,
+      'translation must reject excessive line counts before making outbound provider requests');
+
     const createdMember = await post('/api/personal-finance/members', { name: 'First household member' }, first.token);
     assert.equal(createdMember.status, 201);
 
