@@ -106,6 +106,16 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const acceptedBody = await accepted.json() as { householdName: string; memberName: string };
     assert.equal(acceptedBody.memberName, 'Wife');
 
+    const renamedHousehold = await request('/api/household', 'PATCH', { name: 'Our family budget' }, owner.token);
+    assert.equal(renamedHousehold.status, 200, 'the owner may rename the shared household');
+    assert.equal((await renamedHousehold.json() as { name: string }).name, 'Our family budget');
+    const memberRenameAttempt = await request('/api/household', 'PATCH', { name: 'Unauthorized name' }, spouse.token);
+    assert.equal(memberRenameAttempt.status, 403, 'members cannot rename the household');
+    const invalidHouseholdName = await request('/api/household', 'PATCH', { name: '   ' }, owner.token);
+    assert.equal(invalidHouseholdName.status, 400, 'household names must not be empty');
+    const memberSeesHouseholdName = await request('/api/household', 'GET', undefined, spouse.token);
+    assert.equal((await memberSeesHouseholdName.json() as { name: string }).name, 'Our family budget');
+
     // An owner cannot assign their own access to a profile already assigned to a member.
     const occupiedOwnerProfile = await request('/api/household/profile', 'PATCH', { memberId: wifeProfile.id }, owner.token);
     assert.equal(occupiedOwnerProfile.status, 409, 'an active member profile cannot be assigned to a second account');
