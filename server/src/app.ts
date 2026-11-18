@@ -22,7 +22,11 @@ export function createApp() {
   // and express-rate-limit use the real client IP instead of rejecting X-Forwarded-For.
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
-  app.use(helmet({ contentSecurityPolicy: { directives: { scriptSrc: ["'self'", 'https://telegram.org'] } } }));
+  app.use(helmet({ contentSecurityPolicy: { directives: {
+    scriptSrc: ["'self'", 'https://telegram.org', 'https://cdn.jsdelivr.net', "'wasm-unsafe-eval'"],
+    workerSrc: ["'self'", 'blob:'],
+    connectSrc: ["'self'", 'https://cdn.jsdelivr.net'],
+  } } }));
   const allowedOrigins = new Set([process.env.CLIENT_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173', 'https://purpleehead.github.io'].filter((value): value is string => Boolean(value)));
   app.use(cors({ origin: (origin, callback) => { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error('Origin not allowed by CORS')); } }));
   app.use(express.json({ limit: '1mb' }));
