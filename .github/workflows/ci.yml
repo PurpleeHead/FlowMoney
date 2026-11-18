@@ -46,7 +46,7 @@ jobs:
       - name: Report dependency audit
         run: |
           npm audit --json > npm-audit.json || true
-          node -e "const a=require('./npm-audit.json'); console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
+          node -e "const a=require('./npm-audit.json'); const v=a.metadata?.vulnerabilities ?? {}; console.log(JSON.stringify({summary:v, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,p])=>({name,severity:p.severity,range:p.range,fixAvailable:p.fixAvailable}))},null,2)); if ((v.critical ?? 0) > 0) { console.error('Critical vulnerabilities are not allowed, including in development tooling.'); process.exit(1); }"
       - name: Audit isolated production dependency trees
         run: |
           node <<'NODE'
@@ -70,7 +70,7 @@ jobs:
             directory="/tmp/nummiox-${workspace}-production-audit"
             npm install --prefix "$directory" --package-lock-only --ignore-scripts --no-fund --no-audit
             npm audit --prefix "$directory" --json > "$directory/audit.json" || true
-            node -e "const a=require('$directory/audit.json'); console.log(JSON.stringify({workspace:'$workspace',summary:a.metadata?.vulnerabilities,packages:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))},null,2))"
+            node -e "const a=require('$directory/audit.json'); const v=a.metadata?.vulnerabilities ?? {}; console.log(JSON.stringify({workspace:'$workspace',summary:v,packages:Object.entries(a.vulnerabilities ?? {}).map(([name,p])=>({name,severity:p.severity,range:p.range,fixAvailable:p.fixAvailable}))},null,2)); if ((v.critical ?? 0) + (v.high ?? 0) + (v.moderate ?? 0) > 0) { console.error('Production dependencies must have zero moderate, high, or critical advisories.'); process.exit(1); }"
           done
       - name: Validate Prisma schema
         run: npm run db:validate
