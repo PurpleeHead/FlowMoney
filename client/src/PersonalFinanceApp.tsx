@@ -453,6 +453,33 @@ export default function PersonalFinanceApp() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Invitation could not be accepted.'); }
     finally { setBusy(false); }
   }
+  async function renameHousehold() {
+    if (!household || household.role !== 'OWNER') return;
+    const name = await promptAction(
+      lang === 'ru' ? 'Укажи новое название общего пространства.' : 'Enter a new name for the shared space.',
+      household.name,
+      lang === 'ru' ? 'Переименовать семью' : 'Rename household',
+    );
+    if (!name?.trim()) return;
+    const normalizedName = name.trim();
+    if (normalizedName.length > 80) {
+      setError(lang === 'ru' ? 'Название не должно превышать 80 символов.' : 'The name must be 80 characters or fewer.');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      const updated = await api<{ id: string; name: string }>('/household', {
+        method: 'PATCH',
+        body: JSON.stringify({ name: normalizedName }),
+      });
+      setHousehold(current => current ? { ...current, name: updated.name } : current);
+      setNotice(lang === 'ru' ? 'Название семьи обновлено.' : 'Household name updated.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not rename household.');
+    } finally {
+      setBusy(false);
+    }
+  }
   async function saveOwnerProfile() {
     setBusy(true); setError('');
     try {
@@ -749,7 +776,7 @@ export default function PersonalFinanceApp() {
       </div>}
 
       {tab === 'family' && <div className="pf-page pf-two-col">
-        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОБЩЕЕ ПРОСТРАНСТВО' : 'SHARED SPACE'}</span><h2>{household?.name ?? tr(lang, 'family')}</h2></div><span className="pf-count">{household?.members.length ?? 0}</span></div>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОБЩЕЕ ПРОСТРАНСТВО' : 'SHARED SPACE'}</span><div className="pf-row-action"><h2>{household?.name ?? tr(lang, 'family')}</h2>{household?.role === 'OWNER' && <button className="pf-edit" aria-label={lang === 'ru' ? 'Переименовать семью' : 'Rename household'} disabled={busy} onClick={renameHousehold}>✎</button>}</div></div><span className="pf-count">{household?.members.length ?? 0}</span></div>
           <p className="pf-muted">{lang === 'ru' ? 'Все участники этого пространства видят одни и те же доходы, расходы, счета, бюджеты и накопления. У каждого свой вход через Telegram.' : 'Everyone in this space shares the same income, expenses, accounts, budgets and savings. Each person signs in with their own Telegram account.'}</p>
           <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПРОФИЛИ ДЛЯ УЧЁТА' : 'ATTRIBUTION PROFILES'}</span><h2>{lang === 'ru' ? 'Кто совершил операцию' : 'Who made the transaction'}</h2></div></div>
           {household?.role === 'OWNER' && <form className="pf-inline-form" onSubmit={addMember}><label>{tr(lang, 'newMember')}<input required value={newMemberName} onChange={e => setNewMemberName(e.target.value)}/></label><button className="pf-button primary" disabled={busy}>{tr(lang, 'addMember')}</button></form>}
