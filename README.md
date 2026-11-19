@@ -55,7 +55,7 @@ npm run db:migrate
 npm run dev
 ```
 
-Set a unique `JWT_SECRET` of at least 32 characters in `server/.env`.
+Set a unique `JWT_SECRET` of at least 32 characters in `server/.env`. For password recovery, configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (an address on a verified Resend domain), and `APP_BASE_URL` (the public app origin).
 
 ## Dependency security maintenance
 
@@ -108,6 +108,6 @@ Workflow: `.github/workflows/ci.yml`.
 
 ## Security and limitations
 
-This is a manual household bookkeeping tool, not a bank integration or payment processor. All API records are scoped to the authenticated account. Household members are attribution labels in v1, not separate logins. Password reset, email verification, multi-factor authentication and a configurable household timezone remain future work.
+This is a manual household bookkeeping tool, not a bank integration or payment processor. All API records are scoped to the authenticated account. Household members are attribution labels in v1, not separate logins. Email-based password recovery is implemented with one-time, 30-minute reset links and session revocation. Sending is disabled until Resend is configured with a verified sender domain. See [docs/EMAIL_SETUP.md](docs/EMAIL_SETUP.md) for setup instructions. Email verification and multi-factor authentication remain future work.
 
 The production service and `main` branch are not changed by this feature branch. Review and explicit approval are required before merge, deployment or production database migration.
