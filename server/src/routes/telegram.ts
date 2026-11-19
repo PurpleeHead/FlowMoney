@@ -58,14 +58,20 @@ router.post('/webhook', webhookLimit, async (req, res, next) => {
   try {
     // Telegram retries webhook deliveries. A unique update ID makes command handling
     // idempotent across restarts and concurrent requests, not merely within one process.
-    await prisma.$executeRaw`DELETE FROM "TelegramBotUpdate" WHERE "receivedAt" < NOW() - INTERVAL '30 days'`;
-    const claimed = await prisma.$executeRaw`INSERT INTO "TelegramBotUpdate" ("updateId") VALUES (${updateId}) ON CONFLICT ("updateId") DO NOTHING`;
-    if (claimed === 0) return res.status(200).json({ ok: true, duplicate: true });
+    await prisma.telegramBotUpdate.deleteMany({ where: { receivedAt: { lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } });
+    try {
+      await prisma.telegramBotUpdate.create({ data: { updateId } });
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+        return res.status(200).json({ ok: true, duplicate: true });
+      }
+      throw error;
+    }
 
     try {
       await sendTelegramMessage(botToken, chatId as number, reply);
     } catch (error) {
-      await prisma.$executeRaw`DELETE FROM "TelegramBotUpdate" WHERE "updateId" = ${updateId}`;
+      await prisma.telegramBotUpdate.deleteMany({ where: { updateId } });
       throw error;
     }
     return res.status(200).json({ ok: true });
