@@ -26,7 +26,7 @@ test('only creates a Mini App button for HTTPS URLs', () => {
   const reply = buildTelegramReply('start', 'https://nummiox-staging.onrender.com');
   assert.equal(reply.replyMarkup?.inline_keyboard[0][0].web_app.url, 'https://nummiox-staging.onrender.com/');
   assert.equal(buildTelegramReply('start', 'http://localhost:5173').replyMarkup, undefined);
-  assert.match(buildTelegramReply('help').text, /уведомления появятся следующим этапом/);
+  assert.match(buildTelegramReply('help').text, /не изменяет доходы или расходы/);
   assert.match(buildTelegramReply('unknown').text, /Не понял команду/);
 });
 
