@@ -17,3 +17,17 @@ CREATE INDEX "PasswordResetToken_expiresAt_usedAt_idx" ON "PasswordResetToken"("
 
 ALTER TABLE "PasswordResetToken" ADD CONSTRAINT "PasswordResetToken_userId_fkey"
 FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Password reset tokens are accessed only by the trusted backend connection.
+ALTER TABLE "PasswordResetToken" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE "PasswordResetToken" FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON TABLE "PasswordResetToken" FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON TABLE "PasswordResetToken" FROM authenticated;
+  END IF;
+END
+$$;
