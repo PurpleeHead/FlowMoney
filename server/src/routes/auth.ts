@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { verifyTelegramInitData } from '../services/telegram.js';
+import { sendPasswordResetEmail } from '../services/email.js';
 
 const router = Router();
 const credentials = z.object({
@@ -14,10 +15,10 @@ const credentials = z.object({
   password: z.string().min(8).max(128),
 });
 
-function token(id: string, email: string, displayName?: string | null) {
+function token(id: string, email: string, displayName?: string | null, sessionVersion = 0) {
   const secret = process.env.JWT_SECRET;
   if (!secret || secret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-  return jwt.sign({ id, email, ...(displayName ? { displayName } : {}) }, secret, { expiresIn: '7d' });
+  return jwt.sign({ id, email, sessionVersion, ...(displayName ? { displayName } : {}) }, secret, { expiresIn: '7d' });
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -46,7 +47,7 @@ router.post('/register', async (req, res, next) => {
       await tx.householdAccess.create({ data: { householdId: household.id, userId: created.id, role: 'OWNER' } });
       return created;
     });
-    return res.status(201).json({ token: token(user.id, user.email), user: { id: user.id, email: user.email, telegramLinked: false } });
+    return res.status(201).json({ token: token(user.id, user.email, null, user.sessionVersion), user: { id: user.id, email: user.email, telegramLinked: false } });
   } catch (error) {
     // Two requests can pass the pre-check at once; the database unique constraint is authoritative.
     if (isUniqueConstraintError(error)) {
@@ -65,12 +66,110 @@ router.post('/login', async (req, res, next) => {
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       return res.status(401).json({ message: 'Email or password is incorrect.' });
     }
-    return res.json({ token: token(user.id, user.email), user: { id: user.id, email: user.email, telegramLinked: Boolean(user.telegramId) } });
+    return res.json({ token: token(user.id, user.email, null, user.sessionVersion), user: { id: user.id, email: user.email, telegramLinked: Boolean(user.telegramId) } });
   } catch (error) {
     return next(error);
   }
 });
 
+
+
+const resetRequestSchema = z.object({
+  email: z.string().email().max(254).transform(value => value.toLowerCase().trim()),
+});
+const resetConfirmSchema = z.object({
+  token: z.string().regex(/^[a-f0-9]{64}$/i),
+  password: z.string().min(8).max(128),
+});
+const hashResetToken = (value: string) => createHash('sha256').update(value).digest('hex');
+
+router.post('/password-reset/request', async (req, res, next) => {
+  try {
+    const parsed = resetRequestSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid email address.' });
+
+    const apiKey = process.env.RESEND_API_KEY;
+    const from = process.env.RESEND_FROM_EMAIL;
+    const appBaseUrl = process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    if (!apiKey || !from) {
+      return res.status(503).json({ message: 'Password recovery email is not configured yet.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+    // Telegram-only accounts use a synthetic address and cannot receive password recovery email.
+    if (user && !user.email.endsWith('@telegram.flowmoney.invalid')) {
+      const rawToken = randomBytes(32).toString('hex');
+      const tokenHash = hashResetToken(rawToken);
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+      await prisma.$transaction([
+        prisma.passwordResetToken.updateMany({
+          where: { userId: user.id, usedAt: null },
+          data: { usedAt: new Date() },
+        }),
+        prisma.passwordResetToken.create({
+          data: { userId: user.id, tokenHash, expiresAt },
+        }),
+      ]);
+
+      const resetUrl = new URL('/reset-password', appBaseUrl);
+      resetUrl.searchParams.set('token', rawToken);
+      try {
+        await sendPasswordResetEmail({ to: user.email, resetUrl: resetUrl.toString(), locale: user.locale === 'en' ? 'en' : 'ru' });
+      } catch (error) {
+        await prisma.passwordResetToken.updateMany({ where: { tokenHash, usedAt: null }, data: { usedAt: new Date() } });
+        console.error('Password recovery email delivery failed:', error instanceof Error ? error.message : 'Unknown email provider error');
+        return res.status(503).json({ message: 'Unable to send the recovery email right now. Please try again later.' });
+      }
+    }
+
+    return res.json({ message: 'If an account exists for this email, a password recovery link will be sent shortly.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/password-reset/confirm', async (req, res, next) => {
+  try {
+    const parsed = resetConfirmSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'The recovery link is invalid or expired.' });
+    const { token: rawToken, password } = parsed.data;
+    if (Buffer.byteLength(password, 'utf8') > 72) {
+      return res.status(400).json({ message: 'Password must not exceed 72 UTF-8 bytes.' });
+    }
+
+    const tokenHash = hashResetToken(rawToken);
+    const now = new Date();
+    const record = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      select: { id: true, userId: true, expiresAt: true, usedAt: true },
+    });
+    if (!record || record.usedAt || record.expiresAt <= now) {
+      return res.status(400).json({ message: 'The recovery link is invalid or expired.' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const consumed = await prisma.$transaction(async tx => {
+      const result = await tx.passwordResetToken.updateMany({
+        where: { id: record.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
+      if (result.count !== 1) return false;
+      await tx.user.update({
+        where: { id: record.userId },
+        data: { passwordHash, sessionVersion: { increment: 1 } },
+      });
+      await tx.passwordResetToken.updateMany({
+        where: { userId: record.userId, usedAt: null },
+        data: { usedAt: now },
+      });
+      return true;
+    });
+    if (!consumed) return res.status(400).json({ message: 'The recovery link is invalid or expired.' });
+    return res.json({ message: 'Password updated. Please sign in with your new password.' });
+  } catch (error) {
+    return next(error);
+  }
+});
 
 router.post('/telegram', async (req, res, next) => {
   try {
@@ -121,7 +220,7 @@ router.post('/telegram', async (req, res, next) => {
     });
     const displayName = user.telegramFirstName || user.telegramUsername || 'Telegram';
     return res.json({
-      token: token(user.id, user.email, displayName),
+      token: token(user.id, user.email, displayName, user.sessionVersion),
       user: { id: user.id, email: user.email, displayName, telegramLinked: true },
     });
   } catch (error) {
