@@ -555,3 +555,53 @@ button:disabled { cursor: not-allowed; opacity: .56; }
   .pf-overview-metric { min-width: 0; }
   .pf-calendar-day { min-width: 0; }
 }
+
+
+/* Mobile section navigation: keep the menu compact and swipe horizontally. */
+@media (max-width: 900px) {
+  .pf-sidebar nav {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 7px;
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 1px 7px;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 8px;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #c8d6ce transparent;
+  }
+
+  .pf-sidebar nav button {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: max-content;
+    min-height: 42px;
+    padding: 0 13px;
+    white-space: nowrap;
+    scroll-snap-align: center;
+    font-size: 11px;
+  }
+
+  .pf-sidebar nav::-webkit-scrollbar { height: 3px; }
+  .pf-sidebar nav::-webkit-scrollbar-thumb { background: #c8d6ce; border-radius: 99px; }
+}
+
+@media (max-width: 480px) {
+  .pf-sidebar { padding-left: 12px; padding-right: 12px; }
+  .pf-sidebar nav { gap: 6px; }
+  .pf-sidebar nav button {
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 360px) {
+  .pf-sidebar nav button { min-height: 44px; padding-inline: 11px; font-size: 10px; }
+}
