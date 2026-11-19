@@ -2,23 +2,23 @@
 
 Production remains a separate, explicitly approved release. Staging merges and deployments do not authorize a merge to `main`, a production migration, or a production deploy.
 
-## 0. Verified staging baseline — 18 November 2026
+## 0. Verified staging baseline — 19 November 2026
 
 The following items are verified on staging only. They do not certify or authorize production changes.
 
-- [x] Staging application runtime is live on commit `089679136c58efe6baa6fdd3f5ab229bd6ab6345` (including Prisma 7, RLS lockdown, foreign-key indexes, database readiness probe and browser invitation token parsing).
+- [x] Staging application runtime is live on commit `548d513e086a0620596e3d36d33e1845b9e7a41f` (including Prisma 7, RLS lockdown, foreign-key indexes, database readiness probe, browser invitations and password recovery backend).
 - [x] Render uses Node.js 22.23.3 from `.node-version`.
-- [x] Prisma 7.10.1 client generation and all 8 committed migrations complete; no pending migrations remain.
+- [x] Prisma 7.10.1 client generation and all 9 committed migrations complete in CI against ephemeral PostgreSQL 17.
 - [x] The staging health probe runs a real PostgreSQL query through the runtime Prisma adapter and Render reports the service live.
-- [x] CI passes on PostgreSQL 17: schema validation, migration replay, server/client builds, 21 server tests, 2 client test files and PowerShell syntax checks.
-- [x] Isolated server and client production dependency audits report zero vulnerabilities.
-- [x] RLS is enabled on all 19 public tables; `anon` and `authenticated` have no public-schema/table access.
+- [x] CI passes on PostgreSQL 17: schema validation, migration replay, server/client builds, 24 server tests, 19 client tests across 5 files and PowerShell syntax checks.
+- [x] Full repository dependency audit and isolated server/client production dependency audits report zero vulnerabilities (0 low, 0 moderate, 0 high, 0 critical).
+- [x] RLS is enabled on all 19 public application tables; `anon` and `authenticated` have no public-schema/table access.
 - [x] All 11 previously missing foreign-key indexes are present; Supabase no longer reports unindexed foreign keys.
-- [x] Browser household invitations are covered by server integration tests and client token-parser tests; `CLIENT_ORIGIN` is explicitly set to the staging URL. Telegram deep links remain optional and deferred.
+- [x] Household integration tests cover email/password accounts, shared finance access, third-account isolation, one-time invitations, concurrent profile assignment and immediate revocation.
+- [x] Password recovery backend is deployed to staging: single-use 30-minute tokens, hashed storage, session invalidation, enumeration-safe responses and rate limits. Email delivery remains disabled until Resend is configured.
+- [x] Browser household invitations use secure web links; Telegram deep links remain optional and deferred.
 
-**Known non-blocking item:** the full development-toolchain audit still reports 5 high-severity findings (0 critical) in build/test dependencies. The isolated production dependency trees remain clean. A forced downgrade of Vitest introduced critical advisories, so it was not applied.
-
-**Still required before production:** manual visual QA in RU/EN at the listed viewport widths, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. Telegram setup remains deferred as recorded below.
+**Still required before production:** manual visual and two-account QA in RU/EN, Resend domain verification and a real mailbox password-reset test, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. Telegram setup remains deferred as recorded below.
 
 ---
 ## 1. Before production access is changed
@@ -26,6 +26,7 @@ The following items are verified on staging only. They do not certify or authori
 - [ ] Confirm the production Render service, branch, region and current deployment.
 - [ ] Confirm the production database project/provider, region, plan, PostgreSQL version and connection mode.
 - [ ] Confirm production `DATABASE_URL`, `JWT_SECRET` and `CLIENT_ORIGIN` are configured in Render without exposing their values.
+- [ ] Verify a production sending domain in Resend, then configure production-only `RESEND_API_KEY`, `RESEND_FROM_EMAIL` and `APP_BASE_URL`; send and complete a real password-reset email test before enabling public recovery.
 - [ ] Verify production and staging use different database URLs and JWT secrets.
 - [ ] Create a production database backup/snapshot and verify a restore path.
 - [ ] Rehearse all pending Prisma migrations against a disposable database with the same PostgreSQL major version.
