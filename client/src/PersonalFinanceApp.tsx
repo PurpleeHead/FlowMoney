@@ -185,6 +185,8 @@ export default function PersonalFinanceApp() {
 
   const [lang, setLang] = useState<Lang>('ru');
   const [timezone, setTimezone] = useState('Europe/Moscow');
+  const [telegramRemindersEnabled, setTelegramRemindersEnabled] = useState(false);
+  const [telegramReminderTime, setTelegramReminderTime] = useState('09:00');
   const [openingBalance, setOpeningBalance] = useState('0');
   const [openingBalanceDate, setOpeningBalanceDate] = useState(moscowToday());
   const [openingBalanceConfigured, setOpeningBalanceConfigured] = useState(false);
@@ -297,7 +299,7 @@ export default function PersonalFinanceApp() {
       api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
       api<SavingsGoal[]>(`${PF}/savings-goals`),
-      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean }>(`${PF}/settings`),
+      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean; telegramRemindersEnabled: boolean; telegramReminderTime: string }>(`${PF}/settings`),
       api<HouseholdInfo>('/household')
     ]);
     setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
@@ -309,7 +311,7 @@ export default function PersonalFinanceApp() {
       setBudgetMember(current => current || mappedProfile);
     }
     if (settingsData.timezone !== timezone) { const today = todayInTimezone(settingsData.timezone); setSelectedMonth(today.slice(0, 7)); setSelectedCalendarDate(today); }
-    setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured);
+    setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured); setTelegramRemindersEnabled(settingsData.telegramRemindersEnabled); setTelegramReminderTime(settingsData.telegramReminderTime);
     if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
   }, [ranges, expenseCategory, filterMember, showSkippedObligations, timezone]);
 
@@ -425,6 +427,24 @@ export default function PersonalFinanceApp() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not link Telegram.'); }
     finally { setBusy(false); }
   }
+  async function saveTelegramReminderSettings(enabled: boolean, time: string) {
+    if (enabled && !user?.telegramLinked) {
+      setError(lang === 'ru' ? 'Сначала привяжи Telegram в настройках.' : 'Link Telegram first in settings.');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      const result = await api<{ telegramRemindersEnabled: boolean; telegramReminderTime: string }>(`${PF}/settings`, {
+        method: 'PATCH', body: JSON.stringify({ telegramRemindersEnabled: enabled, telegramReminderTime: time }),
+      });
+      setTelegramRemindersEnabled(result.telegramRemindersEnabled);
+      setTelegramReminderTime(result.telegramReminderTime);
+      setNotice(lang === 'ru' ? 'Настройки напоминаний сохранены.' : 'Reminder settings saved.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save reminder settings.');
+    } finally { setBusy(false); }
+  }
+
   async function changeTimezone(next: string) { setTimezone(next); const today = todayInTimezone(next); setSelectedMonth(today.slice(0,7)); setSelectedCalendarDate(today); setIncomeStart(today); setExpenseDate(today); setObligationDate(today); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ timezone: next }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } }
   async function handlePasswordResetRequest(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
@@ -982,6 +1002,8 @@ export default function PersonalFinanceApp() {
         <section className="pf-card pf-settings-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЕРСОНАЛИЗАЦИЯ' : 'PREFERENCES'}</span><h2>{tr(lang,'settings')}</h2></div></div>
           <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Язык интерфейса' : 'Interface language'}</strong><small>{lang === 'ru' ? 'Язык названий и подсказок' : 'Labels and helper text language'}</small></span><select value={lang} onChange={e=>changeLanguage(e.target.value as Lang)}><option value="ru">Русский</option><option value="en">English</option></select></label>
           <div className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Подключение Telegram' : 'Telegram connection'}</strong><small>{user.telegramLinked ? (lang === 'ru' ? 'Этот аккаунт уже связан с подтверждённым Telegram ID.' : 'This account is linked to a verified Telegram ID.') : (lang === 'ru' ? 'Для безопасной привязки открой приложение внутри Telegram и войди в этот аккаунт.' : 'To link securely, open the app inside Telegram and sign in to this account.')}</small></span>{user.telegramLinked ? <span className="pf-status-pill">{lang === 'ru' ? 'Подключён' : 'Connected'}</span> : <button className="pf-button small" disabled={busy || !window.Telegram?.WebApp?.initData} onClick={linkTelegramAccount}>{lang === 'ru' ? 'Подключить Telegram' : 'Link Telegram'}</button>}</div>
+          <div className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Напоминания о платежах в Telegram' : 'Telegram payment reminders'}</strong><small>{lang === 'ru' ? 'Сообщение за день до срока оплаты. Настройка действует только для твоего аккаунта.' : 'A message one day before a payment is due. This setting applies only to your account.'}</small></span><input type="checkbox" checked={telegramRemindersEnabled} disabled={busy || !user.telegramLinked} onChange={e=>saveTelegramReminderSettings(e.target.checked, telegramReminderTime)}/></div>
+          {telegramRemindersEnabled && <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Время напоминания' : 'Reminder time'}</strong><small>{lang === 'ru' ? 'По выбранному выше часовому поясу' : 'Uses the time zone selected above'}</small></span><select value={telegramReminderTime} disabled={busy} onChange={e=>saveTelegramReminderSettings(true, e.target.value)}>{['07:00','08:00','09:00','10:00','12:00','18:00','20:00'].map(value=><option key={value} value={value}>{value}</option>)}</select></label>}
           <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Часовой пояс' : 'Time zone'}</strong><small>{lang === 'ru' ? 'Используется для текущей даты и календаря платежей' : 'Used for today and payment calendar dates'}</small></span><select value={timezone} onChange={e=>changeTimezone(e.target.value)}>{[['Europe/Moscow','Москва (UTC+3)'],['Europe/Minsk','Минск (UTC+3)'],['Europe/Warsaw','Варшава'],['Europe/Berlin','Берлин'],['Europe/London','Лондон'],['Asia/Dubai','Дубай'],['Asia/Bangkok','Бангкок'],['Asia/Ho_Chi_Minh','Хошимин'],['UTC','UTC']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
           {household?.role === 'OWNER' && <div className="pf-opening-balance"><div><strong>{lang === 'ru' ? 'Начальный остаток' : 'Opening balance'}</strong><small>{lang === 'ru' ? 'Сколько денег было на счетах и наличными на дату начала учёта' : 'Money held across accounts and cash on the start date'}</small></div><div className="pf-opening-fields"><label>{lang === 'ru' ? 'Сумма, ₽' : 'Amount, RUB'}<input type="number" step="0.01" value={openingBalance} onChange={e=>setOpeningBalance(e.target.value)}/></label><label>{lang === 'ru' ? 'Дата начала учёта' : 'Tracking start date'}<input type="date" max={todayInTimezone(timezone)} value={openingBalanceDate} onChange={e=>setOpeningBalanceDate(e.target.value)}/></label></div><button className="pf-button" disabled={busy || !openingBalanceDate} onClick={saveOpeningBalance}>{lang === 'ru' ? 'Сохранить начальный остаток' : 'Save opening balance'}</button><p className="pf-muted">{lang === 'ru' ? 'Фактический баланс будет считать доходы, расходы и корректировки только начиная с этой даты, чтобы не учитывать старую историю повторно.' : 'The actual balance includes income, expenses and adjustments from this date onward, avoiding double-counting older history.'}</p></div>}<div className="pf-opening-balance">
             <div><strong>{lang === 'ru' ? 'Корректировка общего баланса' : 'Overall balance adjustment'}</strong><small>{lang === 'ru' ? 'Разовая поправка для исторического баланса. Не меняет расчёт доходов и расходов выбранного месяца.' : 'A one-time adjustment for the historical balance. It does not change selected-month income or expenses.'}</small></div>
