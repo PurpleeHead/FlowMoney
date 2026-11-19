@@ -41,7 +41,7 @@ export function buildTelegramReply(command: TelegramCommand, miniAppUrl?: string
   }
   if (command === 'help') {
     return {
-      text: 'Команды nummioX:\\n/start — начать работу\\n/app — открыть приложение\\n/balance — текущий баланс семьи\\n/month — итоги текущего месяца\\n/help — помощь\\n\\nБот показывает только данные вашего привязанного аккаунта и не изменяет доходы или расходы.',
+      text: 'Команды nummioX:\n/start — начать работу\n/app — открыть приложение\n/balance — текущий баланс семьи\n/month — итоги текущего месяца\n/help — помощь\n\nБот показывает только данные вашего привязанного аккаунта и не изменяет доходы или расходы.',
     };
   }
   if (command === 'balance') return { text: 'Сейчас подготовлю текущий баланс.' };
