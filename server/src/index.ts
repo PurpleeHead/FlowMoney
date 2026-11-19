@@ -10,7 +10,7 @@ const server = app.listen(port, '0.0.0.0', () => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
   const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL
-    || (process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL.replace(/\\/$/, '')}/api/telegram/webhook` : undefined);
+    || (process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/$/, '')}/api/telegram/webhook` : undefined);
   if (botToken && webhookSecret && isSecureTelegramWebhookUrl(webhookUrl)) {
     void registerTelegramWebhook(botToken, webhookUrl, webhookSecret)
       .then(() => console.log('Telegram webhook registered for the configured environment.'))
