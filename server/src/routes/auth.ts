@@ -118,7 +118,7 @@ router.post('/password-reset/request', async (req, res, next) => {
       } catch (error) {
         await prisma.passwordResetToken.updateMany({ where: { tokenHash, usedAt: null }, data: { usedAt: new Date() } });
         console.error('Password recovery email delivery failed:', error instanceof Error ? error.message : 'Unknown email provider error');
-        return res.status(503).json({ message: 'Unable to send the recovery email right now. Please try again later.' });
+        // Keep the response indistinguishable from the unknown-account path to prevent enumeration.
       }
     }
 
