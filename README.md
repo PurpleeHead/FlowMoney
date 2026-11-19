@@ -108,6 +108,6 @@ Workflow: `.github/workflows/ci.yml`.
 
 ## Security and limitations
 
-This is a manual household bookkeeping tool, not a bank integration or payment processor. All API records are scoped to the authenticated account. Household members are attribution labels in v1, not separate logins. Email-based password recovery is implemented with one-time, 30-minute reset links and session revocation. Sending is disabled until Resend is configured with a verified sender domain. Email verification and multi-factor authentication remain future work.
+This is a manual household bookkeeping tool, not a bank integration or payment processor. All API records are scoped to the authenticated account. Household members are attribution labels in v1, not separate logins. Email-based password recovery is implemented with one-time, 30-minute reset links and session revocation. Sending is disabled until Resend is configured with a verified sender domain. See [docs/EMAIL_SETUP.md](docs/EMAIL_SETUP.md) for setup instructions. Email verification and multi-factor authentication remain future work.
 
 The production service and `main` branch are not changed by this feature branch. Review and explicit approval are required before merge, deployment or production database migration.
