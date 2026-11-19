@@ -6,7 +6,7 @@ type ReminderUser = {
   telegramReminderTime: string;
   timezone: string;
   locale: string;
-  householdAccess: Array<{ household: { ownerUserId: string } }>;
+  householdAccess: Array<{ household: { ownerUserId: string; owner: { timezone: string } } }>;
 };
 
 function localParts(date: Date, timeZone: string) {
@@ -22,13 +22,13 @@ function dateValue(value: string) {
   return new Date(value + 'T00:00:00.000Z');
 }
 
-function addCalendarDays(value: string, days: number) {
+export function addCalendarDays(value: string, days: number) {
   const date = dateValue(value);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
 
-function isReminderWindow(now: Date, timeZone: string, reminderTime: string) {
+export function isReminderWindow(now: Date, timeZone: string, reminderTime: string) {
   const parts = localParts(now, timeZone);
   const currentMinute = Number(parts.hour) * 60 + Number(parts.minute);
   const [hour, minute] = reminderTime.split(':').map(Number);
@@ -68,7 +68,7 @@ export async function runTelegramPaymentReminders(now = new Date()) {
       id: true, telegramId: true, telegramReminderTime: true, timezone: true, locale: true,
       householdAccess: {
         where: { revokedAt: null },
-        select: { household: { select: { ownerUserId: true } } },
+        select: { household: { select: { ownerUserId: true, owner: { select: { timezone: true } } } } },
         take: 1,
       },
     },
@@ -83,7 +83,8 @@ export async function runTelegramPaymentReminders(now = new Date()) {
     const access = user.householdAccess[0];
     if (!access || !user.telegramId || !isReminderWindow(now, user.timezone || 'Europe/Moscow', user.telegramReminderTime)) continue;
 
-    const localToday = localParts(now, user.timezone || 'Europe/Moscow');
+    const ledgerTimeZone = access.household.owner.timezone || 'Europe/Moscow';
+    const localToday = localParts(now, ledgerTimeZone);
     const today = `${localToday.year}-${localToday.month}-${localToday.day}`;
     const dueDate = addCalendarDays(today, 1);
     const ownerId = access.household.ownerUserId;
