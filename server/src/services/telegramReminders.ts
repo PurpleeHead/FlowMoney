@@ -80,65 +80,66 @@ export async function runTelegramPaymentReminders(now = new Date()) {
 
   for (const user of users) {
     checked++;
-    const access = user.householdAccess[0];
-    if (!access || !user.telegramId || !isReminderWindow(now, user.timezone || 'Europe/Moscow', user.telegramReminderTime)) continue;
-
-    const ledgerTimeZone = access.household.owner.timezone || 'Europe/Moscow';
-    const localToday = localParts(now, ledgerTimeZone);
-    const today = `${localToday.year}-${localToday.month}-${localToday.day}`;
-    const dueDate = addCalendarDays(today, 1);
-    const ownerId = access.household.ownerUserId;
-    const occurrences = await prisma.obligationOccurrence.findMany({
-      where: { userId: ownerId, dueDate: dateValue(dueDate), status: { in: ['UPCOMING', 'OVERDUE'] } },
-      include: { obligation: { select: { title: true } } },
-      orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
-      take: 30,
-    });
-    if (!occurrences.length) continue;
-
     const claimed: string[] = [];
-    const claimedOccurrenceIds: string[] = [];
-    for (const occurrence of occurrences) {
-      try {
-        const delivery = await prisma.telegramReminderDelivery.create({
-          data: { userId: user.id, occurrenceId: occurrence.id, dueDate: dateValue(dueDate) },
-          select: { id: true },
-        });
-        claimed.push(delivery.id);
-        claimedOccurrenceIds.push(occurrence.id);
-      } catch (error) {
-        if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') continue;
-        throw error;
-      }
-    }
-    if (!claimed.length) continue;
-
-    const [currentUser, activeAccess] = await Promise.all([
-      prisma.user.findFirst({ where: { id: user.id, telegramId: user.telegramId, telegramRemindersEnabled: true }, select: { id: true } }),
-      prisma.householdAccess.findFirst({ where: { userId: user.id, householdId: access.householdId, revokedAt: null }, select: { id: true } }),
-    ]);
-    if (!currentUser || !activeAccess) {
-      await prisma.telegramReminderDelivery.deleteMany({ where: { id: { in: claimed } } });
-      continue;
-    }
-
-    const occurrenceIds = new Set(claimedOccurrenceIds);
-    const lines = [
-      user.locale === 'en' ? '⏰ Payments due tomorrow' : '⏰ Завтра срок оплаты',
-      '',
-      ...occurrences.filter(item => occurrenceIds.has(item.id)).map(item =>
-        `• ${item.obligation.title} — ${money(Number(item.plannedAmount), user.locale)}`,
-      ),
-      '',
-      user.locale === 'en' ? 'Open nummioX to review your payment calendar.' : 'Откройте nummioX, чтобы посмотреть календарь платежей.',
-    ];
     try {
-      await sendTelegramMessage(botToken, user.telegramId, lines.join('\n'));
+      const access = user.householdAccess[0];
+      if (!access || !user.telegramId || !isReminderWindow(now, user.timezone || 'Europe/Moscow', user.telegramReminderTime)) continue;
+
+      const ledgerTimeZone = access.household.owner.timezone || 'Europe/Moscow';
+      const localToday = localParts(now, ledgerTimeZone);
+      const today = `${localToday.year}-${localToday.month}-${localToday.day}`;
+      const dueDate = addCalendarDays(today, 1);
+      const ownerId = access.household.ownerUserId;
+      const occurrences = await prisma.obligationOccurrence.findMany({
+        where: { userId: ownerId, dueDate: dateValue(dueDate), status: { in: ['UPCOMING', 'OVERDUE'] } },
+        include: { obligation: { select: { title: true } } },
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+        take: 30,
+      });
+      if (!occurrences.length) continue;
+
+      const claimedOccurrenceIds: string[] = [];
+      for (const occurrence of occurrences) {
+        try {
+          const delivery = await prisma.telegramReminderDelivery.create({
+            data: { userId: user.id, occurrenceId: occurrence.id, dueDate: dateValue(dueDate) },
+            select: { id: true },
+          });
+          claimed.push(delivery.id);
+          claimedOccurrenceIds.push(occurrence.id);
+        } catch (error) {
+          if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') continue;
+          throw error;
+        }
+      }
+      if (!claimed.length) continue;
+
+      const [currentUser, activeAccess] = await Promise.all([
+        prisma.user.findFirst({ where: { id: user.id, telegramId: user.telegramId, telegramRemindersEnabled: true }, select: { id: true } }),
+        prisma.householdAccess.findFirst({ where: { userId: user.id, householdId: access.householdId, revokedAt: null }, select: { id: true } }),
+      ]);
+      if (!currentUser || !activeAccess) {
+        await prisma.telegramReminderDelivery.deleteMany({ where: { id: { in: claimed } } });
+        claimed.length = 0;
+        continue;
+      }
+
+      const occurrenceIds = new Set(claimedOccurrenceIds);
+      const lines = [
+        user.locale === 'en' ? '⏰ Payments due tomorrow' : '⏰ Завтра срок оплаты',
+        '',
+        ...occurrences.filter(item => occurrenceIds.has(item.id)).map(item =>
+          `• ${item.obligation.title} — ${money(Number(item.plannedAmount), user.locale)}`,
+        ),
+        '',
+        user.locale === 'en' ? 'Open nummioX to review your payment calendar.' : 'Откройте nummioX, чтобы посмотреть календарь платежей.',
+      ];
+      await sendTelegramMessage(botToken, user.telegramId, lines.join('\\n'));
       sent++;
     } catch (error) {
-      await prisma.telegramReminderDelivery.deleteMany({ where: { id: { in: claimed } } });
+      if (claimed.length) await prisma.telegramReminderDelivery.deleteMany({ where: { id: { in: claimed } } });
       failed++;
-      console.error('Telegram payment reminder failed for an account:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('Telegram payment reminder failed:', error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
