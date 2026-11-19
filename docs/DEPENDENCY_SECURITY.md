@@ -1,19 +1,18 @@
 # Dependency security snapshot
 
-Snapshot date: 2026-11-18 15:01 UTC  
-Source: GitHub Actions run `44330732634` on staging commit `f84ce91bb79b4169f15e82de346c5ec91588e01b`. This is an npm dependency audit, not a runtime penetration test.
+Snapshot date: 2026-11-19 02:54 UTC  
+Source: GitHub Actions run `44447647615` on audit-refresh commit `48541c8242ecf3d28ad55f69f794ac18b7943f08`. This is an npm dependency audit, not a runtime penetration test.
 
-## Verified audit results
+## Latest verified audit results
 
-- Full repository dependency tree: **5 high, 0 critical, 0 moderate, 0 low**.
-- Reported package nodes: `fdir`, `picomatch`, `tinyglobby`, `vite`, and `vitest`.
-- Isolated server production dependency tree: **0 advisories**.
-- Isolated client production dependency tree: **0 advisories**.
-- The five full-tree findings are in the build/test toolchain, not the separately resolved production dependency sets.
-- The audit's suggested automatic fix was to change Vitest to `3.1.4` (a major-version change/downgrade relative to the installed `5.1.0`). This was not applied.
-- No `npm audit fix --force`, forced downgrade, or unreviewed dependency override was applied.
+- Full repository dependency tree: **0 vulnerabilities** (0 low, 0 moderate, 0 high, 0 critical).
+- Isolated server production dependency tree: **0 vulnerabilities**.
+- Isolated client production dependency tree: **0 vulnerabilities**.
+- The audit run installed the existing lockfile with `npm ci`; no package or lockfile changes and no forced fixes were needed to obtain the clean result.
+- The previous 18 November snapshot reported five high findings in the development toolchain (`fdir`, `picomatch`, `tinyglobby`, `vite`, `vitest`). The fresh audit database no longer reports those findings.
+- The previous suggested automatic fix was a Vitest downgrade to `3.1.4`. It was not applied.
 
-The staging CI run passed dependency reporting, both isolated production audits, Prisma validation/client generation, all eight migrations against ephemeral PostgreSQL 17, server/client builds, tests, and PowerShell syntax validation.
+The same CI run passed Prisma validation, client generation, all eight migrations against ephemeral PostgreSQL 17, server/client builds, and server/client tests.
 
 ## Exact toolchain versions in the lockfile
 
@@ -23,13 +22,7 @@ The staging CI run passed dependency reporting, both isolated production audits,
 - picomatch: `4.0.7`
 - tinyglobby: `0.2.17`
 
-Vite `6.4.6` is the patched 6.4 release for the Vite dev-server advisories published in November 2026. Vitest `5.1.0` includes the fix for the Vitest 5 dev-server file exposure advisory (fixed in `5.0.5` and later).
-
-## Security disposition
-
-The five high findings are treated as a development-toolchain audit issue, not as five known vulnerabilities in the deployed runtime. The runtime dependency audits are clean. Do not downgrade the test runner solely to silence npm's suggested fix: preserve the current test toolchain unless a fresh advisory confirms a vulnerability affecting the installed versions and a compatible patched release is identified.
-
-The npm audit snapshot must be refreshed on the next CI run because advisory databases can change. In particular, verify whether the picomatch advisory is still active before considering overrides or dependency changes. Do not introduce an override for an advisory that has been withdrawn.
+No dependency versions were changed as part of this audit refresh. Keep the current toolchain unless a new advisory affects the installed versions and a compatible patched release is identified.
 
 ## Supply-chain and authentication hardening already present
 
@@ -44,8 +37,8 @@ The npm audit snapshot must be refreshed on the next CI run because advisory dat
 - Prefer compatible patch/minor updates and regenerate the lockfile using npm.
 - Review any major upgrade separately; run build, server/client tests, Prisma validation and migration replay before merging.
 - Keep server and client production audits separate from the full development-toolchain audit.
-- A clean production audit does not replace manual review of the development environment or CI runner exposure.
+- A clean dependency audit does not replace manual review of the application, CI environment or production infrastructure.
 
 ## Release gate
 
-Production dependency trees must have zero high or critical advisories. Development-only findings require a current advisory review, a documented exposure assessment and a compatible remediation plan. Do not claim the entire repository audit is clean while high findings remain.
+The latest verified audit is clean across the full repository and both production dependency trees. Refresh it again on the exact release commit before production approval.
