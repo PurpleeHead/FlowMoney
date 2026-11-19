@@ -1,13 +1,13 @@
 import { timingSafeEqual } from 'node:crypto';
 
-export type TelegramCommand = 'start' | 'help' | 'app' | 'unknown';
+export type TelegramCommand = 'start' | 'help' | 'app' | 'balance' | 'month' | 'unknown';
 
 export function parseTelegramCommand(text: unknown): TelegramCommand | null {
   if (typeof text !== 'string') return null;
   const first = text.trim().split(/\s+/, 1)[0];
   if (!first.startsWith('/')) return null;
   const command = first.slice(1).split('@', 1)[0].toLowerCase();
-  if (command === 'start' || command === 'help' || command === 'app') return command;
+  if (command === 'start' || command === 'help' || command === 'app' || command === 'balance' || command === 'month') return command;
   return 'unknown';
 }
 
@@ -41,10 +41,46 @@ export function buildTelegramReply(command: TelegramCommand, miniAppUrl?: string
   }
   if (command === 'help') {
     return {
-      text: 'Команды nummioX:\n/start — начать работу\n/app — открыть приложение\n/help — помощь\n\nФинансовые команды и уведомления появятся следующим этапом. Сейчас бот не изменяет ваши доходы и расходы.',
+      text: 'Команды nummioX:\n/start — начать работу\n/app — открыть приложение\n/balance — текущий баланс семьи\n/month — итоги текущего месяца\n/help — помощь\n\nБот показывает только данные вашего привязанного аккаунта и не изменяет доходы или расходы.',
     };
   }
-  return { text: 'Не понял команду. Используйте /start, /app или /help.' };
+  if (command === 'balance') return { text: 'Сейчас подготовлю текущий баланс.' };
+  if (command === 'month') return { text: 'Сейчас подготовлю итоги месяца.' };
+  return { text: 'Не понял команду. Используйте /start, /app, /balance, /month или /help.' };
+}
+
+export function formatTelegramMoney(value: number): string {
+  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(value);
+}
+
+export function buildTelegramFinanceReply(kind: 'balance' | 'month', data: {
+  balance: number;
+  openingBalance: number;
+  income: number;
+  expenses: number;
+  adjustments?: number;
+  periodLabel?: string;
+}): string {
+  if (kind === 'balance') {
+    return [
+      '💰 Текущий баланс семьи',
+      '',
+      'Баланс: ' + formatTelegramMoney(data.balance),
+      'Начальный баланс: ' + formatTelegramMoney(data.openingBalance),
+      'Получено доходов: ' + formatTelegramMoney(data.income),
+      'Расходы: ' + formatTelegramMoney(data.expenses),
+      ...(data.adjustments ? ['Корректировки: ' + formatTelegramMoney(data.adjustments)] : []),
+      '',
+      'Данные обновлены на момент запроса.',
+    ].join('\n');
+  }
+  return [
+    '📊 Итоги за ' + (data.periodLabel ?? 'текущий месяц'),
+    '',
+    'Доходы: ' + formatTelegramMoney(data.income),
+    'Расходы: ' + formatTelegramMoney(data.expenses),
+    'Разница: ' + formatTelegramMoney(data.income - data.expenses),
+  ].join('\n');
 }
 
 export function isSecureTelegramWebhookUrl(value: string | undefined): value is string {
