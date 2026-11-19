@@ -192,6 +192,9 @@ export default function PersonalFinanceApp() {
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(moscowToday());
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [passwordResetToken, setPasswordResetToken] = useState(() => new URLSearchParams(window.location.search).get('token') ?? '');
+  const [passwordResetMode, setPasswordResetMode] = useState<'none' | 'request'>('none');
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [tab, setTab] = useState<Tab>('overview');
@@ -324,6 +327,12 @@ export default function PersonalFinanceApp() {
   useEffect(() => {
     let cancelled = false;
     const bootstrap = async () => {
+      if (passwordResetToken) {
+        setToken(null);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
       const initData = window.Telegram?.WebApp?.initData;
       const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
       const invitationToken = getHouseholdInviteToken(window.location.hash, startParam);
@@ -385,7 +394,7 @@ export default function PersonalFinanceApp() {
     };
     void bootstrap();
     return () => { cancelled = true; };
-  }, [refresh]);
+  }, [refresh, passwordResetToken]);
 
   async function loadMoreExpenses() {
     if (!hasMoreExpenses || busy) return;
@@ -417,6 +426,35 @@ export default function PersonalFinanceApp() {
     finally { setBusy(false); }
   }
   async function changeTimezone(next: string) { setTimezone(next); const today = todayInTimezone(next); setSelectedMonth(today.slice(0,7)); setSelectedCalendarDate(today); setIncomeStart(today); setExpenseDate(today); setObligationDate(today); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ timezone: next }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } }
+  async function handlePasswordResetRequest(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await api<{ message: string }>('/auth/password-reset/request', { method: 'POST', body: JSON.stringify({ email }) });
+      setNotice(result.message);
+      setPasswordResetMode('none');
+    } catch (e) { setError(e instanceof Error ? e.message : (lang === 'ru' ? 'Не удалось отправить письмо.' : 'Could not send the email.')); }
+    finally { setBusy(false); }
+  }
+  async function handlePasswordResetConfirm(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    if (password !== passwordConfirmation) {
+      setError(lang === 'ru' ? 'Пароли не совпадают.' : 'Passwords do not match.');
+      setBusy(false);
+      return;
+    }
+    try {
+      const result = await api<{ message: string }>('/auth/password-reset/confirm', { method: 'POST', body: JSON.stringify({ token: passwordResetToken, password }) });
+      setNotice(result.message);
+      setPasswordResetToken('');
+      setPasswordResetMode('none');
+      setPassword('');
+      setPasswordConfirmation('');
+      window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
+      setAuthMode('login');
+    } catch (e) { setError(e instanceof Error ? e.message : (lang === 'ru' ? 'Ссылка недействительна или устарела.' : 'The link is invalid or expired.')); }
+    finally { setBusy(false); }
+  }
+
   async function handleAuth(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
     try {
@@ -640,15 +678,39 @@ export default function PersonalFinanceApp() {
     <div className="pf-auth-card">
       <div className="pf-brand">nummio<span>X</span></div>
       <div className="pf-auth-icon">₽</div>
-      <h1>{tr(lang, 'signInTitle')}</h1><p>{tr(lang, 'signInText')}</p>
-      {inviteToken && <p className="pf-muted">{lang === 'ru' ? 'После входа или регистрации ты сможешь принять приглашение в семейный бюджет.' : 'After signing in or creating an account, you can accept the household invitation.'}</p>}
-      {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
-      <form onSubmit={handleAuth} className="pf-form">
-        <label>{tr(lang, 'email')}<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
-        <label>{tr(lang, 'password')}<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={8} required value={password} onChange={e => setPassword(e.target.value)} /></label>
-        <button className="pf-button primary" disabled={busy}>{busy ? '…' : tr(lang, authMode === 'login' ? 'signIn' : 'signUp')}</button>
-      </form>
-      <button className="pf-link" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError(''); }}>{authMode === 'login' ? tr(lang, 'signUp') : tr(lang, 'signIn')}</button>
+      {passwordResetToken ? <>
+        <h1>{lang === 'ru' ? 'Новый пароль' : 'Choose a new password'}</h1>
+        <p>{lang === 'ru' ? 'Придумайте новый пароль для входа в nummioX.' : 'Choose a new password for your nummioX account.'}</p>
+        {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
+        {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}</div>}
+        <form onSubmit={handlePasswordResetConfirm} className="pf-form">
+          <label>{lang === 'ru' ? 'Новый пароль (не менее 8 символов)' : 'New password (at least 8 characters)'}<input type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={password} onChange={e => setPassword(e.target.value)} /></label>
+          <label>{lang === 'ru' ? 'Повторите пароль' : 'Confirm password'}<input type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={passwordConfirmation} onChange={e => setPasswordConfirmation(e.target.value)} /></label>
+          <button className="pf-button primary" disabled={busy}>{busy ? '…' : (lang === 'ru' ? 'Сохранить новый пароль' : 'Save new password')}</button>
+        </form>
+      </> : passwordResetMode === 'request' ? <>
+        <h1>{lang === 'ru' ? 'Восстановление пароля' : 'Reset your password'}</h1>
+        <p>{lang === 'ru' ? 'Укажите почту аккаунта. Мы отправим ссылку для создания нового пароля.' : 'Enter your account email and we will send a password reset link.'}</p>
+        {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
+        {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}</div>}
+        <form onSubmit={handlePasswordResetRequest} className="pf-form">
+          <label>{tr(lang, 'email')}<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
+          <button className="pf-button primary" disabled={busy}>{busy ? '…' : (lang === 'ru' ? 'Отправить ссылку' : 'Send reset link')}</button>
+        </form>
+        <button className="pf-link" onClick={() => { setPasswordResetMode('none'); setError(''); setNotice(''); }}>{lang === 'ru' ? 'Вернуться ко входу' : 'Back to sign in'}</button>
+      </> : <>
+        <h1>{tr(lang, 'signInTitle')}</h1><p>{tr(lang, 'signInText')}</p>
+        {inviteToken && <p className="pf-muted">{lang === 'ru' ? 'После входа или регистрации ты сможешь принять приглашение в семейный бюджет.' : 'After signing in or creating an account, you can accept the household invitation.'}</p>}
+        {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
+        {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}</div>}
+        <form onSubmit={handleAuth} className="pf-form">
+          <label>{tr(lang, 'email')}<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
+          <label>{tr(lang, 'password')}<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={8} maxLength={72} required value={password} onChange={e => setPassword(e.target.value)} /></label>
+          <button className="pf-button primary" disabled={busy}>{busy ? '…' : tr(lang, authMode === 'login' ? 'signIn' : 'signUp')}</button>
+        </form>
+        {authMode === 'login' && <button className="pf-link" onClick={() => { setPasswordResetMode('request'); setError(''); setNotice(''); }}>{lang === 'ru' ? 'Забыли пароль?' : 'Forgot password?'}</button>}
+        <button className="pf-link" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError(''); setNotice(''); }}>{authMode === 'login' ? tr(lang, 'signUp') : tr(lang, 'signIn')}</button>
+      </>}
     </div>
   </main>;
 
