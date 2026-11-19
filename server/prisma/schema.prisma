@@ -15,6 +15,8 @@ model User {
   telegramId String? @unique
   telegramUsername String?
   telegramFirstName String?
+  telegramRemindersEnabled Boolean @default(false)
+  telegramReminderTime String @default("09:00")
   timezone     String     @default("Europe/Moscow")
   locale       String     @default("ru")
   openingBalance Decimal  @default(0) @db.Decimal(14, 2)
@@ -41,6 +43,7 @@ model User {
   createdHouseholdInvites HouseholdInvite[] @relation("InviteCreator")
   acceptedHouseholdInvites HouseholdInvite[] @relation("InviteAcceptor")
   passwordResetTokens PasswordResetToken[]
+  telegramReminderDeliveries TelegramReminderDelivery[]
 }
 
 model Wallet {
@@ -375,4 +378,17 @@ model TelegramBotUpdate {
   receivedAt DateTime @default(now())
 
   @@index([receivedAt])
+}
+
+model TelegramReminderDelivery {
+  id String @id @default(cuid())
+  userId String
+  occurrenceId String
+  dueDate DateTime @db.Date
+  sentAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  occurrence ObligationOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, occurrenceId])
+  @@index([sentAt])
 }
