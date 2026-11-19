@@ -124,7 +124,7 @@ export async function runTelegramPaymentReminders(now = new Date()) {
       user.locale === 'en' ? 'Open nummioX to review your payment calendar.' : 'Откройте nummioX, чтобы посмотреть календарь платежей.',
     ];
     try {
-      await sendTelegramMessage(botToken, user.telegramId, lines.join('\\n'));
+      await sendTelegramMessage(botToken, user.telegramId, lines.join('\n'));
       sent++;
     } catch (error) {
       await prisma.telegramReminderDelivery.deleteMany({ where: { id: { in: claimed } } });
