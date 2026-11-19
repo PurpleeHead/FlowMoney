@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../services/prisma.js';
 import type { AuthedRequest } from '../types.js';
 
-export type SessionClaims = { id: string; email: string; displayName?: string };
+export type SessionClaims = { id: string; email: string; displayName?: string; sessionVersion: number };
 
 export function readSessionClaims(token: string, secret: string): SessionClaims | null {
   try {
@@ -16,6 +16,7 @@ export function readSessionClaims(token: string, secret: string): SessionClaims 
     return {
       id: payload.id,
       email: payload.email,
+      sessionVersion: typeof payload.sessionVersion === 'number' && Number.isInteger(payload.sessionVersion) ? payload.sessionVersion : 0,
       ...(typeof payload.displayName === 'string' ? { displayName: payload.displayName } : {}),
     };
   } catch {
@@ -35,6 +36,12 @@ async function authenticate(req: AuthedRequest, res: Response, next: NextFunctio
     if (!secret || secret.length < 32) throw new Error('JWT_SECRET is not configured or is too short');
     const claims = readSessionClaims(header.slice(7), secret);
     if (!claims) {
+      res.status(401).json({ message: 'Session expired. Please sign in again.' });
+      return;
+    }
+
+    const account = await prisma.user.findUnique({ where: { id: claims.id }, select: { sessionVersion: true } });
+    if (!account || account.sessionVersion !== claims.sessionVersion) {
       res.status(401).json({ message: 'Session expired. Please sign in again.' });
       return;
     }
