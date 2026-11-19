@@ -252,6 +252,7 @@ model ObligationOccurrence {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   obligation   Obligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
   expense      LedgerExpense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  telegramReminderDeliveries TelegramReminderDelivery[]
 
   @@unique([obligationId, dueDate])
   @@index([userId, dueDate, status])
