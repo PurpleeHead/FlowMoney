@@ -31,6 +31,8 @@ export function createApp() {
   app.use(cors({ origin: (origin, callback) => { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error('Origin not allowed by CORS')); } }));
   app.use(express.json({ limit: '1mb' }));
   app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 40, standardHeaders: true, legacyHeaders: false }));
+  app.use('/api/auth/password-reset/request', rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false }));
+  app.use('/api/auth/password-reset/confirm', rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false }));
   app.get('/api/health', async (_req, res) => {
     try {
       // Render uses this endpoint as its readiness probe. Check the actual
