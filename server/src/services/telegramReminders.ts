@@ -96,6 +96,7 @@ export async function runTelegramPaymentReminders(now = new Date()) {
     if (!occurrences.length) continue;
 
     const claimed: string[] = [];
+    const claimedOccurrenceIds: string[] = [];
     for (const occurrence of occurrences) {
       try {
         const delivery = await prisma.telegramReminderDelivery.create({
@@ -103,6 +104,7 @@ export async function runTelegramPaymentReminders(now = new Date()) {
           select: { id: true },
         });
         claimed.push(delivery.id);
+        claimedOccurrenceIds.push(occurrence.id);
       } catch (error) {
         if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') continue;
         throw error;
@@ -110,17 +112,7 @@ export async function runTelegramPaymentReminders(now = new Date()) {
     }
     if (!claimed.length) continue;
 
-    const claimedSet = new Set(claimed);
-    const claimedOccurrences = occurrences.filter(occurrence => claimedSet.has(
-      // The delivery ID is intentionally not exposed by the occurrence query.
-      // Re-query below by the unique occurrence IDs claimed in this pass.
-      occurrence.id,
-    ));
-    const claimedIds = await prisma.telegramReminderDelivery.findMany({
-      where: { id: { in: claimed } },
-      select: { occurrenceId: true },
-    });
-    const occurrenceIds = new Set(claimedIds.map(item => item.occurrenceId));
+    const occurrenceIds = new Set(claimedOccurrenceIds);
     const lines = [
       user.locale === 'en' ? '⏰ Payments due tomorrow' : '⏰ Завтра срок оплаты',
       '',
