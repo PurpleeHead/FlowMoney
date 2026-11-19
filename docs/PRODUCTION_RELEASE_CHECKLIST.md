@@ -74,9 +74,9 @@ Do not use a staging `DATABASE_URL` for a production migration. Do not copy cred
 - If a database rollback is required, stop writes and follow the verified backup restore procedure.
 - Never run an unreviewed destructive or reverse migration during an incident.
 
-## 6. Deliberately deferred
+## 6. Telegram workstream (planned; separate staging milestones)
 
-Telegram BotFather token rotation and Main Mini App configuration are deferred by the user. Browser-based household invitations now use secure `#invite=...` links and can be accepted after email/password sign-in, so family invitations do not require the bot. Telegram Main Mini App configuration is only a blocker if Telegram itself is required as an initial sign-in or launch channel; otherwise it can be enabled in a separate approved release after the web application is stable.
+Telegram is now planned as a companion interface, not a production-release blocker for the web app. Existing signed Mini App authentication, account linking and household invite deep-link handling are present. Remaining work: rotate the previously exposed token with BotFather, configure staging secrets, add a verified webhook with /start, /help and /app, then implement read-only balance/month commands, opt-in reminders and scheduled summaries. See docs/TELEGRAM_MINI_APP.md for phases and security requirements. Keep staging and production bot tokens/webhooks separate; configure BotFather's production Main Mini App URL only after explicit production approval.
 
 ## 7. Manual product QA
 

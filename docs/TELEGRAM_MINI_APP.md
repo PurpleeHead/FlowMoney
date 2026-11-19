@@ -42,3 +42,45 @@ Run the normal nummioX setup, then set `TELEGRAM_BOT_TOKEN` in `server/.env`. Te
 - Never accept `initDataUnsafe` as proof of identity.
 - The Telegram identity and household migrations are additive. They must be applied through the reviewed migration process, not by production startup.
 - Household invitations are random, single-use, expire after seven days and store only a SHA-256 token hash. Rotate the bot token with BotFather `/revoke` immediately if it is ever exposed.
+
+
+## 5. Telegram product roadmap
+
+The current code already supports Telegram Mini App authentication and secure account linking:
+- POST /api/auth/telegram validates signed Telegram initData and creates or loads the matching nummioX account.
+- POST /api/auth/telegram/link securely links a Telegram identity to an existing email account.
+- The client reads Telegram start_param and can use it to accept household invitations.
+- verifyTelegramInitData validates the HMAC, timestamp and Telegram user ID on the server.
+
+This is Mini App authentication, not yet a complete conversational bot. The next implementation should be delivered in small staging-only milestones:
+
+### Phase A — Bot foundation
+- Rotate the previously exposed bot token with BotFather /revoke; configure the replacement only as Render server secret TELEGRAM_BOT_TOKEN.
+- Add TELEGRAM_BOT_USERNAME=nummioX_bot and keep both values server-side.
+- Implement a webhook endpoint with Telegram secret-token verification, strict request validation, rate limits and idempotent update handling.
+- Add /start, /help and /app commands. /start should explain the product and open the Mini App; /app should provide the Mini App button.
+- Keep ordinary browser/email login available; Telegram must remain an optional sign-in method.
+
+### Phase B — Useful read-only finance assistant
+- After explicit account linking, support private-chat commands such as /balance, /month and /help.
+- Use the existing authenticated account/household services; never accept a Telegram-supplied account ID as authorization.
+- Return only the linked user's permitted household totals. Do not expose full transaction descriptions or sensitive details by default.
+- Add tests for unlinked users, revoked household members, cross-household isolation, duplicate webhook delivery and Telegram API failures.
+
+### Phase C — Notifications
+- Add user-controlled opt-in preferences before sending any finance notifications.
+- Start with daily/weekly summaries and due-obligation reminders; avoid sending transaction details to group chats.
+- Add quiet hours, timezone-aware scheduling, delivery retries and a way to pause/unsubscribe.
+- Use a background worker/queue for scheduled notifications rather than relying on an HTTP request process staying alive.
+
+### Phase D — Mini App polish and release
+- Configure BotFather menu button and Main Mini App URL only after the selected HTTPS staging/production URL is approved.
+- Test inside Telegram on Android and iOS, including auth expiry, account linking, household invite deep links, safe-area layout and back navigation.
+- Keep the production bot token and webhook separate from staging; do not point BotFather at an unverified preview.
+
+### Security and product boundaries
+- Never store the bot token in Git, client variables or chat messages.
+- Verify Telegram webhook secret tokens and signed Mini App initData independently.
+- Ask users to explicitly opt in to notifications; no unsolicited broadcasts.
+- The bot is a companion interface. The web app remains the complete finance workspace.
+- No payments, transfers or other financial actions should be executable from chat in the first release.
