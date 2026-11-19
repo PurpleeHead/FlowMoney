@@ -862,3 +862,98 @@ test('Telegram identity can only be linked from an authenticated account using s
     delete process.env.TELEGRAM_BOT_TOKEN;
   }
 });
+
+
+test('password recovery uses one-time hashed tokens and revokes existing sessions', { skip: !process.env.DATABASE_URL }, async () => {
+  process.env.JWT_SECRET = 'flowmoney-password-reset-test-secret-32-chars';
+  const previousApiKey = process.env.RESEND_API_KEY;
+  const previousFrom = process.env.RESEND_FROM_EMAIL;
+  const previousBaseUrl = process.env.APP_BASE_URL;
+  process.env.RESEND_API_KEY = 're_test_key';
+  process.env.RESEND_FROM_EMAIL = 'nummioX Test <onboarding@resend.dev>';
+  process.env.APP_BASE_URL = 'https://nummiox.example.test';
+  const originalFetch = globalThis.fetch;
+  const delivered: Array<{ to: string[]; html: string }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === 'https://api.resend.com/emails') {
+      const payload = JSON.parse(String(init?.body ?? '{}')) as { to: string[]; html: string };
+      delivered.push(payload);
+      return Response.json({ id: 'email_test_id' }, { status: 200 });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const suffix = randomUUID();
+  const email = `password-reset-${suffix}@example.test`;
+  const server = createApp().listen(0, '127.0.0.1');
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const post = (path: string, body: unknown, token?: string) => fetch(baseUrl + path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+
+  let userId = '';
+  try {
+    const registration = await post('/api/auth/register', { email, password: 'Original-password-123!' });
+    assert.equal(registration.status, 201);
+    const account = await registration.json() as { token: string; user: { id: string } };
+    userId = account.user.id;
+
+    const request = await post('/api/auth/password-reset/request', { email: email.toUpperCase() });
+    assert.equal(request.status, 200);
+    assert.match((await request.json() as { message: string }).message, /If an account exists/i);
+    assert.equal(delivered.length, 1);
+    const resetUrl = delivered[0].html.match(/href="([^"]+\/reset-password\?token=[^"]+)"/)?.[1];
+    assert.ok(resetUrl, 'email must contain a reset URL');
+    const rawToken = new URL(resetUrl).searchParams.get('token');
+    assert.ok(rawToken);
+
+    const stored = await prisma.passwordResetToken.findFirst({ where: { userId } });
+    assert.ok(stored);
+    assert.notEqual(stored.tokenHash, rawToken, 'only a hash of the raw token may be stored');
+    assert.equal(stored.tokenHash.length, 64);
+
+    const reset = await post('/api/auth/password-reset/confirm', { token: rawToken, password: 'New-password-456!' });
+    assert.equal(reset.status, 200);
+    assert.equal((await reset.json() as { message: string }).message, 'Password updated. Please sign in with your new password.');
+
+    const oldSession = await fetch(baseUrl + '/api/auth/me', { headers: { authorization: `Bearer ${account.token}` } });
+    assert.equal(oldSession.status, 401, 'password reset must revoke previously issued sessions');
+    const oldLogin = await post('/api/auth/login', { email, password: 'Original-password-123!' });
+    assert.equal(oldLogin.status, 401);
+    const newLogin = await post('/api/auth/login', { email, password: 'New-password-456!' });
+    assert.equal(newLogin.status, 200);
+
+    const replay = await post('/api/auth/password-reset/confirm', { token: rawToken, password: 'Another-password-789!' });
+    assert.equal(replay.status, 400, 'a recovery token must only be usable once');
+
+    const unknown = await post('/api/auth/password-reset/request', { email: `missing-${suffix}@example.test` });
+    assert.equal(unknown.status, 200);
+    assert.equal(delivered.length, 1, 'unknown accounts must not trigger email delivery');
+
+    const secondRequest = await post('/api/auth/password-reset/request', { email });
+    assert.equal(secondRequest.status, 200);
+    const secondUrl = delivered[1].html.match(/href="([^"]+\/reset-password\?token=[^"]+)"/)?.[1];
+    assert.ok(secondUrl);
+    const expiredToken = new URL(secondUrl).searchParams.get('token');
+    assert.ok(expiredToken);
+    const { createHash } = await import('node:crypto');
+    await prisma.passwordResetToken.update({
+      where: { tokenHash: createHash('sha256').update(expiredToken).digest('hex') },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const expired = await post('/api/auth/password-reset/confirm', { token: expiredToken, password: 'Another-password-789!' });
+    assert.equal(expired.status, 400, 'expired recovery tokens must be rejected');
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    if (userId) await prisma.user.delete({ where: { id: userId } });
+    globalThis.fetch = originalFetch;
+    if (previousApiKey === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = previousApiKey;
+    if (previousFrom === undefined) delete process.env.RESEND_FROM_EMAIL; else process.env.RESEND_FROM_EMAIL = previousFrom;
+    if (previousBaseUrl === undefined) delete process.env.APP_BASE_URL; else process.env.APP_BASE_URL = previousBaseUrl;
+  }
+});
