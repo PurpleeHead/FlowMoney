@@ -107,7 +107,7 @@ router.post('/password-reset/request', async (req, res, next) => {
           data: { usedAt: new Date() },
         }),
         prisma.passwordResetToken.create({
-          data: { userId: user.id, tokenHash, expiresAt },
+          data: { userId: user.id, tokenHash, sessionVersion: user.sessionVersion, expiresAt },
         }),
       ]);
 
@@ -141,29 +141,36 @@ router.post('/password-reset/confirm', async (req, res, next) => {
     const now = new Date();
     const record = await prisma.passwordResetToken.findUnique({
       where: { tokenHash },
-      select: { id: true, userId: true, expiresAt: true, usedAt: true },
+      select: { id: true, userId: true, sessionVersion: true, expiresAt: true, usedAt: true },
     });
     if (!record || record.usedAt || record.expiresAt <= now) {
       return res.status(400).json({ message: 'The recovery link is invalid or expired.' });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const consumed = await prisma.$transaction(async tx => {
-      const result = await tx.passwordResetToken.updateMany({
-        where: { id: record.id, usedAt: null, expiresAt: { gt: now } },
-        data: { usedAt: now },
+    let consumed = false;
+    try {
+      consumed = await prisma.$transaction(async tx => {
+        const result = await tx.passwordResetToken.updateMany({
+          where: { id: record.id, usedAt: null, expiresAt: { gt: now }, sessionVersion: record.sessionVersion },
+          data: { usedAt: now },
+        });
+        if (result.count !== 1) return false;
+        // Only the first reset transaction can advance the account session version.
+        const accountUpdate = await tx.user.updateMany({
+          where: { id: record.userId, sessionVersion: record.sessionVersion },
+          data: { passwordHash, sessionVersion: { increment: 1 } },
+        });
+        if (accountUpdate.count !== 1) throw new Error('RESET_SESSION_VERSION_CONFLICT');
+        await tx.passwordResetToken.updateMany({
+          where: { userId: record.userId, usedAt: null },
+          data: { usedAt: now },
+        });
+        return true;
       });
-      if (result.count !== 1) return false;
-      await tx.user.update({
-        where: { id: record.userId },
-        data: { passwordHash, sessionVersion: { increment: 1 } },
-      });
-      await tx.passwordResetToken.updateMany({
-        where: { userId: record.userId, usedAt: null },
-        data: { usedAt: now },
-      });
-      return true;
-    });
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'RESET_SESSION_VERSION_CONFLICT') throw error;
+    }
     if (!consumed) return res.status(400).json({ message: 'The recovery link is invalid or expired.' });
     return res.json({ message: 'Password updated. Please sign in with your new password.' });
   } catch (error) {
