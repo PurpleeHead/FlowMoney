@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, getToken, setToken } from './lib/api';
 import { getHouseholdInviteToken } from './lib/householdInvites';
+import { householdErrorMessage } from './lib/householdErrors';
 import { calculateMonthlyCashflow } from './lib/monthlyCashflow';
 import ReceiptScanner from './components/ReceiptScanner';
 import './personalFinance.css';
@@ -315,7 +316,7 @@ export default function PersonalFinanceApp() {
     api<HouseholdInviteRecord[]>('/household/invitations').then(items => {
       if (!cancelled) setInvitations(items);
     }).catch(e => {
-      if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load invitations.');
+      if (!cancelled) setError(householdErrorMessage(e, lang, 'Could not load invitations.'));
     });
     return () => { cancelled = true; };
   }, [tab, household?.id, household?.role, inviteLink]);
@@ -340,7 +341,7 @@ export default function PersonalFinanceApp() {
           setPendingInvite(preview);
           return true;
         } catch (e) {
-          setError(e instanceof Error ? e.message : 'Invitation could not be loaded.');
+          setError(householdErrorMessage(e, lang, 'Invitation could not be loaded.'));
           return false;
         }
       };
@@ -442,7 +443,7 @@ export default function PersonalFinanceApp() {
         } catch (inviteError) {
           clearWebInvitationHash();
           setInviteToken(null);
-          setError(inviteError instanceof Error ? inviteError.message : 'Invitation could not be loaded.');
+          setError(householdErrorMessage(inviteError, lang, 'Invitation could not be loaded.'));
           await refresh();
         }
       } else {
@@ -532,8 +533,8 @@ export default function PersonalFinanceApp() {
     if (!(await confirmAction(lang === 'ru' ? 'Расход будет удалён из финансовой истории.' : 'This expense will be removed from your financial history.', lang === 'ru' ? 'Удалить расход?' : 'Delete expense?'))) return;
     setBusy(true); try { await api(`${PF}/expenses/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
   }
-  async function renameMember(member: Member) { const name = await promptAction(lang === 'ru' ? 'Укажи новое имя участника.' : 'Enter the member’s new name.', member.name, lang === 'ru' ? 'Изменить имя участника' : 'Rename member'); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
-  async function archiveMember(member: Member) { if (!(await confirmAction(lang === 'ru' ? 'Участник исчезнет из активного списка, но старые операции сохранят его привязку.' : 'This member will leave the active list, while historical transactions keep their attribution.', lang === 'ru' ? 'Архивировать участника?' : 'Archive member?'))) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); await refresh(); if (filterMember === member.id) setFilterMember('all'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function renameMember(member: Member) { const name = await promptAction(lang === 'ru' ? 'Укажи новое имя участника.' : 'Enter the member’s new name.', member.name, lang === 'ru' ? 'Изменить имя участника' : 'Rename member'); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(householdErrorMessage(e, lang, 'Could not rename member.')); } finally { setBusy(false); } }
+  async function archiveMember(member: Member) { if (!(await confirmAction(lang === 'ru' ? 'Участник исчезнет из активного списка, но старые операции сохранят его привязку.' : 'This member will leave the active list, while historical transactions keep their attribution.', lang === 'ru' ? 'Архивировать участника?' : 'Archive member?'))) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); await refresh(); if (filterMember === member.id) setFilterMember('all'); } catch (e) { setError(householdErrorMessage(e, lang, 'Could not archive member.')); } finally { setBusy(false); } }
   async function acceptPendingInvite() {
     if (!pendingInvite) return;
     const token = inviteToken
@@ -547,7 +548,7 @@ export default function PersonalFinanceApp() {
       clearWebInvitationHash();
       await refresh();
       setNotice(lang === 'ru' ? `Ты присоединился к семье «${result.householdName}» как ${result.memberName}.` : `Joined ${result.householdName} as ${result.memberName}.`);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Invitation could not be accepted.'); }
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Invitation could not be accepted.')); }
     finally { setBusy(false); }
   }
   async function renameHousehold() {
@@ -572,7 +573,7 @@ export default function PersonalFinanceApp() {
       setHousehold(current => current ? { ...current, name: updated.name } : current);
       setNotice(lang === 'ru' ? 'Название семьи обновлено.' : 'Household name updated.');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not rename household.');
+      setError(householdErrorMessage(e, lang, 'Could not rename household.'));
     } finally {
       setBusy(false);
     }
@@ -584,7 +585,7 @@ export default function PersonalFinanceApp() {
       setIncomeMember(ownerProfileId); setExpenseMember(ownerProfileId); setObligationMember(ownerProfileId); setBudgetMember(ownerProfileId);
       await refresh();
       setNotice(lang === 'ru' ? 'Твой профиль для учёта сохранён.' : 'Your attribution profile has been saved.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save your profile.'); }
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Could not save your profile.')); }
     finally { setBusy(false); }
   }
   async function createHouseholdInvite() {
@@ -594,7 +595,7 @@ export default function PersonalFinanceApp() {
       const result = await api<{ inviteLink: string }>('/household/invitations', { method: 'POST', body: JSON.stringify({ memberId: inviteMemberId }) });
       setInviteLink(result.inviteLink);
       setNotice(lang === 'ru' ? 'Приглашение создано. Отправь ссылку супругу или другому участнику семьи.' : 'Invitation created. Share the link with your family member.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not create invitation.'); }
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Could not create invitation.')); }
     finally { setBusy(false); }
   }
   async function revokeHouseholdInvitation(invitationId: string) {
@@ -604,7 +605,7 @@ export default function PersonalFinanceApp() {
       await api('/household/invitations/' + encodeURIComponent(invitationId), { method: 'DELETE' });
       setInvitations(current => current.map(item => item.id === invitationId ? { ...item, revokedAt: new Date().toISOString() } : item));
       setNotice(lang === 'ru' ? 'Приглашение отозвано.' : 'Invitation revoked.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not revoke invitation.'); }
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Could not revoke invitation.')); }
     finally { setBusy(false); }
   }
   async function revokeHouseholdAccess(userId: string) {
@@ -614,7 +615,7 @@ export default function PersonalFinanceApp() {
       await api('/household/access/' + encodeURIComponent(userId), { method: 'DELETE' });
       await refresh();
       setNotice(lang === 'ru' ? 'Доступ пользователя отключён.' : 'User access revoked.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not revoke access.'); }
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Could not revoke access.')); }
     finally { setBusy(false); }
   }
   async function addMember(event: FormEvent) {
