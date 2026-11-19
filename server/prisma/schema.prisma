@@ -369,3 +369,10 @@ model PasswordResetToken {
   @@index([userId, createdAt])
   @@index([expiresAt, usedAt])
 }
+
+model TelegramBotUpdate {
+  updateId   BigInt   @id
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
