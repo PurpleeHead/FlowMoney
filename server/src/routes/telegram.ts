@@ -66,12 +66,12 @@ async function loadFinanceSummary(telegramId: string, kind: 'balance' | 'month')
   if (!access) return { error: 'no-access' as const };
 
   const ownerId = access.household.ownerUserId;
-  const timezone = account.timezone || 'Europe/Moscow';
+  const timezone = opening.timezone || account.timezone || 'Europe/Moscow';
   const now = new Date();
   const today = localDateString(now, timezone);
   const opening = await prisma.user.findUnique({
     where: { id: ownerId },
-    select: { openingBalance: true, openingBalanceDate: true },
+    select: { openingBalance: true, openingBalanceDate: true, timezone: true },
   });
   if (!opening) return { error: 'no-access' as const };
 
