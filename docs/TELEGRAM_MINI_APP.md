@@ -54,12 +54,14 @@ The current code already supports Telegram Mini App authentication and secure ac
 
 This is Mini App authentication, not yet a complete conversational bot. The next implementation should be delivered in small staging-only milestones:
 
-### Phase A — Bot foundation
+### Phase A — Bot foundation (implementation in progress)
 - Rotate the previously exposed bot token with BotFather /revoke; configure the replacement only as Render server secret TELEGRAM_BOT_TOKEN.
-- Add TELEGRAM_BOT_USERNAME=nummioX_bot and keep both values server-side.
-- Implement a webhook endpoint with Telegram secret-token verification, strict request validation, rate limits and idempotent update handling.
-- Add /start, /help and /app commands. /start should explain the product and open the Mini App; /app should provide the Mini App button.
-- Keep ordinary browser/email login available; Telegram must remain an optional sign-in method.
+- Configure TELEGRAM_WEBHOOK_SECRET (32–256 URL-safe random characters), TELEGRAM_WEBHOOK_URL and TELEGRAM_MINI_APP_URL as staging-only server environment variables.
+- The staging code now includes POST /api/telegram/webhook with secret-token header verification, private-chat-only handling, request validation, rate limiting and durable update-ID deduplication.
+- Implemented /start, /help and /app. /start and /app provide an HTTPS Mini App button when TELEGRAM_MINI_APP_URL is configured.
+- The server registers the webhook with Telegram on startup only when the bot token, webhook secret and HTTPS webhook URL are all configured. Registration failures do not prevent the API from starting.
+- Keep ordinary browser/email login available; Telegram remains an optional sign-in method.
+- The first bot release is read-only: no finance data is sent and no transactions can be created or changed from chat.
 
 ### Phase B — Useful read-only finance assistant
 - After explicit account linking, support private-chat commands such as /balance, /month and /help.

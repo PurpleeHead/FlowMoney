@@ -13,6 +13,7 @@ import translateRoutes from './routes/translate.js';
 import dashboardRoutes from './routes/dashboard.js';
 import personalFinanceRoutes from './routes/personalFinance.js';
 import householdRoutes from './routes/household.js';
+import telegramRoutes from './routes/telegram.js';
 import { errorHandler } from './middleware/errors.js';
 import { prisma } from './services/prisma.js';
 
@@ -51,6 +52,7 @@ export function createApp() {
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/personal-finance', personalFinanceRoutes);
   app.use('/api/household', householdRoutes);
+  app.use('/api/telegram', telegramRoutes);
 
   const clientDist = resolve(fileURLToPath(new URL('../../client/dist', import.meta.url)));
   if (existsSync(clientDist)) app.use(express.static(clientDist, { index: false, maxAge: '1h' }));
