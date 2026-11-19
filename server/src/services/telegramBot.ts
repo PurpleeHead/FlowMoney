@@ -4,7 +4,7 @@ export type TelegramCommand = 'start' | 'help' | 'app' | 'balance' | 'month' | '
 
 export function parseTelegramCommand(text: unknown): TelegramCommand | null {
   if (typeof text !== 'string') return null;
-  const first = text.trim().split(/\\s+/, 1)[0];
+  const first = text.trim().split(/\s+/, 1)[0];
   if (!first.startsWith('/')) return null;
   const command = first.slice(1).split('@', 1)[0].toLowerCase();
   if (command === 'start' || command === 'help' || command === 'app' || command === 'balance' || command === 'month') return command;
@@ -72,7 +72,7 @@ export function buildTelegramFinanceReply(kind: 'balance' | 'month', data: {
       ...(data.adjustments ? ['Корректировки: ' + formatTelegramMoney(data.adjustments)] : []),
       '',
       'Данные обновлены на момент запроса.',
-    ].join('\\n');
+    ].join('\n');
   }
   return [
     '📊 Итоги за ' + (data.periodLabel ?? 'текущий месяц'),
@@ -80,7 +80,7 @@ export function buildTelegramFinanceReply(kind: 'balance' | 'month', data: {
     'Доходы: ' + formatTelegramMoney(data.income),
     'Расходы: ' + formatTelegramMoney(data.expenses),
     'Разница: ' + formatTelegramMoney(data.income - data.expenses),
-  ].join('\\n');
+  ].join('\n');
 }
 
 export function isSecureTelegramWebhookUrl(value: string | undefined): value is string {
