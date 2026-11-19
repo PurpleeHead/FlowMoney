@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTelegramReply, isValidTelegramWebhookSecret, parseTelegramCommand } from './telegramBot.js';
+import { buildTelegramReply, isSecureTelegramWebhookUrl, isValidTelegramWebhookSecret, parseTelegramCommand } from './telegramBot.js';
 
 test('parses supported Telegram commands and bot mentions', () => {
   assert.equal(parseTelegramCommand('/start'), 'start');
@@ -26,4 +26,12 @@ test('only creates a Mini App button for HTTPS URLs', () => {
   assert.equal(buildTelegramReply('start', 'http://localhost:5173').replyMarkup, undefined);
   assert.match(buildTelegramReply('help').text, /уведомления появятся следующим этапом/);
   assert.match(buildTelegramReply('unknown').text, /Не понял команду/);
+});
+
+test('accepts only secure webhook URLs without credentials or query strings', () => {
+  assert.equal(isSecureTelegramWebhookUrl('https://nummiox-staging.onrender.com/api/telegram/webhook'), true);
+  assert.equal(isSecureTelegramWebhookUrl('http://localhost:3001/api/telegram/webhook'), false);
+  assert.equal(isSecureTelegramWebhookUrl('https://user:pass@example.com/hook'), false);
+  assert.equal(isSecureTelegramWebhookUrl('https://example.com/hook?token=secret'), false);
+  assert.equal(isSecureTelegramWebhookUrl(undefined), false);
 });
