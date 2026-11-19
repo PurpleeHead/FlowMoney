@@ -77,7 +77,6 @@ async function loadFinanceSummary(telegramId: string, kind: 'balance' | 'month')
 
   const openingDate = opening.openingBalanceDate.toISOString().slice(0, 10);
   const balanceStart = localMidnightUtc(openingDate, timezone);
-  const todayStart = localMidnightUtc(today, timezone);
   const tomorrowDate = new Date(today + 'T00:00:00.000Z');
   tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
   const tomorrow = tomorrowDate.toISOString().slice(0, 10);
