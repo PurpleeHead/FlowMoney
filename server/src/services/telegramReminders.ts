@@ -6,7 +6,7 @@ type ReminderUser = {
   telegramReminderTime: string;
   timezone: string;
   locale: string;
-  householdAccess: Array<{ household: { ownerUserId: string; owner: { timezone: string } } }>;
+  householdAccess: Array<{ householdId: string; household: { ownerUserId: string; owner: { timezone: string } } }>;
 };
 
 function localParts(date: Date, timeZone: string) {
@@ -68,7 +68,7 @@ export async function runTelegramPaymentReminders(now = new Date()) {
       id: true, telegramId: true, telegramReminderTime: true, timezone: true, locale: true,
       householdAccess: {
         where: { revokedAt: null },
-        select: { household: { select: { ownerUserId: true, owner: { select: { timezone: true } } } } },
+        select: { householdId: true, household: { select: { ownerUserId: true, owner: { select: { timezone: true } } } } },
         take: 1,
       },
     },
@@ -112,6 +112,15 @@ export async function runTelegramPaymentReminders(now = new Date()) {
       }
     }
     if (!claimed.length) continue;
+
+    const [currentUser, activeAccess] = await Promise.all([
+      prisma.user.findFirst({ where: { id: user.id, telegramId: user.telegramId, telegramRemindersEnabled: true }, select: { id: true } }),
+      prisma.householdAccess.findFirst({ where: { userId: user.id, householdId: access.householdId, revokedAt: null }, select: { id: true } }),
+    ]);
+    if (!currentUser || !activeAccess) {
+      await prisma.telegramReminderDelivery.deleteMany({ where: { id: { in: claimed } } });
+      continue;
+    }
 
     const occurrenceIds = new Set(claimedOccurrenceIds);
     const lines = [
