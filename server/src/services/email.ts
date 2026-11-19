@@ -17,7 +17,6 @@ export async function sendPasswordResetEmail({ to, resetUrl, locale }: PasswordR
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`Resend API returned ${response.status}: ${body.slice(0, 300)}`);
+    throw new Error(`Resend API returned status ${response.status}`);
   }
 }
