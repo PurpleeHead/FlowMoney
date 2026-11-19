@@ -1,0 +1,29 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { buildTelegramReply, isValidTelegramWebhookSecret, parseTelegramCommand } from './telegramBot.js';
+
+test('parses supported Telegram commands and bot mentions', () => {
+  assert.equal(parseTelegramCommand('/start'), 'start');
+  assert.equal(parseTelegramCommand('/start@nummioX_bot payload'), 'start');
+  assert.equal(parseTelegramCommand('/APP'), 'app');
+  assert.equal(parseTelegramCommand('/help'), 'help');
+  assert.equal(parseTelegramCommand('/balance'), 'unknown');
+  assert.equal(parseTelegramCommand('hello'), null);
+  assert.equal(parseTelegramCommand(undefined), null);
+});
+
+test('validates webhook secrets with constant-time comparison and minimum length', () => {
+  const secret = 'a'.repeat(40);
+  assert.equal(isValidTelegramWebhookSecret(secret, secret), true);
+  assert.equal(isValidTelegramWebhookSecret('b'.repeat(40), secret), false);
+  assert.equal(isValidTelegramWebhookSecret(secret, 'short'), false);
+  assert.equal(isValidTelegramWebhookSecret(undefined, secret), false);
+});
+
+test('only creates a Mini App button for HTTPS URLs', () => {
+  const reply = buildTelegramReply('start', 'https://nummiox-staging.onrender.com');
+  assert.equal(reply.replyMarkup?.inline_keyboard[0][0].web_app.url, 'https://nummiox-staging.onrender.com/');
+  assert.equal(buildTelegramReply('start', 'http://localhost:5173').replyMarkup, undefined);
+  assert.match(buildTelegramReply('help').text, /уведомления появятся следующим этапом/);
+  assert.match(buildTelegramReply('unknown').text, /Не понял команду/);
+});
