@@ -37,7 +37,7 @@ jobs:
           cache: npm
       - name: Regenerate lockfile and confirm Effect resolution
         run: |
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm install --ignore-scripts --no-audit --no-fund
           npm ls effect --all
           node -e "const l=require('./package-lock.json'); const p=l.packages['node_modules/effect']; if (!p || p.version !== '3.22.1') { console.error('Expected node_modules/effect@3.22.1, got', p?.version); process.exit(1); }"
       - name: Install exact lockfile
