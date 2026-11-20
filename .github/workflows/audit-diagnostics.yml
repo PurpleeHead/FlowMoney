@@ -1,0 +1,29 @@
+name: Temporary dependency audit diagnostics
+
+on:
+  push:
+    branches:
+      - chore/audit-diagnostics
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Print complete root audit findings
+        run: |
+          npm audit --json > /tmp/root-audit.json || true
+          node --input-type=module -e "import fs from 'node:fs'; const a=JSON.parse(fs.readFileSync('/tmp/root-audit.json','utf8')); console.log(JSON.stringify({metadata:a.metadata, vulnerabilities:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,isDirect:v.isDirect,range:v.range,via:v.via,fixAvailable:v.fixAvailable}))},null,2))"
+      - name: Print production-only audit findings
+        run: |
+          npm audit --omit=dev --json > /tmp/prod-audit.json || true
+          node --input-type=module -e "import fs from 'node:fs'; const a=JSON.parse(fs.readFileSync('/tmp/prod-audit.json','utf8')); console.log(JSON.stringify({metadata:a.metadata, vulnerabilities:Object.entries(a.vulnerabilities ?? {}).map(([name,v])=>({name,severity:v.severity,isDirect:v.isDirect,range:v.range,via:v.via,fixAvailable:v.fixAvailable}))},null,2))"
