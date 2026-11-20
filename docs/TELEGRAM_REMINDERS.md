@@ -16,17 +16,17 @@ The schedule is interpreted as UTC. The worker compares the configured time agai
 
 ## Current scheduling approach: GitHub Actions
 
-Render Cron Jobs were not selected because the available free service plan does not support the required scheduled worker without creating a potentially paid resource. PR #162 prepares `.github/workflows/telegram-payment-reminders.yml`:
+Render Cron Jobs were not selected because the available free service plan does not support the required scheduled worker without creating a potentially paid resource. The workflow `.github/workflows/telegram-payment-reminders.yml` is merged into the repository default branch (`main`):
 
 - Runs every 15 minutes and supports manual dispatch.
 - Checks out `feature/household-collaboration` explicitly, so the worker code and database schema come from staging.
 - Runs the one-shot `telegram:reminders` command; it does not deploy the app or modify Render resources.
 - Requires repository Actions secrets `DATABASE_URL` (the staging database connection string) and `TELEGRAM_BOT_TOKEN`.
-- Must be merged into the repository default branch (`main`) before GitHub will run its scheduled trigger. This merge is a separate approval because it changes `main`.
+- The schedule is registered, but successful reminder delivery is not yet verified.
 
-**Current status:** implementation is prepared in PR #162 but automated delivery is not active until the PR is merged, both secrets are configured directly in GitHub Settings → Secrets and variables → Actions, and a workflow run succeeds. Never paste either secret into chat or source control. Do not use production credentials in this staging workflow.
+**Activation checklist:** add both secrets directly in GitHub **Settings → Secrets and variables → Actions**. Use the staging database URL from the Render staging service and the staging bot token only. Then open **Actions → nummioX Telegram payment reminders**, choose **Run workflow**, and verify a successful run. Never paste either secret into chat or source control. Do not use production credentials in this staging workflow.
 
-The worker does not require `TELEGRAM_WEBHOOK_SECRET`. It does require a reachable staging PostgreSQL database and a valid staging bot token. Until scheduling is activated and delivery is verified, users may save reminder preferences but should not assume automatic reminders are being sent.
+The worker does not require `TELEGRAM_WEBHOOK_SECRET`. It does require a reachable staging PostgreSQL database and a valid staging bot token. Until a workflow run succeeds and delivery is verified, users may save reminder preferences but should not assume automatic reminders are being sent.
 
 ## Safety
 
