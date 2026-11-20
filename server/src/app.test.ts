@@ -24,3 +24,16 @@ test('health endpoint confirms PostgreSQL readiness through the runtime adapter'
     await prisma.$disconnect();
   }
 });
+
+
+test('sets a no-referrer policy so one-time reset tokens are not sent in Referer headers', async () => {
+  const server = createApp().listen(0, '127.0.0.1');
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  const address = server.address() as AddressInfo;
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/not-a-real-route?token=secret`);
+    assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+});
