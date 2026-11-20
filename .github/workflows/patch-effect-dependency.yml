@@ -37,6 +37,7 @@ jobs:
           cache: npm
       - name: Regenerate lockfile with patched Effect version
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ls effect --all
       - name: Install exact lockfile
         run: npm ci
       - name: Require zero high or critical advisories
