@@ -46,41 +46,37 @@ Run the normal nummioX setup, then set `TELEGRAM_BOT_TOKEN` in `server/.env`. Te
 
 ## 5. Telegram product roadmap
 
-The current code already supports Telegram Mini App authentication and secure account linking:
+Telegram authentication and the core companion bot are implemented on staging. This section tracks the remaining setup and release gates rather than planned code work.
+
+### Implemented on staging
+
 - POST /api/auth/telegram validates signed Telegram initData and creates or loads the matching nummioX account.
 - POST /api/auth/telegram/link securely links a Telegram identity to an existing email account.
 - The client reads Telegram start_param and can use it to accept household invitations.
-- verifyTelegramInitData validates the HMAC, timestamp and Telegram user ID on the server.
+- POST /api/telegram/webhook verifies the secret-token header, restricts handling to private chats, validates updates, applies rate limiting and deduplicates Telegram update IDs.
+- /start, /help and /app commands are implemented. /start and /app provide an HTTPS Mini App button when TELEGRAM_MINI_APP_URL is configured.
+- The server registers the webhook on startup when the bot token, webhook secret and HTTPS webhook URL are configured. Staging logs previously confirmed successful registration.
+- /balance and /month provide read-only finance summaries after account linking and enforce active household access.
+- Per-account reminder preferences, timezone-aware due-obligation selection, idempotent delivery records and the one-shot reminder worker are implemented. Reminders are disabled by default and require a linked Telegram account.
+- No finance transactions can be created, edited or paid through chat.
 
-This is Mini App authentication, not yet a complete conversational bot. The next implementation should be delivered in small staging-only milestones:
+### Remaining staging setup and QA
 
-### Phase A — Bot foundation (implementation in progress)
-- Rotate the previously exposed bot token with BotFather /revoke; configure the replacement only as Render server secret TELEGRAM_BOT_TOKEN.
-- Configure TELEGRAM_WEBHOOK_SECRET (32–256 URL-safe random characters), TELEGRAM_WEBHOOK_URL and TELEGRAM_MINI_APP_URL as staging-only server environment variables.
-- The staging code now includes POST /api/telegram/webhook with secret-token header verification, private-chat-only handling, request validation, rate limiting and durable update-ID deduplication.
-- Implemented /start, /help and /app. /start and /app provide an HTTPS Mini App button when TELEGRAM_MINI_APP_URL is configured.
-- The server registers the webhook with Telegram on startup only when the bot token, webhook secret and HTTPS webhook URL are all configured. Registration failures do not prevent the API from starting.
-- Keep ordinary browser/email login available; Telegram remains an optional sign-in method.
-- The first bot release is read-only: no finance data is sent and no transactions can be created or changed from chat.
+- Confirm that the staging bot token has been rotated in BotFather if the previously exposed token was not already revoked. Keep the replacement only in the Render staging secret TELEGRAM_BOT_TOKEN.
+- Verify BotFather's staging menu button and Main Mini App URL, then test opening the app inside Telegram on Android and iOS.
+- Manually test /start, /help, /app, /balance and /month with a linked account, an unlinked account and a household member whose access has been revoked.
+- Test reminder opt-in, local delivery-time preferences and an actual Telegram delivery using a controlled test obligation.
+- Activate automated 15-minute scheduling only after PR #162 is merged into the repository default branch and GitHub Actions secrets DATABASE_URL (staging only) and TELEGRAM_BOT_TOKEN are configured. A successful scheduled or manually dispatched workflow run is required before claiming reminders are active.
+- Do not use production credentials or production bot settings for staging tests.
 
-### Phase B — Useful read-only finance assistant
-- After explicit account linking, support private-chat commands such as /balance, /month and /help.
-- Use the existing authenticated account/household services; never accept a Telegram-supplied account ID as authorization.
-- Return only the linked user's permitted household totals. Do not expose full transaction descriptions or sensitive details by default.
-- Add tests for unlinked users, revoked household members, cross-household isolation, duplicate webhook delivery and Telegram API failures.
+### Production release gates
 
-### Phase C — Notifications
-- Add user-controlled opt-in preferences before sending any finance notifications.
-- Start with daily/weekly summaries and due-obligation reminders; avoid sending transaction details to group chats.
-- Add quiet hours, timezone-aware scheduling, delivery retries and a way to pause/unsubscribe.
-- Use a background worker/queue for scheduled notifications rather than relying on an HTTP request process staying alive.
-
-### Phase D — Mini App polish and release
-- Configure BotFather menu button and Main Mini App URL only after the selected HTTPS staging/production URL is approved.
-- Test inside Telegram on Android and iOS, including auth expiry, account linking, household invite deep links, safe-area layout and back navigation.
-- Keep the production bot token and webhook separate from staging; do not point BotFather at an unverified preview.
+- Keep the production bot token, webhook secret and webhook URL separate from staging.
+- Configure BotFather's production Main Mini App URL only after the production web release has been explicitly approved and verified.
+- Run a separate production bot smoke test after explicit approval; no production bot configuration is authorized by staging work.
 
 ### Security and product boundaries
+
 - Never store the bot token in Git, client variables or chat messages.
 - Verify Telegram webhook secret tokens and signed Mini App initData independently.
 - Ask users to explicitly opt in to notifications; no unsolicited broadcasts.
