@@ -2,23 +2,26 @@
 
 Production remains a separate, explicitly approved release. Staging merges and deployments do not authorize a merge to `main`, a production migration, or a production deploy.
 
-## 0. Verified staging baseline — 19 November 2026
+## 0. Verified staging baseline — 20 November 2026
 
 The following items are verified on staging only. They do not certify or authorize production changes.
 
-- [x] Staging application runtime is live on commit `92e65c00e780e47f47d0151f328aa3bd557c0eb9` (including Prisma 7, RLS lockdown, foreign-key indexes, database readiness probe, browser invitations and password recovery backend).
-- [x] Render uses Node.js 22.23.3 from `.node-version`.
+- [x] Staging application runtime is live on commit `fe7cf244e27fcbde1cb2e0bc1ead8f0606dece8d` (including Prisma 7, RLS lockdown, foreign-key indexes, database readiness probe, household collaboration, password recovery backend, Telegram webhook/commands/reminders, mobile navigation and the latest authentication/category improvements).
+- [x] Render uses Node.js 22.23.3 from `.node-version`; staging service `nummiox-staging` is on the Free plan in Singapore.
 - [x] Prisma 7.10.1 client generation and all 9 committed migrations complete in CI against ephemeral PostgreSQL 17.
-- [x] The staging health probe runs a real PostgreSQL query through the runtime Prisma adapter and Render reports the service live.
-- [x] CI passes on PostgreSQL 17: schema validation, migration replay, server/client builds, 24 server tests, 19 client tests across 5 files and PowerShell syntax checks.
-- [x] Full repository dependency audit and isolated server/client production dependency audits report zero vulnerabilities (0 low, 0 moderate, 0 high, 0 critical).
+- [x] The staging health probe runs a real PostgreSQL query through the runtime Prisma adapter; the latest Render deployment for the release commit is `live`.
+- [x] Latest CI for the release commit passes dependency audits, Prisma validation/generation, migration replay, server/client builds and tests, and PowerShell syntax validation.
+- [x] Full repository dependency audit and isolated server/client production dependency audits report zero vulnerabilities in the latest verified baseline.
 - [x] RLS is enabled on all 19 public application tables; `anon` and `authenticated` have no public-schema/table access.
 - [x] All 11 previously missing foreign-key indexes are present; Supabase no longer reports unindexed foreign keys.
 - [x] Household integration tests cover email/password accounts, shared finance access, third-account isolation, one-time invitations, concurrent profile assignment and immediate revocation.
-- [x] Password recovery backend is deployed to staging: single-use 30-minute tokens, hashed storage, session invalidation, enumeration-safe responses and rate limits. Email delivery remains disabled until Resend is configured.
-- [x] Browser household invitations use secure web links; Telegram deep links remain optional and deferred.
+- [x] Password recovery backend is deployed to staging: single-use 30-minute tokens, hashed storage, session invalidation, enumeration-safe responses and rate limits. Email delivery remains disabled until Resend is configured and a real mailbox test succeeds.
+- [x] Login now offers **Remember me**: checked sessions receive a 30-day JWT; unchecked sessions retain the 7-day default. Tokens remain browser-local and this is not refresh-token rotation.
+- [x] Obligation categories accept custom user-entered values and reuse saved values as future suggestions.
+- [x] Telegram webhook, `/start`, `/help`, `/app`, read-only `/balance` and `/month`, and opt-in due-obligation reminder worker are implemented on staging. Automated 15-minute scheduling is prepared in PR #162 but is not active until its default-branch workflow is merged and the required Actions secrets are configured.
+- [x] Browser household invitations use secure web links; Telegram deep links remain optional.
 
-**Still required before production:** manual visual and two-account QA in RU/EN, Resend domain verification and a real mailbox password-reset test, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. Telegram setup remains deferred as recorded below.
+**Still required before production:** manual visual and two-account QA in RU/EN, Resend domain verification and a real mailbox password-reset test, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. Telegram production token/webhook setup and Mini App testing remain separate from staging implementation.
 
 ---
 ## 1. Before production access is changed
