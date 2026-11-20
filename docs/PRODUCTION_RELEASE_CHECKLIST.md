@@ -8,7 +8,7 @@ The following items are verified on staging only. They do not certify or authori
 
 - [x] Staging application runtime is live on commit `fe7cf244e27fcbde1cb2e0bc1ead8f0606dece8d` (including Prisma 7, RLS lockdown, foreign-key indexes, database readiness probe, household collaboration, password recovery backend, Telegram webhook/commands/reminders, mobile navigation and the latest authentication/category improvements).
 - [x] Render uses Node.js 22.23.3 from `.node-version`; staging service `nummiox-staging` is on the Free plan in Singapore.
-- [x] Prisma 7.10.1 client generation and all 9 committed migrations complete in CI against ephemeral PostgreSQL 17.
+- [x] Prisma 7.10.1 client generation and all 11 committed migrations complete in CI against ephemeral PostgreSQL 17.
 - [x] The staging health probe runs a real PostgreSQL query through the runtime Prisma adapter; the latest Render deployment for the release commit is `live`.
 - [x] Latest CI for the release commit passes dependency audits, Prisma validation/generation, migration replay, server/client builds and tests, and PowerShell syntax validation.
 - [x] Full repository dependency audit and isolated server/client production dependency audits report zero vulnerabilities in the latest verified baseline.
