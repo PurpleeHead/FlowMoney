@@ -1,3 +1,16 @@
+export function resolvePasswordResetBaseUrl(value: string | undefined, environment = process.env.NODE_ENV): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    if (environment === 'production' && url.protocol !== 'https:') return null;
+    if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 type PasswordResetEmail = { to: string; resetUrl: string; locale: 'ru' | 'en' };
 
 export async function sendPasswordResetEmail({ to, resetUrl, locale }: PasswordResetEmail): Promise<void> {
