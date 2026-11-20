@@ -9,6 +9,8 @@ type ReminderUser = {
   householdAccess: Array<{ householdId: string; household: { ownerUserId: string; owner: { timezone: string } } }>;
 };
 
+const REMINDER_WINDOW_MINUTES = 60;
+
 function localParts(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
@@ -33,7 +35,10 @@ export function isReminderWindow(now: Date, timeZone: string, reminderTime: stri
   const currentMinute = Number(parts.hour) * 60 + Number(parts.minute);
   const [hour, minute] = reminderTime.split(':').map(Number);
   const elapsed = currentMinute - (hour * 60 + minute);
-  return elapsed >= 0 && elapsed < 15;
+  // GitHub Actions scheduled runs can be delayed. A wider window avoids losing
+  // a reminder when a 15-minute cron invocation starts late; delivery rows
+  // make repeated invocations idempotent.
+  return elapsed >= 0 && elapsed < REMINDER_WINDOW_MINUTES;
 }
 
 function money(value: number, locale: string) {
