@@ -40,7 +40,7 @@ The repository pins Node.js through `.node-version`. GitHub Actions reads the sa
 - RLS is intentionally enabled without client policies because finance data is served through the authenticated Express API.
 - New application tables must enable RLS in their migration. CI checks this invariant.
 
-The dedicated staging database has nine committed Prisma migrations in the current release baseline, including household access lockdown and foreign-key indexes. CI replays the committed migration history against ephemeral PostgreSQL 17 before a staging change can deploy.
+The dedicated staging database has eleven committed Prisma migrations in the current release baseline, including household access lockdown and foreign-key indexes. CI replays the committed migration history against ephemeral PostgreSQL 17 before a staging change can deploy.
 
 ## Authentication and account recovery
 
