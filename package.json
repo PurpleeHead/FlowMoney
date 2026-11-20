@@ -18,9 +18,12 @@
     "db:validate": "npm --workspace server run db:validate"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "effect": "3.22.1"
   },
   "overrides": {
-    "effect": "3.22.1"
+    "@prisma/config": {
+      "effect": "$effect"
+    }
   }
 }
