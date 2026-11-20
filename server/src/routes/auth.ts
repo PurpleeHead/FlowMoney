@@ -7,7 +7,7 @@ import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
 import { verifyTelegramInitData } from '../services/telegram.js';
-import { sendPasswordResetEmail } from '../services/email.js';
+import { resolvePasswordResetBaseUrl, sendPasswordResetEmail } from '../services/email.js';
 
 const router = Router();
 const credentials = z.object({
@@ -96,8 +96,8 @@ router.post('/password-reset/request', async (req, res, next) => {
 
     const apiKey = process.env.RESEND_API_KEY;
     const from = process.env.RESEND_FROM_EMAIL;
-    const appBaseUrl = process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'http://localhost:5173';
-    if (!apiKey || !from) {
+    const appBaseUrl = resolvePasswordResetBaseUrl(process.env.APP_BASE_URL);
+    if (!apiKey || !from || !appBaseUrl) {
       return res.status(503).json({ message: 'Password recovery email is not configured yet.' });
     }
 
