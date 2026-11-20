@@ -12,7 +12,7 @@ Run it every 15 minutes:
 */15 * * * *
 ```
 
-The schedule is interpreted as UTC. The worker compares the configured time against each user's IANA timezone, so the reminder time remains local across daylight-saving changes.
+The schedule is interpreted as UTC. The worker compares the configured time against each user's IANA timezone, so the reminder time remains local across daylight-saving changes. To tolerate delayed GitHub Actions scheduled runs, the worker accepts invocations during the first 60 minutes after the selected local reminder time. Delivery idempotency prevents subsequent 15-minute runs from sending a duplicate.
 
 ## Current scheduling approach: GitHub Actions
 
