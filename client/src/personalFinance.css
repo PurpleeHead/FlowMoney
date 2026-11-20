@@ -605,3 +605,25 @@ button:disabled { cursor: not-allowed; opacity: .56; }
 @media (max-width: 360px) {
   .pf-sidebar nav button { min-height: 44px; padding-inline: 11px; font-size: 10px; }
 }
+
+
+/* Compact checkbox treatment for the sign-in "remember me" option. */
+.pf-checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 9px !important;
+  color: var(--pf-text) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+.pf-checkbox-label input[type="checkbox"] {
+  width: 16px !important;
+  min-width: 16px !important;
+  max-width: 16px !important;
+  min-height: 16px !important;
+  height: 16px;
+  margin: 0;
+  padding: 0 !important;
+  accent-color: var(--pf-accent);
+}
