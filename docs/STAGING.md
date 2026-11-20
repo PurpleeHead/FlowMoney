@@ -40,11 +40,19 @@ The repository pins Node.js through `.node-version`. GitHub Actions reads the sa
 - RLS is intentionally enabled without client policies because finance data is served through the authenticated Express API.
 - New application tables must enable RLS in their migration. CI checks this invariant.
 
-The dedicated staging database currently has eight successful Prisma migrations, including the household access lockdown and foreign-key indexes.
+The dedicated staging database has nine committed Prisma migrations in the current release baseline, including household access lockdown and foreign-key indexes. CI replays the committed migration history against ephemeral PostgreSQL 17 before a staging change can deploy.
+
+## Authentication and account recovery
+
+- Login includes **Remember me**. When selected, the JWT lifetime is 30 days; otherwise it remains 7 days.
+- The token is still stored by the browser client. This is a longer-lived login session, not refresh-token rotation.
+- Password-reset request/confirmation endpoints are deployed. Email delivery remains disabled until `RESEND_API_KEY`, `RESEND_FROM_EMAIL` and `APP_BASE_URL` are configured on staging and a real mailbox reset is tested. See `docs/EMAIL_SETUP.md`.
 
 ## Telegram
 
-Telegram Mini App end-to-end setup is deliberately deferred. Before testing it, rotate the previously exposed bot token in BotFather, add the new token directly to the staging Render secret `TELEGRAM_BOT_TOKEN`, and configure the staging Main Mini App URL. Never paste the token into chat or commit it.
+The staging code now includes the secure webhook, `/start`, `/help`, `/app`, read-only `/balance` and `/month` commands, and opt-in payment reminders. Keep the bot token in the Render secret `TELEGRAM_BOT_TOKEN`; never paste it into chat or commit it. Configure BotFather's staging Main Mini App URL only after verifying the staging URL inside Telegram.
+
+The one-shot reminder worker is implemented. Automated scheduling uses the GitHub Actions workflow proposed in PR #162, which must be merged into the repository default branch and requires repository Actions secrets `DATABASE_URL` (staging database only) and `TELEGRAM_BOT_TOKEN`. Until that setup is completed and a scheduled/manual workflow run succeeds, saved reminder preferences do not guarantee automatic delivery.
 
 ## Staging verification
 
