@@ -23,7 +23,7 @@ export function createApp() {
   // and express-rate-limit use the real client IP instead of rejecting X-Forwarded-For.
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
-  app.use(helmet({ contentSecurityPolicy: { directives: {
+  app.use(helmet({ referrerPolicy: { policy: 'no-referrer' }, contentSecurityPolicy: { directives: {
     scriptSrc: ["'self'", 'https://telegram.org', 'https://cdn.jsdelivr.net', "'wasm-unsafe-eval'"],
     workerSrc: ["'self'", 'blob:'],
     connectSrc: ["'self'", 'https://cdn.jsdelivr.net'],
