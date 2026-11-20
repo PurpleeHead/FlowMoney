@@ -46,7 +46,7 @@ jobs:
       - name: Report dependency audit
         run: |
           npm audit --json > npm-audit.json || true
-          node -e "const a=require('./npm-audit.json'); const v=a.metadata?.vulnerabilities ?? {}; console.log(JSON.stringify({summary:v, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,p])=>({name,severity:p.severity,range:p.range,fixAvailable:p.fixAvailable}))},null,2)); if ((v.critical ?? 0) > 0) { console.error('Critical vulnerabilities are not allowed, including in development tooling.'); process.exit(1); }"
+          node -e "const a=require('./npm-audit.json'); const v=a.metadata?.vulnerabilities ?? {}; console.log(JSON.stringify({summary:v, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,p])=>({name,severity:p.severity,range:p.range,fixAvailable:p.fixAvailable}))},null,2)); if ((v.high ?? 0) + (v.critical ?? 0) > 0) { console.error('High or critical vulnerabilities are not allowed, including in development tooling.'); process.exit(1); }"
       - name: Audit isolated production dependency trees
         run: |
           node <<'NODE'
