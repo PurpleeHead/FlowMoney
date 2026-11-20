@@ -412,6 +412,7 @@ test('authentication works and household records stay isolated between accounts'
       recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
     }, first.token);
     assert.equal(obligationResponse.status, 201);
+    const obligationRecord = await obligationResponse.json() as { id: string };
     // Deactivating and reactivating an obligation must restore unpaid future occurrences.
     const reactivationObligation = await post('/api/personal-finance/obligations', {
       title: 'Reactivation obligation test', category: 'housing', amount: 450,
@@ -442,8 +443,8 @@ test('authentication works and household records stay isolated between accounts'
     const obligationsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
     assert.equal(obligationsResponse.status, 200);
     const obligationsData = await obligationsResponse.json() as { occurrences: Array<{ id: string; status: string; obligationId: string }> };
-    const occurrence = obligationsData.occurrences.find(item => item.status === 'UPCOMING');
-    assert.ok(occurrence, 'one-time obligation occurrence should be generated');
+    const occurrence = obligationsData.occurrences.find(item => item.obligationId === obligationRecord.id && item.status === 'UPCOMING');
+    assert.ok(occurrence, 'the specific one-time obligation occurrence should be generated');
 
     const paymentResponses = await Promise.all([
       post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 750 }, first.token),
