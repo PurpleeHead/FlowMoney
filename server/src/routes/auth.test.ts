@@ -299,6 +299,19 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(recurringObligation.status, 201);
     const recurringObligationRecord = await recurringObligation.json() as { id: string };
+
+    const customCategoryObligation = await post('/api/personal-finance/obligations', {
+      title: 'Custom category persistence test', category: 'Долг другу', amount: 75,
+      recurrence: 'ONCE', startDate: todayString,
+    }, first.token);
+    assert.equal(customCategoryObligation.status, 201);
+    const customCategoryRecord = await customCategoryObligation.json() as { id: string; category: string };
+    assert.equal(customCategoryRecord.category, 'Долг другу');
+    const customCategoryList = await get(`/api/personal-finance/obligations?from=${todayString}`, first.token);
+    const customCategoryData = await customCategoryList.json() as { obligations: Array<{ id: string; category: string }> };
+    assert.equal(customCategoryData.obligations.find(item => item.id === customCategoryRecord.id)?.category, 'Долг другу',
+      'user-defined obligation categories must persist and be returned by the API');
+
     const obligationScheduleEdit = await patch(`/api/personal-finance/obligations/${recurringObligationRecord.id}`, {
       recurrence: 'ONCE', recurrenceConfig: {},
     }, first.token);
