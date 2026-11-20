@@ -332,6 +332,13 @@ export default function PersonalFinanceApp() {
     let cancelled = false;
     const bootstrap = async () => {
       if (passwordResetToken) {
+        // The token is already captured in React state; remove it from the address
+        // bar and browser history immediately so it is not retained in copied URLs.
+        const resetUrl = new URL(window.location.href);
+        if (resetUrl.searchParams.has('token')) {
+          resetUrl.searchParams.delete('token');
+          window.history.replaceState(window.history.state, '', resetUrl.pathname + resetUrl.search + resetUrl.hash);
+        }
         setToken(null);
         setUser(null);
         setLoading(false);
