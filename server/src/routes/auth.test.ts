@@ -74,6 +74,24 @@ test('authentication works and household records stay isolated between accounts'
     const loggedIn = await login.json() as { token: string };
     assert.ok(loggedIn.token);
 
+    const rememberedLogin = await post('/api/auth/login', {
+      email: firstEmail, password: 'Safe-test-password-123!', rememberMe: true,
+    });
+    assert.equal(rememberedLogin.status, 200);
+    const remembered = await rememberedLogin.json() as { token: string };
+    const rememberedClaims = JSON.parse(Buffer.from(remembered.token.split('.')[1], 'base64url').toString()) as { iat: number; exp: number };
+    assert.equal(rememberedClaims.exp - rememberedClaims.iat, 30 * 24 * 60 * 60,
+      'remember me must issue a 30-day session');
+
+    const regularLogin = await post('/api/auth/login', {
+      email: firstEmail, password: 'Safe-test-password-123!', rememberMe: false,
+    });
+    assert.equal(regularLogin.status, 200);
+    const regular = await regularLogin.json() as { token: string };
+    const regularClaims = JSON.parse(Buffer.from(regular.token.split('.')[1], 'base64url').toString()) as { iat: number; exp: number };
+    assert.equal(regularClaims.exp - regularClaims.iat, 7 * 24 * 60 * 60,
+      'unchecked remember me must retain the standard 7-day session');
+
     const excessiveTranslation = await post('/api/translate', {
       text: Array.from({ length: 81 }, (_, index) => `Receipt line ${index + 1}`).join('\n'),
     }, first.token);
@@ -281,6 +299,24 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(recurringObligation.status, 201);
     const recurringObligationRecord = await recurringObligation.json() as { id: string };
+
+    const customCategoryObligation = await post('/api/personal-finance/obligations', {
+      title: 'Custom category persistence test', category: 'Долг другу', amount: 75,
+      recurrence: 'ONCE', startDate: todayString,
+    }, first.token);
+    assert.equal(customCategoryObligation.status, 201);
+    const customCategoryRecord = await customCategoryObligation.json() as { id: string; category: string };
+    assert.equal(customCategoryRecord.category, 'Долг другу');
+    const customCategoryList = await get(`/api/personal-finance/obligations?from=${todayString}`, first.token);
+    const customCategoryData = await customCategoryList.json() as { obligations: Array<{ id: string; category: string }> };
+    assert.equal(customCategoryData.obligations.find(item => item.id === customCategoryRecord.id)?.category, 'Долг другу',
+      'user-defined obligation categories must persist and be returned by the API');
+    const archiveCustomCategoryObligation = await patch(
+      `/api/personal-finance/obligations/${customCategoryRecord.id}`, { isActive: false }, first.token,
+    );
+    assert.equal(archiveCustomCategoryObligation.status, 200,
+      'the custom-category fixture must be archived so it cannot affect later dashboard assertions');
+
     const obligationScheduleEdit = await patch(`/api/personal-finance/obligations/${recurringObligationRecord.id}`, {
       recurrence: 'ONCE', recurrenceConfig: {},
     }, first.token);
@@ -381,6 +417,7 @@ test('authentication works and household records stay isolated between accounts'
       recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
     }, first.token);
     assert.equal(obligationResponse.status, 201);
+    const obligationRecord = await obligationResponse.json() as { id: string };
     // Deactivating and reactivating an obligation must restore unpaid future occurrences.
     const reactivationObligation = await post('/api/personal-finance/obligations', {
       title: 'Reactivation obligation test', category: 'housing', amount: 450,
@@ -411,8 +448,8 @@ test('authentication works and household records stay isolated between accounts'
     const obligationsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
     assert.equal(obligationsResponse.status, 200);
     const obligationsData = await obligationsResponse.json() as { occurrences: Array<{ id: string; status: string; obligationId: string }> };
-    const occurrence = obligationsData.occurrences.find(item => item.status === 'UPCOMING');
-    assert.ok(occurrence, 'one-time obligation occurrence should be generated');
+    const occurrence = obligationsData.occurrences.find(item => item.obligationId === obligationRecord.id && item.status === 'UPCOMING');
+    assert.ok(occurrence, 'the specific one-time obligation occurrence should be generated');
 
     const paymentResponses = await Promise.all([
       post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 750 }, first.token),

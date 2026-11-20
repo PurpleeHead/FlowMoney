@@ -199,6 +199,7 @@ export default function PersonalFinanceApp() {
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
   const [tab, setTab] = useState<Tab>('overview');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -225,6 +226,7 @@ export default function PersonalFinanceApp() {
   const [expenseTo, setExpenseTo] = useState(moscowToday());
   const [categories, setCategories] = useState<Category[]>([]);
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
+  const [obligationRecords, setObligationRecords] = useState<ObligationRecord[]>([]);
   const [obligationOccurrences, setObligationOccurrences] = useState<ObligationOccurrence[]>([]);
   const [archivedIncomeSources, setArchivedIncomeSources] = useState<IncomeSource[]>([]);
   const [archivedObligations, setArchivedObligations] = useState<ObligationRecord[]>([]);
@@ -302,7 +304,7 @@ export default function PersonalFinanceApp() {
       api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean; telegramRemindersEnabled: boolean; telegramReminderTime: string }>(`${PF}/settings`),
       api<HouseholdInfo>('/household')
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
     const mappedProfile = householdData.currentUser.memberId;
     if (mappedProfile) {
       setIncomeMember(current => current || mappedProfile);
@@ -478,7 +480,7 @@ export default function PersonalFinanceApp() {
   async function handleAuth(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
     try {
-      const result = await api<{ token: string; user: User }>(authMode === 'login' ? '/auth/login' : '/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) });
+      const result = await api<{ token: string; user: User }>(authMode === 'login' ? '/auth/login' : '/auth/register', { method: 'POST', body: JSON.stringify({ email, password, ...(authMode === 'login' ? { rememberMe } : {}) }) });
       setToken(result.token);
       setUser(result.user);
       const invitationToken = inviteToken
@@ -726,6 +728,7 @@ export default function PersonalFinanceApp() {
         <form onSubmit={handleAuth} className="pf-form">
           <label>{tr(lang, 'email')}<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
           <label>{tr(lang, 'password')}<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={8} maxLength={72} required value={password} onChange={e => setPassword(e.target.value)} /></label>
+          {authMode === 'login' && <label className="pf-checkbox-label"><input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} />{lang === 'ru' ? 'Запомнить меня на этом устройстве' : 'Remember me on this device'}</label>}
           <button className="pf-button primary" disabled={busy}>{busy ? '…' : tr(lang, authMode === 'login' ? 'signIn' : 'signUp')}</button>
         </form>
         {authMode === 'login' && <button className="pf-link" onClick={() => { setPasswordResetMode('request'); setError(''); setNotice(''); }}>{lang === 'ru' ? 'Забыли пароль?' : 'Forgot password?'}</button>}
@@ -916,7 +919,7 @@ export default function PersonalFinanceApp() {
             startDate: obligationDate, endDate: obligationEnd || null, memberId: obligationMember || null,
           }, editingObligationId ? (lang === 'ru' ? 'Обязательство и расписание обновлены.' : 'Obligation and schedule updated.') : (lang === 'ru' ? 'Обязательство добавлено.' : 'Obligation added.'), editingObligationId ? 'PATCH' : 'POST')}>
             <label>{tr(lang, 'title')}<input required value={obligationTitle} onChange={e => setObligationTitle(e.target.value)} placeholder={lang === 'ru' ? 'Например, автокредит' : 'e.g. Car loan'}/></label>
-            <label>{tr(lang, 'category')}<select value={obligationCategory} onChange={e => setObligationCategory(e.target.value)}>{(lang === 'ru' ? ['Кредит','Автокредит','Ипотека','Аренда','Коммунальные услуги','Фитнес','Подписки','Другое'] : ['Loan','Car loan','Mortgage','Rent','Utilities','Fitness','Subscriptions','Other']).map(x=><option key={x}>{x}</option>)}</select></label>
+            <label>{tr(lang, 'category')}<input list="pf-obligation-category-options" maxLength={60} required value={obligationCategory} onChange={e => setObligationCategory(e.target.value)} placeholder={lang === 'ru' ? 'Например, Долг' : 'e.g. Debt'} /><datalist id="pf-obligation-category-options">{Array.from(new Set([...(lang === 'ru' ? ['Кредит','Автокредит','Ипотека','Аренда','Коммунальные услуги','Фитнес','Подписки','Долг','Налоги','Страхование','Другое'] : ['Loan','Car loan','Mortgage','Rent','Utilities','Fitness','Subscriptions','Debt','Taxes','Insurance','Other']), ...obligationRecords.map(item => item.category).filter(Boolean)])).map(x=><option key={x} value={x} />)}</datalist></label>
             <label>{tr(lang, 'amount')}<input type="number" min="0.01" step="0.01" required value={obligationAmount} onChange={e => setObligationAmount(e.target.value)}/></label>
             <label>{tr(lang, 'frequency')}<select value={obligationRecurrence} onChange={e => setObligationRecurrence(e.target.value)}><option value="MONTHLY">{tr(lang, 'monthly')}</option><option value="TWICE_MONTHLY">{tr(lang, 'twice')}</option><option value="ONCE">{tr(lang, 'once')}</option><option value="WEEKLY">{tr(lang, 'weekly')}</option><option value="YEARLY">{tr(lang, 'yearly')}</option></select></label>
             {obligationRecurrence === 'MONTHLY' && <label>{tr(lang, 'day')}<input type="number" min="1" max="31" value={obligationDay} onChange={e => setObligationDay(e.target.value)}/></label>}

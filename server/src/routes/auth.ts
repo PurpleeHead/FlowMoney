@@ -15,10 +15,14 @@ const credentials = z.object({
   password: z.string().min(8).max(128),
 });
 
-function token(id: string, email: string, displayName?: string | null, sessionVersion = 0) {
+function token(id: string, email: string, displayName?: string | null, sessionVersion = 0, rememberMe = false) {
   const secret = process.env.JWT_SECRET;
   if (!secret || secret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-  return jwt.sign({ id, email, sessionVersion, ...(displayName ? { displayName } : {}) }, secret, { expiresIn: '7d' });
+  return jwt.sign(
+    { id, email, sessionVersion, ...(displayName ? { displayName } : {}) },
+    secret,
+    { expiresIn: rememberMe ? '30d' : '7d' },
+  );
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -59,19 +63,21 @@ router.post('/register', async (req, res, next) => {
 
 router.post('/login', async (req, res, next) => {
   try {
-    const parsed = credentials.safeParse(req.body);
+    const parsed = credentials.extend({ rememberMe: z.boolean().optional().default(false) }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Enter a valid email and password.' });
-    const { email, password } = parsed.data;
+    const { email, password, rememberMe } = parsed.data;
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       return res.status(401).json({ message: 'Email or password is incorrect.' });
     }
-    return res.json({ token: token(user.id, user.email, null, user.sessionVersion), user: { id: user.id, email: user.email, telegramLinked: Boolean(user.telegramId) } });
+    return res.json({
+      token: token(user.id, user.email, null, user.sessionVersion, rememberMe),
+      user: { id: user.id, email: user.email, telegramLinked: Boolean(user.telegramId) },
+    });
   } catch (error) {
     return next(error);
   }
 });
-
 
 
 const resetRequestSchema = z.object({
