@@ -940,6 +940,12 @@ test('password recovery uses one-time hashed tokens and revokes existing session
     const account = await registration.json() as { token: string; user: { id: string } };
     userId = account.user.id;
 
+    process.env.APP_BASE_URL = 'javascript:alert(1)';
+    const invalidBaseUrlRequest = await post('/api/auth/password-reset/request', { email: email.toUpperCase() });
+    assert.equal(invalidBaseUrlRequest.status, 503, 'invalid reset URL configuration must fail closed');
+    assert.equal(delivered.length, 0, 'no reset email may be sent with an invalid application URL');
+
+    process.env.APP_BASE_URL = 'https://nummiox.example.test';
     const request = await post('/api/auth/password-reset/request', { email: email.toUpperCase() });
     assert.equal(request.status, 200);
     assert.match((await request.json() as { message: string }).message, /If an account exists/i);
