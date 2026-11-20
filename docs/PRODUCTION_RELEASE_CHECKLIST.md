@@ -6,22 +6,22 @@ Production remains a separate, explicitly approved release. Staging merges and d
 
 The following items are verified on staging only. They do not certify or authorize production changes.
 
-- [x] Staging application runtime was verified live on commit `f3b5741f122cb62480508190e53602969a65a5fc` (including Prisma 7, RLS lockdown, foreign-key indexes, database readiness probe, household collaboration, password recovery backend, Telegram webhook/commands/reminders, mobile navigation and authentication/category improvements). The follow-up URL-token cleanup is merged to staging at `89f66155e2674b8ca10c9317836af479dc30af78`; its CI and Render deployment must complete before marking that commit live.
+- [x] Latest staging application commit `1807a6d1956ae08e3deee7e8e762fd62e021863c` is deployed and Live on Render deploy `dep-dc057em7bikc739uvdj0`. It includes password-reset URL safety checks, referrer protection, the Prisma Effect security patch, Telegram webhook/commands/reminders, household collaboration and mobile navigation.
 - [x] Render uses Node.js 22.23.3 from `.node-version`; staging service `nummiox-staging` is on the Free plan in Singapore.
 - [x] Prisma 7.10.1 client generation and all 11 committed migrations complete in CI against ephemeral PostgreSQL 17.
 - [x] The staging health probe runs a real PostgreSQL query through the runtime Prisma adapter; the latest Render deployment for the release commit is `live`.
-- [x] CI passed for the staging baseline commit `f3b5741f122cb62480508190e53602969a65a5fc`, including dependency audits, Prisma validation/generation, migration replay, server/client builds and tests, and PowerShell syntax validation. CI for the newer staging commit `89f66155e2674b8ca10c9317836af479dc30af78` is running and must pass before release sign-off.
-- [x] Full repository dependency audit and isolated server/client production dependency audits report zero vulnerabilities in the latest verified baseline.
+- [x] Full CI passed for staging commit `1807a6d1956ae08e3deee7e8e762fd62e021863c`, including high/critical dependency audit, Prisma validation/generation, migration replay, server/client builds and tests, and PowerShell syntax validation.
+- [x] Full repository and Render build dependency audits report zero vulnerabilities. Prisma 7.10.1 remains in place; its transitive `effect` dependency is pinned to patched `3.22.1`. CI now fails on high and critical findings across development/build tooling as well as runtime dependencies.
 - [x] RLS is enabled on all 19 public application tables; `anon` and `authenticated` have no public-schema/table access.
 - [x] All 11 previously missing foreign-key indexes are present; Supabase no longer reports unindexed foreign keys.
 - [x] Household integration tests cover email/password accounts, shared finance access, third-account isolation, one-time invitations, concurrent profile assignment and immediate revocation.
-- [x] Password recovery backend is deployed to staging: single-use 30-minute tokens, hashed storage, session invalidation, enumeration-safe responses and rate limits. Email delivery remains disabled until Resend is configured and a real mailbox test succeeds.
+- [x] Password recovery backend is deployed to staging: single-use 30-minute tokens, hashed storage, session invalidation, enumeration-safe responses, rate limits, token removal from the browser URL and a global `no-referrer` policy. Password-reset email delivery requires Resend credentials plus an explicit valid `APP_BASE_URL` (HTTPS in production); it fails closed if that URL is missing or invalid. Email delivery remains disabled until Resend is configured and a real mailbox test succeeds.
 - [x] Login now offers **Remember me**: checked sessions receive a 30-day JWT; unchecked sessions retain the 7-day default. Tokens remain browser-local and this is not refresh-token rotation.
 - [x] Obligation categories accept custom user-entered values and reuse saved values as future suggestions.
-- [x] Telegram webhook, `/start`, `/help`, `/app`, read-only `/balance` and `/month`, and opt-in due-obligation reminder worker are implemented on staging. PR #162 has been merged to the default branch; its 15-minute GitHub Actions workflow checks out the staging branch. The schedule is not operationally verified until repository Actions secrets `DATABASE_URL` (staging only) and `TELEGRAM_BOT_TOKEN` are configured and a manual workflow run succeeds.
+- [x] Telegram webhook, `/start`, `/help`, `/app`, read-only `/balance` and `/month`, and opt-in due-obligation reminder worker are implemented on staging. PR #162 is merged to the default branch; its 15-minute GitHub Actions workflow checks out the staging branch. The latest scheduled run failed because repository Actions secrets `DATABASE_URL` and `TELEGRAM_BOT_TOKEN` are not configured. PR #170 proposes skipping the worker until both secrets exist; it targets `main`, remains open and unmerged pending separate approval.
 - [x] Browser household invitations use secure web links; Telegram deep links remain optional.
 
-**Still required before production:** manual visual and two-account QA in RU/EN, Resend domain verification and a real mailbox password-reset test, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. Telegram staging workflow secrets and a successful scheduled/manual reminder run remain unverified; Telegram Mini App manual testing and production bot/webhook setup are separate gates.
+**Still required before production:** manual visual and two-account QA in RU/EN, Resend domain verification and a real mailbox password-reset test (including `APP_BASE_URL`), staging Telegram Actions secrets and a successful real reminder delivery, Telegram Mini App manual testing, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. PR #170 must be separately approved before merging its workflow-only change to `main`.
 
 ---
 ## 1. Before production access is changed
@@ -81,8 +81,8 @@ Do not use a staging `DATABASE_URL` for a production migration. Do not copy cred
 
 The staging implementation includes signed Mini App authentication, account linking, household invite deep links, webhook handling, `/start`, `/help`, `/app`, read-only `/balance` and `/month`, opt-in payment reminders, and a reminder worker. PR #162 adds a 15-minute GitHub Actions schedule on the default branch; the workflow explicitly checks out `feature/household-collaboration` and uses staging credentials only.
 
-- [ ] Add repository Actions secret `DATABASE_URL` pointing to the staging database and `TELEGRAM_BOT_TOKEN`; never paste either secret into chat or use production values.
-- [ ] Run the workflow manually once, confirm a successful worker result, then verify a real opted-in reminder in Telegram.
+- [ ] Add repository Actions secret `DATABASE_URL` pointing to the staging database and `TELEGRAM_BOT_TOKEN`; the latest run confirmed both were empty. Never paste either secret into chat or use production values.
+- [ ] Run the workflow manually once after adding both secrets, confirm a successful worker result, then verify a real opted-in reminder in Telegram.
 - [ ] Manually test `/start`, `/help`, `/app`, `/balance`, `/month`, Mini App authentication and household access.
 - [ ] Before production, rotate/create a separate production bot token, configure the production webhook and BotFather Main Mini App URL only after explicit production approval.
 
