@@ -74,6 +74,24 @@ test('authentication works and household records stay isolated between accounts'
     const loggedIn = await login.json() as { token: string };
     assert.ok(loggedIn.token);
 
+    const rememberedLogin = await post('/api/auth/login', {
+      email: firstEmail, password: 'Safe-test-password-123!', rememberMe: true,
+    });
+    assert.equal(rememberedLogin.status, 200);
+    const remembered = await rememberedLogin.json() as { token: string };
+    const rememberedClaims = JSON.parse(Buffer.from(remembered.token.split('.')[1], 'base64url').toString()) as { iat: number; exp: number };
+    assert.equal(rememberedClaims.exp - rememberedClaims.iat, 30 * 24 * 60 * 60,
+      'remember me must issue a 30-day session');
+
+    const regularLogin = await post('/api/auth/login', {
+      email: firstEmail, password: 'Safe-test-password-123!', rememberMe: false,
+    });
+    assert.equal(regularLogin.status, 200);
+    const regular = await regularLogin.json() as { token: string };
+    const regularClaims = JSON.parse(Buffer.from(regular.token.split('.')[1], 'base64url').toString()) as { iat: number; exp: number };
+    assert.equal(regularClaims.exp - regularClaims.iat, 7 * 24 * 60 * 60,
+      'unchecked remember me must retain the standard 7-day session');
+
     const excessiveTranslation = await post('/api/translate', {
       text: Array.from({ length: 81 }, (_, index) => `Receipt line ${index + 1}`).join('\n'),
     }, first.token);
