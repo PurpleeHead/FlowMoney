@@ -1,0 +1,67 @@
+name: Verify patched Prisma Effect dependency
+
+on:
+  push:
+    branches:
+      - security/patch-prisma-effect-redos
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: flowmoney
+          POSTGRES_PASSWORD: flowmoney
+          POSTGRES_DB: flowmoney
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowmoney -d flowmoney"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://flowmoney:flowmoney@localhost:5432/flowmoney
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Regenerate lockfile and confirm Effect resolution
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ls effect --all
+          node -e "const l=require('./package-lock.json'); const p=l.packages['node_modules/effect']; if (!p || p.version !== '3.22.1') { console.error('Expected node_modules/effect@3.22.1, got', p?.version); process.exit(1); }"
+      - name: Install exact lockfile
+        run: npm ci
+      - name: Require zero high or critical advisories
+        run: npm audit --audit-level=high
+      - name: Validate Prisma schema
+        run: npm run db:validate
+      - name: Generate Prisma Client
+        run: npm run db:generate
+      - name: Replay migrations on disposable PostgreSQL
+        run: npm run db:migrate
+      - name: Build server and client
+        run: npm run build
+      - name: Run server and client tests
+        run: npm test
+      - name: Commit regenerated lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfile already up to date."
+          else
+            git commit -m "security: lock patched Effect dependency"
+            git push origin HEAD:security/patch-prisma-effect-redos
+          fi
