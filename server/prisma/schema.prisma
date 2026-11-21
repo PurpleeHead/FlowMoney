@@ -1,22 +1,49 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
   passwordHash String
+  sessionVersion Int @default(0)
+  telegramId String? @unique
+  telegramUsername String?
+  telegramFirstName String?
+  telegramRemindersEnabled Boolean @default(false)
+  telegramReminderTime String @default("09:00")
+  timezone     String     @default("Europe/Moscow")
+  locale       String     @default("ru")
+  openingBalance Decimal  @default(0) @db.Decimal(14, 2)
+  openingBalanceDate DateTime @default(now()) @db.Date
+  openingBalanceConfigured Boolean @default(false)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   wallets      Wallet[]
   exchanges    Exchange[]
   expenses     Expense[]
   receipts     Receipt[]
+  householdMembers HouseholdMember[]
+  incomeSources IncomeSource[]
+  incomeEntries IncomeEntry[]
+  expenseCategories ExpenseCategory[]
+  ledgerExpenses LedgerExpense[]
+  obligations Obligation[]
+  obligationOccurrences ObligationOccurrence[]
+  balanceAdjustments BalanceAdjustment[]
+  budgets Budget[]
+  savingsGoals SavingsGoal[]
+  ownedHouseholds Household[] @relation("HouseholdOwner")
+  householdAccess HouseholdAccess[] @relation("AccessUser")
+  createdHouseholdInvites HouseholdInvite[] @relation("InviteCreator")
+  acceptedHouseholdInvites HouseholdInvite[] @relation("InviteAcceptor")
+  passwordResetTokens PasswordResetToken[]
+  telegramReminderDeliveries TelegramReminderDelivery[]
 }
 
 model Wallet {
@@ -66,6 +93,7 @@ model Expense {
   receipt   Receipt? @relation(fields: [receiptId], references: [id], onDelete: SetNull)
 
   @@index([userId, date])
+  @@index([receiptId])
 }
 
 model Receipt {
@@ -80,3 +108,289 @@ model Receipt {
   @@index([userId, createdAt])
 }
 
+
+
+model HouseholdMember {
+  id         String   @id @default(cuid())
+  userId     String
+  name       String
+  color      String?
+  isArchived Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  incomeSources IncomeSource[]
+  incomeEntries IncomeEntry[]
+  ledgerExpenses LedgerExpense[]
+  obligations Obligation[]
+  balanceAdjustments BalanceAdjustment[]
+  budgets Budget[]
+  householdAccess HouseholdAccess[]
+  householdInvites HouseholdInvite[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model IncomeSource {
+  id          String   @id @default(cuid())
+  userId      String
+  memberId    String?
+  title       String
+  amount      Decimal  @db.Decimal(14, 2)
+  recurrence  String
+  recurrenceConfig Json
+  startDate   DateTime @db.Date
+  endDate     DateTime? @db.Date
+  isActive    Boolean  @default(true)
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  member      HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  entries     IncomeEntry[]
+
+  @@index([userId, isActive])
+  @@index([memberId])
+}
+
+model IncomeEntry {
+  id           String   @id @default(cuid())
+  userId       String
+  sourceId     String?
+  memberId     String?
+  plannedDate  DateTime @db.Date
+  plannedAmount Decimal @db.Decimal(14, 2)
+  status       String   @default("PLANNED")
+  actualAmount Decimal? @db.Decimal(14, 2)
+  receivedAt   DateTime?
+  note         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source       IncomeSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  member       HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceId, plannedDate])
+  @@index([userId, plannedDate, status])
+  @@index([memberId])
+}
+
+model ExpenseCategory {
+  id         String   @id @default(cuid())
+  userId     String?
+  name       String
+  slug       String
+  isArchived Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses   LedgerExpense[]
+  budgets    Budget[]
+
+  @@unique([userId, slug])
+  @@index([userId])
+}
+
+model LedgerExpense {
+  id          String   @id @default(cuid())
+  userId      String
+  memberId    String?
+  categoryId  String?
+  title       String
+  amount      Decimal  @db.Decimal(14, 2)
+  date        DateTime @db.Date
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  member      HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  category    ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  obligationOccurrence ObligationOccurrence?
+
+  @@index([userId, date])
+  @@index([userId, categoryId, date])
+  @@index([categoryId])
+  @@index([memberId])
+}
+
+model Obligation {
+  id                String   @id @default(cuid())
+  userId            String
+  memberId          String?
+  title             String
+  category          String
+  amount            Decimal  @db.Decimal(14, 2)
+  recurrence        String
+  recurrenceConfig  Json
+  startDate         DateTime @db.Date
+  endDate           DateTime? @db.Date
+  isActive          Boolean  @default(true)
+  note              String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  member            HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  occurrences       ObligationOccurrence[]
+
+  @@index([userId, isActive])
+  @@index([memberId])
+}
+
+model ObligationOccurrence {
+  id           String   @id @default(cuid())
+  userId       String
+  obligationId String
+  dueDate      DateTime @db.Date
+  plannedAmount Decimal @db.Decimal(14, 2)
+  status       String   @default("UPCOMING")
+  paidAt       DateTime?
+  actualAmount Decimal? @db.Decimal(14, 2)
+  expenseId    String?  @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  obligation   Obligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  expense      LedgerExpense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  telegramReminderDeliveries TelegramReminderDelivery[]
+
+  @@unique([obligationId, dueDate])
+  @@index([userId, dueDate, status])
+}
+
+model BalanceAdjustment {
+  id        String   @id @default(cuid())
+  userId    String
+  memberId  String?
+  amount    Decimal  @db.Decimal(14, 2)
+  date      DateTime @db.Date
+  reason    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  member    HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+  @@index([memberId])
+}
+
+model Budget {
+  id          String   @id @default(cuid())
+  userId      String
+  memberId    String?
+  categoryId  String?
+  periodMonth DateTime @db.Date
+  limitAmount Decimal  @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  member      HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  category    ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, periodMonth])
+  @@index([memberId])
+  @@index([categoryId])
+}
+
+model SavingsGoal {
+  id           String   @id @default(cuid())
+  userId       String
+  title        String
+  targetAmount Decimal  @db.Decimal(14, 2)
+  currentAmount Decimal @default(0) @db.Decimal(14, 2)
+  targetDate   DateTime? @db.Date
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+
+model Household {
+  id          String   @id @default(cuid())
+  name        String   @default("Моя семья")
+  ownerUserId String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  owner       User     @relation("HouseholdOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  accesses    HouseholdAccess[]
+  invitations HouseholdInvite[]
+
+  @@index([ownerUserId])
+}
+
+model HouseholdAccess {
+  id          String   @id @default(cuid())
+  householdId String
+  userId      String
+  memberId    String?
+  role        String   @default("MEMBER")
+  joinedAt    DateTime @default(now())
+  revokedAt   DateTime?
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user        User      @relation("AccessUser", fields: [userId], references: [id], onDelete: Cascade)
+  member      HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([userId, revokedAt])
+  @@index([householdId, revokedAt])
+  @@index([memberId])
+}
+
+model HouseholdInvite {
+  id               String   @id @default(cuid())
+  householdId      String
+  createdByUserId  String
+  memberId         String
+  tokenHash        String   @unique
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+  household        Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy        User      @relation("InviteCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  acceptedBy       User?     @relation("InviteAcceptor", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  member           HouseholdMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([householdId, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@index([expiresAt, acceptedAt, revokedAt])
+  @@index([acceptedByUserId])
+  @@index([memberId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  sessionVersion Int @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt, usedAt])
+}
+
+model TelegramBotUpdate {
+  updateId   BigInt   @id
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
+
+model TelegramReminderDelivery {
+  id String @id @default(cuid())
+  userId String
+  occurrenceId String
+  dueDate DateTime @db.Date
+  sentAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  occurrence ObligationOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, occurrenceId])
+  @@index([occurrenceId])
+  @@index([sentAt])
+}

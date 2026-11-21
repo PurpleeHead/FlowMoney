@@ -8,7 +8,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   if (Get-Command npm.cmd -ErrorAction SilentlyContinue) { $npm = "npm.cmd" }
-  else { throw "Node.js/npm was not found. Install Node.js 20+ and reopen PowerShell." }
+  else { throw "Node.js/npm was not found. Install Node.js 22+ and reopen PowerShell." }
 } else { $npm = "npm" }
 
 # Create a local development environment file without overwriting existing settings.
@@ -32,6 +32,12 @@ TRANSLATE_API_KEY=""
   Write-Host "Keeping existing server/.env settings." -ForegroundColor Yellow
 }
 
+# Never let the quick-start script point migrations at a remote or production database.
+$databaseUrlLine = Get-Content $envPath | Where-Object { $_ -match "^\s*DATABASE_URL=" } | Select-Object -First 1
+if (-not $databaseUrlLine -or $databaseUrlLine -notmatch "localhost:5433|127\.0\.0\.1:5433") {
+  throw "Safety check stopped setup: server/.env DATABASE_URL must point to localhost:5433 (the local Docker database). No migration was run."
+}
+
 Write-Host "`n[1/5] Starting PostgreSQL with Docker Compose..." -ForegroundColor Cyan
 docker compose up -d postgres
 if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start PostgreSQL. Check that Docker Desktop is running." }
@@ -45,8 +51,8 @@ for ($i = 0; $i -lt 30; $i++) {
 }
 if (-not $ready) { throw "PostgreSQL did not become ready in 60 seconds. Run 'docker compose logs postgres' to inspect the error." }
 
-Write-Host "`n[3/5] Installing npm dependencies..." -ForegroundColor Cyan
-& $npm install
+Write-Host "`n[3/5] Installing locked npm dependencies with npm ci..." -ForegroundColor Cyan
+& $npm ci
 if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
 
 Write-Host "`n[4/5] Generating Prisma Client..." -ForegroundColor Cyan
