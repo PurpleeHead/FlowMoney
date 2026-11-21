@@ -391,5 +391,6 @@ model TelegramReminderDelivery {
   occurrence ObligationOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
 
   @@unique([userId, occurrenceId])
+  @@index([occurrenceId])
   @@index([sentAt])
 }
