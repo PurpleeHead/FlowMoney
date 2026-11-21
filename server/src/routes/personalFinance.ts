@@ -16,6 +16,8 @@ const dateSchema = z.string()
   }, 'Invalid calendar date.');
 const money = z.number().finite().positive().max(1_000_000_000);
 const optionalMember = z.string().cuid().nullable().optional();
+// Category IDs include both Prisma-generated custom IDs and stable system IDs from migrations.
+const optionalCategoryId = z.string().trim().min(1).max(128).nullable().optional();
 const recurrence = z.enum(['ONCE', 'DAILY', 'WEEKLY', 'TWICE_MONTHLY', 'MONTHLY', 'YEARLY']);
 const configSchema = z.object({
   weekdays: z.array(z.number().int().min(0).max(6)).optional(),
@@ -137,24 +139,51 @@ async function createObligationOccurrences(obligation: {
 
 router.get('/settings', async (req: AuthedRequest, res, next) => {
   try {
-    const settings = await prisma.user.findUnique({ where: { id: uid(req) }, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } });
-    if (!settings) return res.status(404).json({ message: 'User settings not found.' });
-    return res.json(settings);
+    // Language and timezone belong to the signed-in person; the opening balance belongs
+    // to the shared ledger owner so family members cannot overwrite each other's preferences.
+    const [personal, ledger] = await Promise.all([
+      prisma.user.findUnique({ where: { id: req.user!.accountId }, select: { timezone: true, locale: true, telegramRemindersEnabled: true, telegramReminderTime: true } }),
+      prisma.user.findUnique({ where: { id: uid(req) }, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } }),
+    ]);
+    if (!personal || !ledger) return res.status(404).json({ message: 'User settings not found.' });
+    return res.json({ ...personal, ...ledger });
   } catch (error) { return next(error); }
 });
 router.patch('/settings', async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = z.object({ timezone: z.string().trim().min(1).max(80).optional(), locale: z.enum(['ru', 'en']).optional(), openingBalance: z.number().finite().min(-1_000_000_000).max(1_000_000_000).optional(), openingBalanceDate: dateSchema.optional() }).safeParse(req.body);
-    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid timezone or language.' });
+    const parsed = z.object({ timezone: z.string().trim().min(1).max(80).optional(), locale: z.enum(['ru', 'en']).optional(), telegramRemindersEnabled: z.boolean().optional(), telegramReminderTime: z.string().regex(/^(?:[01]\d|2[0-3]):(?:00|15|30|45)$/).optional(), openingBalance: z.number().finite().min(-1_000_000_000).max(1_000_000_000).optional(), openingBalanceDate: dateSchema.optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid timezone, language or opening balance.' });
+    if (parsed.data.telegramRemindersEnabled === true) {
+      const account = await prisma.user.findUnique({ where: { id: req.user!.accountId }, select: { telegramId: true } });
+      if (!account?.telegramId) return res.status(409).json({ message: 'Link Telegram to this account before enabling reminders.' });
+    }
     if (parsed.data.timezone) {
       try { new Intl.DateTimeFormat('en-US', { timeZone: parsed.data.timezone }); }
       catch { return res.status(400).json({ message: 'Unknown IANA timezone.' }); }
     }
+    const changesLedger = parsed.data.openingBalance !== undefined || parsed.data.openingBalanceDate !== undefined;
+    if (changesLedger && req.user!.role !== 'OWNER') {
+      return res.status(403).json({ message: 'Only the household owner can change the shared opening balance.' });
+    }
     if (parsed.data.openingBalanceDate && parsed.data.openingBalanceDate > dateString(await userToday(uid(req)))) return res.status(400).json({ message: 'Opening balance date cannot be in the future.' });
-    const data: Record<string, unknown> = { ...parsed.data };
-    if (parsed.data.openingBalanceDate) data.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
-    if (parsed.data.openingBalance !== undefined || parsed.data.openingBalanceDate !== undefined) data.openingBalanceConfigured = true;
-    return res.json(await prisma.user.update({ where: { id: uid(req) }, data: data as never, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } }));
+
+    const personalData: Record<string, unknown> = {};
+    if (parsed.data.timezone !== undefined) personalData.timezone = parsed.data.timezone;
+    if (parsed.data.locale !== undefined) personalData.locale = parsed.data.locale;
+    if (parsed.data.telegramRemindersEnabled !== undefined) personalData.telegramRemindersEnabled = parsed.data.telegramRemindersEnabled;
+    if (parsed.data.telegramReminderTime !== undefined) personalData.telegramReminderTime = parsed.data.telegramReminderTime;
+    const ledgerData: Record<string, unknown> = {};
+    if (parsed.data.openingBalance !== undefined) ledgerData.openingBalance = parsed.data.openingBalance;
+    if (parsed.data.openingBalanceDate !== undefined) ledgerData.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
+    if (changesLedger) ledgerData.openingBalanceConfigured = true;
+
+    const personal = Object.keys(personalData).length
+      ? await prisma.user.update({ where: { id: req.user!.accountId }, data: personalData as never, select: { timezone: true, locale: true, telegramRemindersEnabled: true, telegramReminderTime: true } })
+      : await prisma.user.findUniqueOrThrow({ where: { id: req.user!.accountId }, select: { timezone: true, locale: true, telegramRemindersEnabled: true, telegramReminderTime: true } });
+    const ledger = changesLedger
+      ? await prisma.user.update({ where: { id: uid(req) }, data: ledgerData as never, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } })
+      : await prisma.user.findUniqueOrThrow({ where: { id: uid(req) }, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } });
+    return res.json({ ...personal, ...ledger });
   } catch (error) { return next(error); }
 });
 
@@ -164,6 +193,7 @@ router.get('/members', async (req: AuthedRequest, res, next) => {
 });
 router.post('/members', async (req: AuthedRequest, res, next) => {
   try {
+    if (req.user!.role !== 'OWNER') return res.status(403).json({ message: 'Only the household owner can manage member profiles.' });
     const parsed = z.object({ name: z.string().trim().min(1).max(60), color: z.string().max(24).optional() }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Enter a household member name.' });
     return res.status(201).json(await prisma.householdMember.create({ data: { ...parsed.data, userId: uid(req) } }));
@@ -176,12 +206,39 @@ router.post('/members', async (req: AuthedRequest, res, next) => {
 });
 router.patch('/members/:id', async (req: AuthedRequest, res, next) => {
   try {
+    if (req.user!.role !== 'OWNER') return res.status(403).json({ message: 'Only the household owner can manage member profiles.' });
     const parsed = z.object({ name: z.string().trim().min(1).max(60).optional(), color: z.string().max(24).nullable().optional(), isArchived: z.boolean().optional() }).safeParse(req.body);
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid member update.' });
-    const result = await prisma.householdMember.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: parsed.data });
-    if (!result.count) return res.status(404).json({ message: 'Household member not found.' });
-    return res.json(await prisma.householdMember.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
+    // Archive checks and writes must be one serializable transaction. Otherwise an
+    // invitation can be accepted between the access check and the profile update,
+    // leaving an active account linked to an archived profile.
+    const outcome = await prisma.$transaction(async tx => {
+      if (parsed.data.isArchived === true) {
+        const linked = await tx.householdAccess.findFirst({
+          where: { householdId: req.user!.householdId, memberId: String(req.params.id), revokedAt: null },
+          select: { id: true },
+        });
+        if (linked) return { status: 'linked' as const };
+      }
+      const result = await tx.householdMember.updateMany({
+        where: { id: String(req.params.id), userId: uid(req) },
+        data: parsed.data,
+      });
+      if (!result.count) return { status: 'missing' as const };
+      const member = await tx.householdMember.findFirst({
+        where: { id: String(req.params.id), userId: uid(req) },
+      });
+      return { status: 'ok' as const, member };
+    }, { isolationLevel: 'Serializable' });
+    if (outcome.status === 'linked') {
+      return res.status(409).json({ message: 'Revoke the linked account before archiving this profile.' });
+    }
+    if (outcome.status === 'missing') return res.status(404).json({ message: 'Household member not found.' });
+    return res.json(outcome.member);
   } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2034') {
+      return res.status(409).json({ message: 'This household profile changed while you were updating it. Refresh and try again.' });
+    }
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
       return res.status(409).json({ message: 'A household member with this name already exists.' });
     }
@@ -378,7 +435,7 @@ router.post('/income-entries', async (req: AuthedRequest, res, next) => {
 
 const expenseSchema = z.object({
   title: z.string().trim().min(1).max(140), amount: money, date: dateSchema,
-  categoryId: z.string().cuid().nullable().optional(), memberId: optionalMember,
+  categoryId: optionalCategoryId, memberId: optionalMember,
   note: z.string().max(500).nullable().optional(),
 });
 router.get('/expenses', async (req: AuthedRequest, res, next) => {
@@ -662,7 +719,7 @@ router.post('/balance-adjustments', async (req: AuthedRequest, res, next) => {
 
 const budgetSchema = z.object({
   periodMonth: dateSchema, limitAmount: money, memberId: optionalMember,
-  categoryId: z.string().cuid().nullable().optional(),
+  categoryId: optionalCategoryId,
 });
 router.get('/budgets', async (req: AuthedRequest, res, next) => {
   try {
@@ -793,12 +850,15 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
       prisma.incomeEntry.findMany({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedRange.from, lt: receivedRange.toExclusive } }, include: { member: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...(memberId ? { obligation: { is: { memberId: memberId === 'shared' ? null : memberId } } } : {}), dueDate: { gte: from, lte: to }, status: { not: 'SKIPPED' } }, include: { obligation: true } }),
     ]);
-    const categoryTotals = new Map<string, number>();
+    const categoryTotals = new Map<string, { id: string; slug: string; name: string; amount: number }>();
     const memberTotals = new Map<string, { id: string | null; name: string; income: number; expenses: number }>();
     const monthTotals = new Map<string, { income: number; expenses: number }>();
     for (const item of expenses) {
-      const category = item.category?.name ?? 'Uncategorized';
-      categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + Number(item.amount));
+      const categoryId = item.category?.id ?? 'uncategorized';
+      const slug = item.category?.slug ?? 'uncategorized';
+      const category = categoryTotals.get(categoryId) ?? { id: categoryId, slug, name: item.category?.name ?? 'Uncategorized', amount: 0 };
+      category.amount += Number(item.amount);
+      categoryTotals.set(categoryId, category);
       const id = item.memberId ?? null, key = id ?? '__shared__', name = item.member?.name ?? 'Shared';
       const totals = memberTotals.get(key) ?? { id, name, income: 0, expenses: 0 };
       totals.expenses += Number(item.amount); memberTotals.set(key, totals);
@@ -814,7 +874,7 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
     }
     return res.json({
       totals: { income: incomes.reduce((sum, item) => sum + Number(item.actualAmount ?? 0), 0), expenses: expenses.reduce((sum, item) => sum + Number(item.amount), 0), obligations: obligations.reduce((sum, item) => sum + Number(item.status === 'PAID' ? (item.actualAmount ?? item.plannedAmount) : item.plannedAmount), 0) },
-      categories: [...categoryTotals].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
+      categories: [...categoryTotals.values()].sort((a, b) => b.amount - a.amount),
       members: [...memberTotals.values()].map(totals => ({ ...totals, net: totals.income - totals.expenses })).sort((a, b) => a.name.localeCompare(b.name)),
       months: [...monthTotals].sort((a, b) => a[0].localeCompare(b[0])).map(([month, totals]) => ({ month, ...totals, net: totals.income - totals.expenses })),
     });
@@ -856,7 +916,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     // Date-only ledger entries use the user's current calendar day; receivedAt is a timestamp.
     const balanceDateCutoff = new Date(now.getTime() + 86400000 - 1);
     const balanceTimestampCutoff = new Date();
-    const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
+    const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, paidObligationsPeriod, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingIncomeRange.from, lte: balanceTimestampCutoff } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } }, _sum: { actualAmount: true } }),
       // The forecast starts at today, not at the selected reporting period's first day.
@@ -864,6 +924,8 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
+      // Separate paid commitments by the date cash actually left the account, not by due date.
+      prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: 'PAID', paidAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } }, _sum: { actualAmount: true } }),
       prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
       prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, actualAmount: true, status: true } }),
@@ -891,7 +953,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       actual: { income: receivedThisMonth, expenses: Number(periodExpenses._sum.amount ?? 0), balance: actualBalance },
       forecast: { plannedIncome, unpaidObligations, balance: actualBalance + plannedIncome - unpaidObligations },
       obligations: {
-        due: dueTotal, paid: paidMonth, unpaid: unpaidMonth,
+        due: dueTotal, paid: paidMonth, paidInPeriod: Number(paidObligationsPeriod._sum.actualAmount ?? 0), unpaid: unpaidMonth,
         coverage: { receivedIncome: receivedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth), surplus: Math.max(0, receivedThisMonth - dueTotal) },
         plannedCoverage: { income: receivedThisMonth + plannedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth - plannedThisMonth) },
       },
