@@ -2,7 +2,7 @@
 
 Production remains a separate, explicitly approved release. Staging merges and deployments do not authorize a merge to `main`, a production migration, or a production deploy.
 
-## 0. Verified staging baseline — 20 November 2026
+## 0. Verified staging baseline — 21 November 2026
 
 The following items are verified on staging only. They do not certify or authorize production changes.
 
@@ -13,7 +13,7 @@ The following items are verified on staging only. They do not certify or authori
 - [x] Full CI passed for staging commit `1807a6d1956ae08e3deee7e8e762fd62e021863c`, including high/critical dependency audit, Prisma validation/generation, migration replay, server/client builds and tests, and PowerShell syntax validation.
 - [x] Full repository and Render build dependency audits report zero vulnerabilities. Prisma 7.10.1 remains in place; its transitive `effect` dependency is pinned to patched `3.22.1`. CI now fails on high and critical findings across development/build tooling as well as runtime dependencies.
 - [x] RLS is enabled on all 19 public application tables; `anon` and `authenticated` have no public-schema/table access.
-- [x] All 11 previously missing foreign-key indexes are present; Supabase no longer reports unindexed foreign keys.
+- [x] The 11 foreign-key indexes found in the initial audit are present. A fresh staging Supabase advisor check identified one additional missing index on `TelegramReminderDelivery.occurrenceId`; the focused staging fix adds it to the Prisma schema and migration.
 - [x] Household integration tests cover email/password accounts, shared finance access, third-account isolation, one-time invitations, concurrent profile assignment and immediate revocation.
 - [x] Password recovery backend is deployed to staging: single-use 30-minute tokens, hashed storage, session invalidation, enumeration-safe responses, rate limits, token removal from the browser URL and a global `no-referrer` policy. Password-reset email delivery requires Resend credentials plus an explicit valid `APP_BASE_URL` (HTTPS in production); it fails closed if that URL is missing or invalid. Email delivery remains disabled until Resend is configured and a real mailbox test succeeds.
 - [x] Login now offers **Remember me**: checked sessions receive a 30-day JWT; unchecked sessions retain the 7-day default. Tokens remain browser-local and this is not refresh-token rotation.
@@ -21,7 +21,7 @@ The following items are verified on staging only. They do not certify or authori
 - [x] Telegram webhook, `/start`, `/help`, `/app`, read-only `/balance` and `/month`, and opt-in due-obligation reminder worker are implemented on staging. PR #162 is merged to the default branch; its 15-minute GitHub Actions workflow checks out the staging branch. The latest scheduled run failed because repository Actions secrets `DATABASE_URL` and `TELEGRAM_BOT_TOKEN` are not configured. PR #170 proposes skipping the worker until both secrets exist; it targets `main`, remains open and unmerged pending separate approval.
 - [x] Browser household invitations use secure web links; Telegram deep links remain optional.
 
-**Still required before production:** manual visual and two-account QA in RU/EN, Resend domain verification and a real mailbox password-reset test (including `APP_BASE_URL`), staging Telegram Actions secrets and a successful real reminder delivery, Telegram Mini App manual testing, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. PR #170 must be separately approved before merging its workflow-only change to `main`.
+**Still required before production:** manual visual and two-account QA in RU/EN, Resend domain verification and a real mailbox password-reset test (including `APP_BASE_URL`), staging Telegram Actions secrets and a successful real reminder delivery, Telegram Mini App manual testing, production database/provider and secret separation verification, a verified production backup/restore rehearsal, and explicit approval for production migration/deploy. PR #170 is already merged to `main`; this does not authorize the production application release.
 
 ---
 ## 1. Before production access is changed
@@ -79,9 +79,9 @@ Do not use a staging `DATABASE_URL` for a production migration. Do not copy cred
 
 ## 6. Telegram workstream (implemented on staging; operational verification pending)
 
-The staging implementation includes signed Mini App authentication, account linking, household invite deep links, webhook handling, `/start`, `/help`, `/app`, read-only `/balance` and `/month`, opt-in payment reminders, and a reminder worker. PR #162 adds a 15-minute GitHub Actions schedule on the default branch; the workflow explicitly checks out `feature/household-collaboration` and uses staging credentials only.
+The staging implementation includes signed Mini App authentication, account linking, household invite deep links, webhook handling, `/start`, `/help`, `/app`, read-only `/balance` and `/month`, opt-in payment reminders, and a reminder worker. PR #162 adds a 15-minute GitHub Actions schedule on the default branch; the workflow explicitly checks out `feature/household-collaboration` and uses staging credentials only. PR #170 adds a guard so the scheduled job cleanly skips until both staging secrets are configured.
 
-- [ ] Add repository Actions secret `DATABASE_URL` pointing to the staging database and `TELEGRAM_BOT_TOKEN`; the latest run confirmed both were empty. Never paste either secret into chat or use production values.
+- [ ] Add repository Actions secrets `DATABASE_URL` pointing to the staging database and `TELEGRAM_BOT_TOKEN`. The latest pre-merge scheduled run failed because both were empty; PR #170 now prevents repeated failures while they remain absent. Never paste either secret into chat or use production values.
 - [ ] Run the workflow manually once after adding both secrets, confirm a successful worker result, then verify a real opted-in reminder in Telegram.
 - [ ] Manually test `/start`, `/help`, `/app`, `/balance`, `/month`, Mini App authentication and household access.
 - [ ] Before production, rotate/create a separate production bot token, configure the production webhook and BotFather Main Mini App URL only after explicit production approval.
