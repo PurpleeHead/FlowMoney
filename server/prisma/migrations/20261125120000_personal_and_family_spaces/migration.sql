@@ -21,9 +21,21 @@ WITH latest_revoked_owner AS (
     )
   ORDER BY access."userId", access."joinedAt" DESC, access."id" DESC
 )
-UPDATE "HouseholdAccess"
-SET "revokedAt" = NULL
-WHERE "id" IN (SELECT "id" FROM latest_revoked_owner);
+UPDATE "HouseholdAccess" access
+SET
+  "revokedAt" = NULL,
+  "memberId" = CASE
+    WHEN access."memberId" IS NOT NULL AND EXISTS (
+      SELECT 1
+      FROM "HouseholdAccess" occupied
+      WHERE occupied."householdId" = access."householdId"
+        AND occupied."memberId" = access."memberId"
+        AND occupied."revokedAt" IS NULL
+        AND occupied."userId" <> access."userId"
+    ) THEN NULL
+    ELSE access."memberId"
+  END
+WHERE access."id" IN (SELECT "id" FROM latest_revoked_owner);
 
 -- Defensive backfill for any account whose personal OWNER access row is missing.
 INSERT INTO "HouseholdAccess" ("id", "householdId", "userId", "memberId", "role", "joinedAt")
