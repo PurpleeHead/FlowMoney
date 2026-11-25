@@ -347,11 +347,15 @@ router.patch('/income-entries/:id', async (req: AuthedRequest, res, next) => {
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid planned income update.' });
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
-    const data: Record<string, unknown> = { ...input };
-    if (input.plannedDate) data.plannedDate = dateValue(input.plannedDate);
     const id = String(req.params.id);
     const existing = await prisma.incomeEntry.findFirst({ where: { id, userId }, include: { source: { select: { isActive: true } } } });
-    if (!existing || existing.status === 'RECEIVED') return res.status(404).json({ message: 'Editable planned income not found.' });
+    if (!existing || (existing.status === 'RECEIVED' && input.status !== 'SKIPPED')) return res.status(404).json({ message: 'Editable planned income not found.' });
+    const data: Record<string, unknown> = { ...input };
+    if (existing.status === 'RECEIVED' && input.status === 'SKIPPED') {
+      data.actualAmount = null;
+      data.receivedAt = null;
+    }
+    if (input.plannedDate) data.plannedDate = dateValue(input.plannedDate);
     if (input.status === 'PLANNED' && existing.sourceId && !existing.source?.isActive) {
       return res.status(409).json({ message: 'Reactivate the income source before restoring this planned entry.' });
     }
@@ -359,7 +363,7 @@ router.patch('/income-entries/:id', async (req: AuthedRequest, res, next) => {
       ? { OR: [{ sourceId: null }, { source: { is: { isActive: true } } }] }
       : {};
     const result = await prisma.incomeEntry.updateMany({
-      where: { id, userId, status: { not: 'RECEIVED' }, ...activeSourceWhere },
+      where: { id, userId, status: existing.status, ...activeSourceWhere },
       data: data as never,
     });
     if (!result.count) return res.status(409).json({ message: 'Income entry changed while it was being updated.' });
