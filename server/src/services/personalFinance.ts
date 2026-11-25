@@ -149,3 +149,19 @@ function assertFiniteNonNegative(value: number, label: string) {
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
+
+export type ObligationPeriodTotals = { due: number; paid: number; unpaid: number };
+
+/** Summarizes obligations by due date within the already-selected period. */
+export function calculateObligationPeriodTotals(
+  occurrences: Array<{ status: string; plannedAmount: number | string; actualAmount?: number | string | null }>,
+): ObligationPeriodTotals {
+  return occurrences.reduce<ObligationPeriodTotals>((totals, item) => {
+    const planned = Number(item.plannedAmount);
+    if (!Number.isFinite(planned) || planned < 0) return totals;
+    totals.due += planned;
+    if (item.status === 'PAID') totals.paid += Number(item.actualAmount ?? item.plannedAmount);
+    else if (item.status === 'UPCOMING' || item.status === 'OVERDUE') totals.unpaid += planned;
+    return totals;
+  }, { due: 0, paid: 0, unpaid: 0 });
+}
