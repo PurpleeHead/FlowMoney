@@ -56,7 +56,7 @@ The one-shot reminder worker is implemented. Automated scheduling uses the GitHu
 
 ## Latest staging changes
 
-- PR #175 (`780ca370193266bd04ea73344452f5769b8a681e`) has been merged into `feature/household-collaboration`: received income can be cancelled and restored, and newly created income sources are ordered first. CI passed for the PR. Render staging deployment is pending verification; do not treat these changes as live until the matching Render deploy is `live`.
+- PR #175 (`780ca370193266bd04ea73344452f5769b8a681e`) is merged into `feature/household-collaboration`: received income can be cancelled and restored, and newly created income sources are ordered first. Post-merge CI passed; Render deploy `dep-dc37milbedkc73dc8t8g` for commit `ba5ad3b7c5d2f77eac957565a33e826dbdd7630a` is Live (25 November 2026).
 
 ## Staging verification
 
