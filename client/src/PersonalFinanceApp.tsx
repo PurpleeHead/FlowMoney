@@ -371,6 +371,8 @@ export default function PersonalFinanceApp() {
         try {
           const preview = await api<PendingHouseholdInvite>('/household/invitations/preview', { method: 'POST', body: JSON.stringify({ token: invitationToken }) });
           if (preview.alreadyAccepted) {
+            setFinanceSpace('household');
+            setFinanceSpaceState('household');
             clearWebInvitationHash();
             setInviteToken(null);
             setNotice(lang === 'ru' ? `Ты уже присоединился к семье «${preview.householdName}».` : `You already joined ${preview.householdName}.`);
@@ -643,6 +645,8 @@ export default function PersonalFinanceApp() {
       const result = await api<{ householdName: string; memberName: string }>('/household/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
       setPendingInvite(null);
       setInviteToken(null);
+      setFinanceSpace('household');
+      setFinanceSpaceState('household');
       clearWebInvitationHash();
       await refresh();
       setNotice(lang === 'ru' ? `Ты присоединился к семье «${result.householdName}» как ${result.memberName}.` : `Joined ${result.householdName} as ${result.memberName}.`);
