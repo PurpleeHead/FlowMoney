@@ -16,7 +16,6 @@ const russianMessages: Record<string, string> = {
   'This account already belongs to another shared household.': 'Этот аккаунт уже состоит в другом общем семейном пространстве.',
   'The household owner cannot leave while other members still have access. Transfer ownership or remove members first.': 'Владелец не может покинуть семейное пространство, пока у других участников есть доступ. Сначала передайте владение или отключите участников.',
   'This household profile is already linked to an active account. Ask the owner to revoke that access before reusing the profile.': 'Этот профиль уже привязан к активному аккаунту. Попросите владельца сначала отключить его доступ.',
-  'This account already contains financial records. Join is blocked to prevent accidental data merging.': 'В аккаунте уже есть финансовые записи. Присоединение заблокировано, чтобы не объединить данные автоматически.',
   'This invitation was just used or the account already has active household access. Refresh and try again.': 'Приглашение уже использовано или у аккаунта есть активный доступ к семье. Обновите страницу и повторите попытку.',
   'This household profile is already linked to an active account.': 'Этот семейный профиль уже привязан к активной учётной записи.',
   'Revoke the linked account before archiving this profile.': 'Перед архивацией профиля сначала отключите связанный аккаунт.',
