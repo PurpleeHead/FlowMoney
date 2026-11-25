@@ -59,9 +59,7 @@ async function authenticate(req: AuthedRequest, res: Response, next: NextFunctio
     const personalAccess = activeAccesses.find(item =>
       item.role === 'OWNER' && item.household.ownerUserId === claims.id
     );
-    const sharedAccess = activeAccesses.find(item =>
-      item.role === 'MEMBER' || (item.role === 'OWNER' && item.household.ownerUserId === claims.id)
-    );
+    const sharedAccess = activeAccesses.find(item => item.role === 'MEMBER') ?? personalAccess;
     const access = requestedSpace === 'personal'
       ? personalAccess
       : sharedAccess ?? (hasRevokedSharedMembership ? undefined : personalAccess);
