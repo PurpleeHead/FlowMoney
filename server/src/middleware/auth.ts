@@ -59,10 +59,10 @@ async function authenticate(req: AuthedRequest, res: Response, next: NextFunctio
     const personalAccess = activeAccesses.find(item =>
       item.role === 'OWNER' && item.household.ownerUserId === claims.id
     );
-    const sharedAccess = activeAccesses.find(item => item.role === 'MEMBER') ?? personalAccess;
+    const sharedAccess = activeAccesses.find(item => item.role === 'MEMBER') ?? (hasRevokedSharedMembership ? undefined : personalAccess);
     const access = requestedSpace === 'personal'
       ? personalAccess
-      : sharedAccess ?? (hasRevokedSharedMembership ? undefined : personalAccess);
+      : sharedAccess;
     if (!access && requireHousehold) {
       res.status(403).json({ message: 'Your household access is no longer active. Ask the household owner for a new invitation.' });
       return;
