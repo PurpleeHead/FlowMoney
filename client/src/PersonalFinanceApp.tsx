@@ -794,7 +794,7 @@ export default function PersonalFinanceApp() {
   </main>;
 
   const activeMembers = members.filter(member => !member.isArchived);
-  const canManageHousehold = canManageHousehold && (financeSpace === 'household' || availableSpaces.length === 1);
+  const canManageHousehold = household?.role === 'OWNER' && (financeSpace === 'household' || availableSpaces.length === 1);
   const memberOptions = <><option value="">{tr(lang, 'shared')}</option>{activeMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</>;
   const matchesMember = (id?: string | null) => filterMember === 'all' || (filterMember === 'shared' ? !id : id === filterMember);
   const visibleIncome = incomeEntries
