@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateActualBalance, calculateCoverage, calculateForecastBalance, generateOccurrences } from './personalFinance.js';
+import { calculateActualBalance, calculateCoverage, calculateForecastBalance, calculateObligationPeriodTotals, generateOccurrences } from './personalFinance.js';
 
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const keys = (values: Date[]) => values.map(value => value.toISOString().slice(0, 10));
