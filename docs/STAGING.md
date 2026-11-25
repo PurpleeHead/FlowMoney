@@ -33,14 +33,14 @@ The repository pins Node.js through `.node-version`. GitHub Actions reads the sa
 
 ## Database security boundary
 
-- All 19 application/public tables have Row Level Security enabled.
+- All 21 application/public tables have Row Level Security enabled.
 - The browser does not access Supabase Data API tables directly.
 - `anon` and `authenticated` have no usage on the `public` schema and no direct table access.
 - Server-side `postgres` and privileged `service_role` access are preserved.
 - RLS is intentionally enabled without client policies because finance data is served through the authenticated Express API.
 - New application tables must enable RLS in their migration. CI checks this invariant.
 
-The dedicated staging database has eleven committed Prisma migrations in the current release baseline, including household access lockdown and foreign-key indexes. CI replays the committed migration history against ephemeral PostgreSQL 17 before a staging change can deploy.
+The dedicated staging database has twelve committed Prisma migrations in the current release baseline, including household access lockdown and foreign-key indexes. CI replays the committed migration history against ephemeral PostgreSQL 17 before a staging change can deploy.
 
 ## Authentication and account recovery
 
@@ -53,6 +53,10 @@ The dedicated staging database has eleven committed Prisma migrations in the cur
 The staging code now includes the secure webhook, `/start`, `/help`, `/app`, read-only `/balance` and `/month` commands, and opt-in payment reminders. Keep the bot token in the Render secret `TELEGRAM_BOT_TOKEN`; never paste it into chat or commit it. Configure BotFather's staging Main Mini App URL only after verifying the staging URL inside Telegram.
 
 The one-shot reminder worker is implemented. Automated scheduling uses the GitHub Actions workflow proposed in PR #162, which must be merged into the repository default branch and requires repository Actions secrets `DATABASE_URL` (staging database only) and `TELEGRAM_BOT_TOKEN`. Until that setup is completed and a scheduled/manual workflow run succeeds, saved reminder preferences do not guarantee automatic delivery.
+
+## Latest staging changes
+
+- PR #175 (`780ca370193266bd04ea73344452f5769b8a681e`) has been merged into `feature/household-collaboration`: received income can be cancelled and restored, and newly created income sources are ordered first. CI passed for the PR. Render staging deployment is pending verification; do not treat these changes as live until the matching Render deploy is `live`.
 
 ## Staging verification
 
