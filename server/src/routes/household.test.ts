@@ -356,6 +356,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
       assert.equal(personalRequest.status, 200, `revoked members retain personal access to ${path}`);
     }
 
+    selectedSpaces.set(dataAccount.token, dataPersonalSpaceId);
     const privateDataStillExists = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, dataAccount.token);
     assert.equal(privateDataStillExists.status, 200);
     const privateBody = await privateDataStillExists.json() as { expenses: Array<{ title: string }> };
