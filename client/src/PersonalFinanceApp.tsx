@@ -294,7 +294,8 @@ export default function PersonalFinanceApp() {
     webApp.setHeaderColor?.('#F4F5F4');
     webApp.setBackgroundColor?.('#F4F5F4');
   }, []);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (resetMemberFilter = false) => {
+    const selectedMemberFilter = resetMemberFilter ? 'all' : filterMember;
     const calendarExpenseData = (async () => {
       const all: Expense[] = [];
       let skip = 0;
@@ -308,7 +309,7 @@ export default function PersonalFinanceApp() {
       return all;
     })();
     const [dash, income, expenseData, calendarExpenseRows, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData, spaceData] = await Promise.all([
-      api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
+      api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${selectedMemberFilter !== 'all' ? `&memberId=${selectedMemberFilter}` : ''}`),
       api<{ entries: IncomeEntry[]; sources: IncomeSource[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}&includeArchived=true`),
       api<{ expenses: Expense[]; total: number; page: { take: number; skip: number; hasMore: boolean }; categories: Category[] }>(`${PF}/expenses?take=100&skip=0`),
       calendarExpenseData,
@@ -664,7 +665,7 @@ export default function PersonalFinanceApp() {
     setTab('overview');
     setLoading(true);
     setError('');
-    try { await refresh(); }
+    try { await refresh(true); }
     catch (e) { setError(householdErrorMessage(e, lang, 'Could not switch finance space.')); }
     finally { setLoading(false); }
   }
