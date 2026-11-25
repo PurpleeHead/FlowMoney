@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { generateOccurrences, type Recurrence, type RecurrenceConfig } from '../services/personalFinance.js';
+import { calculateObligationPeriodTotals, generateOccurrences, type Recurrence, type RecurrenceConfig } from '../services/personalFinance.js';
 
 const router = Router();
 router.use(auth);
@@ -940,14 +940,9 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const actualBalance = householdOpeningBalance + Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenseTotal;
     const plannedIncome = Number(plannedHorizon._sum.plannedAmount ?? 0);
     const unpaidObligations = Number(forecastObligations._sum.plannedAmount ?? 0);
-    const dueTotal = monthOccurrences.reduce((sum, item) => sum + Number(item.plannedAmount), 0);
+    const { due: dueTotal, paid: paidMonth, unpaid: unpaidMonth } = calculateObligationPeriodTotals(monthOccurrences);
     const receivedThisMonth = Number(receivedPeriod._sum.actualAmount ?? 0);
     const plannedThisMonth = Number(plannedPeriod._sum.plannedAmount ?? 0);
-    const paidMonth = monthOccurrences.filter(item => item.status === 'PAID').reduce((sum, item) => sum + Number(item.actualAmount ?? item.plannedAmount), 0);
-    // Unpaid is the remaining planned amount only; subtracting actual paid amounts from planned due
-    // can produce a negative remainder when a payment exceeds the original estimate.
-    const unpaidMonth = monthOccurrences.filter(item => item.status === 'UPCOMING' || item.status === 'OVERDUE')
-      .reduce((sum, item) => sum + Number(item.plannedAmount), 0);
     const nextPayments = await prisma.obligationOccurrence.findMany({
       where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } },
       include: { obligation: true }, orderBy: { dueDate: 'asc' }, take: 10,
