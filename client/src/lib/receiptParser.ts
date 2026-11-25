@@ -1,6 +1,6 @@
 export type ReceiptItem = { name: string; price: number; quantity: number };
 
-const NON_ITEM_LINE = /^(?:итого|к оплате|сумма|total|subtotal|наличными|наличные|карта|сдача|скидка|discount|кассир|касса|дата|время|адрес|инн|тел\.?|чек|receipt)\b/i;
+const NON_ITEM_LINE = /^(?:итого|к оплате|сумма|total|subtotal|наличными|наличные|карта|сдача|скидка|discount|кассир|касса|дата|время|адрес|инн|тел\.?|чек|receipt)(?:\s|$)/i;
 const CURRENCY_SUFFIX = /(?:₽|руб(?:\.|ля|лей)?|RUB|₫|đ|VND)$/i;
 
 function parseAmount(raw: string): number {
@@ -26,7 +26,7 @@ function parseAmount(raw: string): number {
   return Number(compact.replace(/[.,]/g, ''));
 }
 
-// Supports common Russian/English receipt rows with RUB symbols, decimal commas,
+// Supports Russian/English receipt rows with RUB symbols, decimal commas,
 // grouped thousands and legacy VND receipts. Always ask the user to review OCR.
 export function parseReceiptLines(text: string): ReceiptItem[] {
   return text
@@ -36,7 +36,7 @@ export function parseReceiptLines(text: string): ReceiptItem[] {
     .filter(line => !NON_ITEM_LINE.test(line))
     .map(line => {
       const normalizedLine = line.replace(CURRENCY_SUFFIX, '').trim();
-      const match = normalizedLine.match(/^(.*\S)\s+(\d[\d\s.,]*)$/);
+      const match = normalizedLine.match(/^(.*?)\s+(\d[\d\s.,]*)$/);
       if (!match) return null;
 
       const name = match[1].replace(/[|*]+/g, ' ').replace(/\s+/g, ' ').trim();
