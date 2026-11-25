@@ -655,10 +655,12 @@ export default function PersonalFinanceApp() {
       const result = await api<{ householdId: string; householdName: string; memberName: string }>('/household/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
       setActiveHouseholdId(result.householdId);
       setActiveHouseholdIdState(result.householdId);
+      setFilterMember('all');
+      setFilterCategory('all');
       setPendingInvite(null);
       setInviteToken(null);
       clearWebInvitationHash();
-      await refresh();
+      await refresh(true);
       setNotice(lang === 'ru' ? `Ты присоединился к семье «${result.householdName}» как ${result.memberName}.` : `Joined ${result.householdName} as ${result.memberName}.`);
     } catch (e) { setError(householdErrorMessage(e, lang, 'Invitation could not be accepted.')); }
     finally { setBusy(false); }
