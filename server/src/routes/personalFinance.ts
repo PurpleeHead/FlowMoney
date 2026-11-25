@@ -347,15 +347,15 @@ router.patch('/income-entries/:id', async (req: AuthedRequest, res, next) => {
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid planned income update.' });
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    const id = String(req.params.id);
+    const existing = await prisma.incomeEntry.findFirst({ where: { id, userId }, include: { source: { select: { isActive: true } } } });
+    if (!existing || (existing.status === 'RECEIVED' && input.status !== 'SKIPPED')) return res.status(404).json({ message: 'Editable planned income not found.' });
     const data: Record<string, unknown> = { ...input };
     if (existing.status === 'RECEIVED' && input.status === 'SKIPPED') {
       data.actualAmount = null;
       data.receivedAt = null;
     }
     if (input.plannedDate) data.plannedDate = dateValue(input.plannedDate);
-    const id = String(req.params.id);
-    const existing = await prisma.incomeEntry.findFirst({ where: { id, userId }, include: { source: { select: { isActive: true } } } });
-    if (!existing || (existing.status === 'RECEIVED' && input.status !== 'SKIPPED')) return res.status(404).json({ message: 'Editable planned income not found.' });
     if (input.status === 'PLANNED' && existing.sourceId && !existing.source?.isActive) {
       return res.status(409).json({ message: 'Reactivate the income source before restoring this planned entry.' });
     }
