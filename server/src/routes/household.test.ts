@@ -353,7 +353,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const revoke = await request('/api/household/access/' + encodeURIComponent(spouse.user.id), 'DELETE', undefined, owner.token);
     assert.equal(revoke.status, 204);
     const revokedRequest = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, spouse.token);
-    assert.equal(revokedRequest.status, 200, 'revoking family access must not revoke the user's personal space');
+    assert.equal(revokedRequest.status, 200, "revoking family access must not revoke the user's personal space");
     assert.equal((await revokedRequest.json() as { expenses: Array<{ title: string }> }).expenses.some(item => item.title === 'Shared groceries'), false, 'revoked users no longer see shared records');
     const spouseSpacesAfterRevoke = await request('/api/household/spaces', 'GET', undefined, spouse.token);
     assert.equal((await spouseSpacesAfterRevoke.json() as Array<{ isPersonal: boolean }>).length, 1, 'revocation removes only the shared space from the selector');
