@@ -123,6 +123,11 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(accepted.status, 200);
     const acceptedBody = await accepted.json() as { householdId: string; householdName: string; memberName: string };
     assert.equal(acceptedBody.memberName, 'Wife');
+    const spouseSpacesAfterJoin = await request('/api/household/spaces', 'GET', undefined, spouse.token);
+    const spouseSpaces = await spouseSpacesAfterJoin.json() as Array<{ id: string; isPersonal: boolean }>;
+    assert.equal(spouseSpaces.length, 2, 'the invited account keeps its personal space alongside the new family space');
+    assert.equal(spouseSpaces.some(space => space.isPersonal), true);
+    assert.equal(spouseSpaces.some(space => space.id === acceptedBody.householdId && !space.isPersonal), true);
 
     const renamedHousehold = await request('/api/household', 'PATCH', { name: 'Our family budget' }, owner.token);
     assert.equal(renamedHousehold.status, 200, 'the owner may rename the shared household');
@@ -350,6 +355,8 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const revokedRequest = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, spouse.token);
     assert.equal(revokedRequest.status, 200, 'revoking family access must not revoke the user's personal space');
     assert.equal((await revokedRequest.json() as { expenses: Array<{ title: string }> }).expenses.some(item => item.title === 'Shared groceries'), false, 'revoked users no longer see shared records');
+    const spouseSpacesAfterRevoke = await request('/api/household/spaces', 'GET', undefined, spouse.token);
+    assert.equal((await spouseSpacesAfterRevoke.json() as Array<{ isPersonal: boolean }>).length, 1, 'revocation removes only the shared space from the selector');
 
     for (const path of ['/api/expenses', '/api/exchanges', '/api/receipts', '/api/dashboard']) {
       const personalRequest = await request(path, 'GET', undefined, spouse.token);
