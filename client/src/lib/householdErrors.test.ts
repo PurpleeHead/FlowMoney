@@ -10,12 +10,12 @@ describe('householdErrorMessage', () => {
     )).toBe('Этот профиль уже привязан к другой активной учётной записи.');
   });
 
-  it('translates invitation and data-preservation conflicts', () => {
+  it('translates conflicts when an account already belongs to another shared household', () => {
     expect(householdErrorMessage(
-      new Error('This account already contains financial records. Join is blocked to prevent accidental data merging.'),
+      new Error('This account already belongs to another shared household.'),
       'ru',
       'Не удалось принять приглашение.',
-    )).toBe('В аккаунте уже есть финансовые записи. Присоединение заблокировано, чтобы не объединить данные автоматически.');
+    )).toBe('Этот аккаунт уже состоит в другом общем семейном пространстве.');
   });
 
   it('keeps the original server message in English', () => {

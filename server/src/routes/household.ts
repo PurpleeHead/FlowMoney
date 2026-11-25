@@ -20,6 +20,22 @@ function ownerOnly(req: AuthedRequest, res: import('express').Response) {
   return true;
 }
 
+router.get('/spaces', async (req: AuthedRequest, res, next) => {
+  try {
+    const accesses = await prisma.householdAccess.findMany({
+      where: { userId: current(req).accountId, revokedAt: null },
+      include: { household: { select: { id: true, name: true, ownerUserId: true } } },
+      orderBy: { joinedAt: 'asc' },
+    });
+    return res.json(accesses.map(access => ({
+      id: access.household.id,
+      name: access.household.name,
+      role: access.role,
+      isPersonal: access.household.ownerUserId === current(req).accountId,
+    })));
+  } catch (error) { return next(error); }
+});
+
 router.get('/', async (req: AuthedRequest, res, next) => {
   try {
     const user = current(req);
@@ -237,24 +253,17 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
       }
       if (invite.household.ownerUserId === user.accountId) return { error: 'self' as const };
 
-      const activeAccess = await tx.householdAccess.findFirst({
+      const activeAccesses = await tx.householdAccess.findMany({
         where: { userId: user.accountId, revokedAt: null },
-        include: { household: { select: { ownerUserId: true } } },
+        select: { id: true, householdId: true, role: true },
       });
-      if (activeAccess && (activeAccess.role !== 'OWNER' || activeAccess.household.ownerUserId !== user.accountId)) {
+      // Keep the user's personal OWNER access intact. One account may have its own
+      // personal space plus one shared household, but may not join a second shared one.
+      if (activeAccesses.some(access => access.role === 'MEMBER' && access.householdId !== invite.householdId)) {
         return { error: 'already-member' as const };
       }
-      if (activeAccess?.role === 'OWNER' && activeAccess.household.ownerUserId === user.accountId) {
-        const otherActiveMembers = await tx.householdAccess.count({
-          where: {
-            householdId: activeAccess.householdId,
-            revokedAt: null,
-            userId: { not: user.accountId },
-          },
-        });
-        // An owner may leave an empty personal household when joining another one,
-        // but must never orphan an existing household with active members.
-        if (otherActiveMembers > 0) return { error: 'owner-has-members' as const };
+      if (activeAccesses.some(access => access.householdId === invite.householdId)) {
+        return { error: 'already-member' as const };
       }
       const assignedProfile = await tx.householdAccess.findFirst({
         where: {
@@ -268,32 +277,8 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
         return { error: 'profile-occupied' as const };
       }
 
-      const [wallets, exchanges, expenses, receipts, incomeSources, incomeEntries, ledgerExpenses, obligations, obligationOccurrences, adjustments, budgets, goals, customCategories, memberProfiles, accountSettings] = await Promise.all([
-        tx.wallet.count({ where: { userId: user.accountId } }),
-        tx.exchange.count({ where: { userId: user.accountId } }),
-        tx.expense.count({ where: { userId: user.accountId } }),
-        tx.receipt.count({ where: { userId: user.accountId } }),
-        tx.incomeSource.count({ where: { userId: user.accountId } }),
-        tx.incomeEntry.count({ where: { userId: user.accountId } }),
-        tx.ledgerExpense.count({ where: { userId: user.accountId } }),
-        tx.obligation.count({ where: { userId: user.accountId } }),
-        tx.obligationOccurrence.count({ where: { userId: user.accountId } }),
-        tx.balanceAdjustment.count({ where: { userId: user.accountId } }),
-        tx.budget.count({ where: { userId: user.accountId } }),
-        tx.savingsGoal.count({ where: { userId: user.accountId } }),
-        tx.expenseCategory.count({ where: { userId: user.accountId } }),
-        tx.householdMember.count({ where: { userId: user.accountId } }),
-        tx.user.findUnique({ where: { id: user.accountId }, select: { openingBalanceConfigured: true, openingBalance: true } }),
-      ]);
-      // Joining must never orphan even "configuration-only" personal data such as custom
-      // categories, member profiles or a configured opening balance.
-      const hasPersonalData = [
-        wallets, exchanges, expenses, receipts, incomeSources, incomeEntries,
-        ledgerExpenses, obligations, obligationOccurrences, adjustments, budgets,
-        goals, customCategories, memberProfiles,
-      ].some(count => count > 0) || Boolean(accountSettings?.openingBalanceConfigured)
-        || Number(accountSettings?.openingBalance ?? 0) !== 0;
-      if (hasPersonalData) return { error: 'has-data' as const };
+      // Personal financial records belong to the recipient's own household.
+      // They remain untouched and accessible after joining this shared space.
 
       const claimed = await tx.householdInvite.updateMany({
         where: { id: invite.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: now } },
@@ -301,12 +286,7 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
       });
       if (!claimed.count) return { error: 'invalid' as const };
 
-      if (activeAccess) {
-        await tx.householdAccess.update({
-          where: { id: activeAccess.id },
-          data: { revokedAt: now },
-        });
-      }
+      // Do not revoke the existing OWNER access: it is the recipient's personal space.
       const access = await tx.householdAccess.create({
         data: {
           householdId: invite.householdId,
@@ -316,7 +296,7 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
         },
         select: { id: true },
       });
-      return { householdName: invite.household.name, memberName: invite.member.name, accessId: access.id };
+      return { householdId: invite.householdId, householdName: invite.household.name, memberName: invite.member.name, accessId: access.id };
     }, { isolationLevel: 'Serializable' });
 
     if ('error' in accepted) {
@@ -324,14 +304,12 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
         invalid: [400, 'This invitation is invalid, expired, revoked or already used.'],
         self: [400, 'The household owner cannot accept their own invitation.'],
         'already-member': [409, 'This account already belongs to another shared household.'],
-        'owner-has-members': [409, 'The household owner cannot leave while other members still have access. Transfer ownership or remove members first.'],
         'profile-occupied': [409, 'This household profile is already linked to an active account. Ask the owner to revoke that access before reusing the profile.'],
-        'has-data': [409, 'This account already contains financial records. Join is blocked to prevent accidental data merging.'],
       } as const;
       const [status, message] = messages[accepted.error as keyof typeof messages];
       return res.status(status).json({ message });
     }
-    return res.json({ success: true, householdName: accepted.householdName, memberName: accepted.memberName });
+    return res.json({ success: true, householdId: accepted.householdId, householdName: accepted.householdName, memberName: accepted.memberName });
   } catch (error) {
     if (typeof error === 'object' && error !== null && 'code' in error && (error.code === 'P2002' || error.code === 'P2034')) {
       return res.status(409).json({ message: 'This invitation was just used or the account already has active household access. Refresh and try again.' });

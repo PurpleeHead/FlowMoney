@@ -10,12 +10,16 @@ Backend schema, migration, request-level household resolution, invitation API, i
 
 ## Target behavior
 
-- One household has one owner and one or more authenticated user accounts.
+- Every account keeps its own personal finance space, including all pre-existing records.
+- An account may additionally join one shared household without revoking or rewriting its personal space.
+- The user explicitly switches between personal finances and the shared family budget; each API request is scoped to the selected active membership.
+- One shared household has one owner and one or more authenticated user accounts.
 - Each authenticated user is linked to one household member profile (for example, the existing profile named "Wife") so transactions can continue to be attributed consistently.
 - Household users can read and create the shared income, expense, obligation, budget, goal, dashboard and analytics records.
 - Only the owner can create/revoke invitations and manage ownership.
 - Removing a user revokes access immediately; it does not delete household records.
 - A user's unrelated personal financial records must never become visible to another household.
+- Joining or leaving a shared household must not move, merge, delete or hide the user's personal financial records.
 
 ## Data model direction
 
@@ -36,12 +40,13 @@ Store only a cryptographic hash of invite tokens. Generate tokens from a cryptog
 ## Migration and compatibility
 
 1. Create one personal household for each existing user and make that user its owner.
-2. Create an owner access record for every existing account.
+2. Create an owner access record for every existing account. If an earlier release revoked that personal access when the account joined a family, restore it during the follow-up migration.
 3. Preserve all existing financial rows and IDs. Do not copy or rewrite historical transactions during the first migration.
 4. Keep existing `userId` ownership as the canonical data-owner key for the first release. Resolve an authenticated user's household owner on the server and use that owner key for all personal-finance reads/writes. Never accept an owner ID from the client.
 5. Add the authenticated user's `memberId` to the request context for attribution defaults, while still allowing an explicit shared/unassigned transaction where product rules permit.
-6. A joining account with existing finance records must not silently merge or lose them. Initially reject joining if the account already owns financial records; a separately reviewed data-transfer flow can be built later.
-7. Preserve email/password login and Telegram login as independent authentication methods attached to the same FlowMoney user account. Linking an existing email account to Telegram must require an authenticated session and a verified Telegram signature; never auto-link by matching email text.
+6. A joining account with existing finance records keeps them in its personal household. No data is copied or rewritten; the new shared household is a separate selected workspace.
+7. Allow one active personal OWNER access plus one active shared MEMBER access per account. A user cannot join multiple shared households at once.
+8. Preserve email/password login and Telegram login as independent authentication methods attached to the same FlowMoney user account. Linking an existing email account to Telegram must require an authenticated session and a verified Telegram signature; never auto-link by matching email text.
 
 This approach avoids a destructive migration of every existing financial table and allows access revocation to take effect on the next API request.
 
@@ -52,7 +57,7 @@ This approach avoids a destructive migration of every existing financial table a
 - The UI shares a Telegram Mini App deep link using the configured bot username and `startapp` parameter. Also provide a copyable invitation code for manual entry.
 - Recipient opens the Mini App, authenticates with signed Telegram `initData`, reviews the household name and selected member profile, then explicitly accepts.
 - Server validates expiry, revocation, single-use status, recipient account eligibility and household membership in one transaction.
-- The recipient sees a clear confirmation before switching from their empty personal household to the invited household.
+- The recipient sees a clear confirmation explaining that personal records stay separate, then switches into the invited shared household after acceptance.
 
 ## API surface to implement
 - `POST /api/auth/telegram/link` — link a signed Telegram Web App identity to the currently authenticated FlowMoney account; reject identities already linked elsewhere.
@@ -75,7 +80,9 @@ This approach avoids a destructive migration of every existing financial table a
 - Only the owner can create or revoke invitations or revoke household access.
 - Revoked users lose access on the next API request, even with a still-valid JWT.
 - Existing users receive personal households after migration without changing financial row IDs or balances.
-- A joining account with existing finance records is rejected without modifying either account.
+- A joining account with existing finance records can join while retaining access to the original personal records.
+- Switching spaces scopes all finance, legacy endpoints, settings, categories and analytics to the selected household owner.
+- Revoking shared access leaves the user's personal space available and removes the revoked household from the space selector.
 - Account linking requires both an authenticated FlowMoney session and verified Telegram identity; matching a synthetic Telegram email is never sufficient.
 
 ## Release boundary

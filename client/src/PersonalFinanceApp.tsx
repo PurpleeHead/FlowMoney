@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { api, getToken, setToken } from './lib/api';
+import { api, getToken, getActiveHouseholdId, setActiveHouseholdId, setToken } from './lib/api';
 import { getHouseholdInviteToken } from './lib/householdInvites';
 import { householdErrorMessage } from './lib/householdErrors';
 import { calculateMonthlyCashflow } from './lib/monthlyCashflow';
@@ -20,6 +20,7 @@ type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | str
 type SavingsGoal = { id: string; title: string; targetAmount: number | string; currentAmount: number | string; targetDate?: string | null; status: string };
 type PendingHouseholdInvite = { alreadyAccepted: boolean; householdName: string; memberName: string; ownerName: string; expiresAt?: string };
 type HouseholdInviteRecord = { id: string; expiresAt: string; acceptedAt: string | null; revokedAt: string | null; member: { id: string; name: string } };
+type HouseholdSpace = { id: string; name: string; role: 'OWNER' | 'MEMBER'; isPersonal: boolean };
 type HouseholdInfo = {
   id: string; name: string; ownerUserId: string; role: 'OWNER' | 'MEMBER';
   currentUser: { id: string; memberId: string | null };
@@ -211,6 +212,8 @@ export default function PersonalFinanceApp() {
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [household, setHousehold] = useState<HouseholdInfo | null>(null);
+  const [householdSpaces, setHouseholdSpaces] = useState<HouseholdSpace[]>([]);
+  const [activeHouseholdId, setActiveHouseholdIdState] = useState(() => getActiveHouseholdId() ?? '');
   const [pendingInvite, setPendingInvite] = useState<PendingHouseholdInvite | null>(null);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [inviteMemberId, setInviteMemberId] = useState('');
@@ -291,7 +294,8 @@ export default function PersonalFinanceApp() {
     webApp.setHeaderColor?.('#F4F5F4');
     webApp.setBackgroundColor?.('#F4F5F4');
   }, []);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (resetMemberFilter = false) => {
+    const selectedMemberFilter = resetMemberFilter ? 'all' : filterMember;
     const calendarExpenseData = (async () => {
       const all: Expense[] = [];
       let skip = 0;
@@ -304,23 +308,35 @@ export default function PersonalFinanceApp() {
       }
       return all;
     })();
-    const [dash, income, expenseData, calendarExpenseRows, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData] = await Promise.all([
-      api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
+    const [dash, income, expenseData, calendarExpenseRows, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData, spaceData] = await Promise.all([
+      api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${selectedMemberFilter !== 'all' ? `&memberId=${selectedMemberFilter}` : ''}`),
       api<{ entries: IncomeEntry[]; sources: IncomeSource[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}&includeArchived=true`),
       api<{ expenses: Expense[]; total: number; page: { take: number; skip: number; hasMore: boolean }; categories: Category[] }>(`${PF}/expenses?take=100&skip=0`),
       calendarExpenseData,
-      api<{ occurrences: ObligationOccurrence[]; obligations: ObligationRecord[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}${showSkippedObligations ? '&includeSkipped=true' : ''}&includeArchived=true`),
+      api<{ occurrences: ObligationOccurrence[]; obligations: ObligationRecord[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}${selectedMemberFilter !== 'all' ? `&memberId=${selectedMemberFilter}` : ''}${showSkippedObligations ? '&includeSkipped=true' : ''}&includeArchived=true`),
       api<Member[]>(`${PF}/members`),
       api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`),
-      api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
+      api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${selectedMemberFilter !== 'all' ? `&memberId=${selectedMemberFilter}` : ''}`),
       api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
       api<SavingsGoal[]>(`${PF}/savings-goals`),
       api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean; telegramRemindersEnabled: boolean; telegramReminderTime: string }>(`${PF}/settings`),
-      api<HouseholdInfo>('/household')
+      api<HouseholdInfo>('/household'),
+      api<HouseholdSpace[]>('/household/spaces')
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setCalendarExpenses(calendarExpenseRows); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setCalendarExpenses(calendarExpenseRows); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setHouseholdSpaces(spaceData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
+    const storedSpaceId = getActiveHouseholdId();
+    const resolvedSpaceId = spaceData.some(space => space.id === storedSpaceId)
+      ? storedSpaceId!
+      : (spaceData.find(space => space.isPersonal)?.id ?? householdData.id);
+    if (resolvedSpaceId) { setActiveHouseholdId(resolvedSpaceId); setActiveHouseholdIdState(resolvedSpaceId); }
     const mappedProfile = householdData.currentUser.memberId;
-    if (mappedProfile) {
+    if (resetMemberFilter) {
+      setIncomeMember(mappedProfile ?? '');
+      setExpenseMember(mappedProfile ?? '');
+      setObligationMember(mappedProfile ?? '');
+      setBudgetMember(mappedProfile ?? '');
+      setBudgetCategory('');
+    } else if (mappedProfile) {
       setIncomeMember(current => current || mappedProfile);
       setExpenseMember(current => current || mappedProfile);
       setObligationMember(current => current || mappedProfile);
@@ -636,14 +652,31 @@ export default function PersonalFinanceApp() {
     if (!token) { setError(lang === 'ru' ? 'Ссылка-приглашение не найдена. Открой её заново.' : 'Invitation link is missing. Reopen it and try again.'); return; }
     setBusy(true); setError('');
     try {
-      const result = await api<{ householdName: string; memberName: string }>('/household/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
+      const result = await api<{ householdId: string; householdName: string; memberName: string }>('/household/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
+      setActiveHouseholdId(result.householdId);
+      setActiveHouseholdIdState(result.householdId);
+      setFilterMember('all');
+      setFilterCategory('all');
       setPendingInvite(null);
       setInviteToken(null);
       clearWebInvitationHash();
-      await refresh();
+      await refresh(true);
       setNotice(lang === 'ru' ? `Ты присоединился к семье «${result.householdName}» как ${result.memberName}.` : `Joined ${result.householdName} as ${result.memberName}.`);
     } catch (e) { setError(householdErrorMessage(e, lang, 'Invitation could not be accepted.')); }
     finally { setBusy(false); }
+  }
+  async function switchHouseholdSpace(householdId: string) {
+    if (!householdId || householdId === activeHouseholdId) return;
+    setActiveHouseholdId(householdId);
+    setActiveHouseholdIdState(householdId);
+    setFilterMember('all');
+    setFilterCategory('all');
+    setTab('overview');
+    setLoading(true);
+    setError('');
+    try { await refresh(true); }
+    catch (e) { setError(householdErrorMessage(e, lang, 'Could not switch finance space.')); }
+    finally { setLoading(false); }
   }
   async function renameHousehold() {
     if (!household || household.role !== 'OWNER') return;
@@ -829,7 +862,7 @@ export default function PersonalFinanceApp() {
       <div className="pf-sidebar-bottom"><div className="pf-avatar">{(user.displayName || user.email)[0].toUpperCase()}</div><div className="pf-user"><strong>{user.displayName || user.email.split('@')[0]}</strong><small>{user.email.endsWith('@telegram.flowmoney.invalid') ? 'Telegram' : user.email}</small></div>{!window.Telegram?.WebApp?.initData && <button className="pf-icon-button" type="button" title={tr(lang, 'logout')} aria-label={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button>}</div>
     </aside>
     <main className="pf-main" id="pf-main-content" tabIndex={-1}>
-      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions"><input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) { setSelectedMonth(e.target.value); setSelectedCalendarDate(e.target.value + '-01'); } }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.isArchived ? `${m.name} · ${lang === 'ru' ? 'архив' : 'archived'}` : m.name}</option>)}</select><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
+      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions">{householdSpaces.length > 1 && <select className="pf-member-filter" value={activeHouseholdId || household?.id || ''} onChange={e => { void switchHouseholdSpace(e.target.value); }} aria-label={lang === 'ru' ? 'Финансовое пространство' : 'Finance space'}>{householdSpaces.map(space => <option key={space.id} value={space.id}>{space.isPersonal ? (lang === 'ru' ? 'Личные финансы' : 'Personal finances') : (lang === 'ru' ? 'Семейный бюджет' : 'Family budget')} · {space.name}</option>)}</select>}<input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) { setSelectedMonth(e.target.value); setSelectedCalendarDate(e.target.value + '-01'); } }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.isArchived ? `${m.name} · ${lang === 'ru' ? 'архив' : 'archived'}` : m.name}</option>)}</select><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
       {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}<button type="button" aria-label={lang === 'ru' ? 'Закрыть сообщение об ошибке' : 'Dismiss error message'} onClick={() => setError('')}>×</button></div>}
       {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}<button type="button" aria-label={lang === 'ru' ? 'Закрыть уведомление' : 'Dismiss notification'} onClick={() => setNotice('')}>×</button></div>}
 
@@ -1073,7 +1106,7 @@ export default function PersonalFinanceApp() {
             <label>{lang === 'ru' ? 'Мой профиль' : 'My profile'}<select value={ownerProfileId} onChange={e=>setOwnerProfileId(e.target.value)}><option value="">{lang === 'ru' ? 'Не выбран — общие операции' : 'Not set — shared transactions'}</option>{activeMembers.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
             <button className="pf-button" disabled={busy} onClick={saveOwnerProfile}>{lang === 'ru' ? 'Сохранить мой профиль' : 'Save my profile'}</button>
             <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПРИГЛАШЕНИЕ В СЕМЬЮ' : 'INVITE TO HOUSEHOLD'}</span><h2>{lang === 'ru' ? 'Подключить близкого' : 'Add a family member'}</h2></div></div>
-            <p className="pf-muted">{lang === 'ru' ? 'Выбери профиль, который будет закреплён за аккаунтом приглашённого участника. История и общий баланс останутся едиными.' : 'Choose the profile to link to the invited member’s account. History and balances remain shared.'}</p>
+            <p className="pf-muted">{lang === 'ru' ? 'Выбери профиль участника. Его личные финансовые записи останутся в отдельном личном пространстве, а семейные операции будут доступны здесь.' : 'Choose the profile for the invited person. Their existing personal records stay separate; only family transactions are shared.'}</p>
             <label>{lang === 'ru' ? 'Профиль участника' : 'Member profile'}<select value={inviteMemberId} onChange={e=>setInviteMemberId(e.target.value)}><option value="">{lang === 'ru' ? 'Выбрать профиль' : 'Choose a profile'}</option>{activeMembers.filter(m=>!household.members.some(a=>a.member?.id===m.id)).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
             <button className="pf-button primary" disabled={busy || !inviteMemberId} onClick={createHouseholdInvite}>{lang === 'ru' ? 'Создать ссылку-приглашение' : 'Create invite link'}</button>
             {inviteLink && <div className="pf-invite-link"><input readOnly value={inviteLink}/><button className="pf-button" onClick={async()=>{try{await navigator.clipboard.writeText(inviteLink);setNotice(lang==='ru'?'Ссылка скопирована.':'Link copied.');}catch{setError(lang==='ru'?'Не удалось скопировать ссылку.':'Could not copy the link.');}}}>{lang === 'ru' ? 'Копировать' : 'Copy'}</button></div>}

@@ -46,12 +46,21 @@ async function authenticate(req: AuthedRequest, res: Response, next: NextFunctio
       return;
     }
 
-    // Resolve membership on every request so revocation takes effect immediately,
-    // even while a previously issued JWT is still valid.
-    const access = await prisma.householdAccess.findFirst({
+    // A user may keep a personal household while also joining one shared household.
+    // The client selects the active space with this header; an invalid/stale selection
+    // falls back to the user's own personal space instead of granting foreign access.
+    const accesses = await prisma.householdAccess.findMany({
       where: { userId: claims.id, revokedAt: null },
       include: { household: { select: { id: true, ownerUserId: true } } },
+      orderBy: { joinedAt: 'asc' },
     });
+    const requestedHouseholdId = req.header('x-nummiox-household-id');
+    const access = (requestedHouseholdId
+      ? accesses.find(item => item.householdId === requestedHouseholdId)
+      : undefined)
+      ?? accesses.find(item => item.role === 'OWNER' && item.household.ownerUserId === claims.id)
+      ?? accesses[0];
+
     if (!access && requireHousehold) {
       res.status(403).json({ message: 'Your household access is no longer active. Ask the household owner for a new invitation.' });
       return;
@@ -77,7 +86,7 @@ export function auth(req: AuthedRequest, res: Response, next: NextFunction) {
   void authenticate(req, res, next, true);
 }
 
-/** Account-level auth is used only by invitation acceptance so a revoked user can rejoin. */
+/** Account-level auth is used by invitation acceptance and space discovery. */
 export function authAccount(req: AuthedRequest, res: Response, next: NextFunction) {
   void authenticate(req, res, next, false);
 }
