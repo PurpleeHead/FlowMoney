@@ -22,19 +22,28 @@ test('household invitations share finances, isolate other accounts and revoke ac
   const base = `http://127.0.0.1:${address.port}`;
 
   let invitationRequestIp = 1;
-  const request = (path: string, method = 'GET', body?: unknown, token?: string) => fetch(base + path, {
-    method,
-    headers: {
-      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      // Keep the integration test focused on household behavior rather than
-      // exhausting the production per-IP invitation creation rate limit.
-      ...(path.startsWith('/api/household/invitations') && method !== 'GET'
-        ? { 'x-forwarded-for': `198.51.100.${invitationRequestIp++}` }
-        : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+  const selectedSpaces = new Map<string, string>();
+  const request = async (path: string, method = 'GET', body?: unknown, token?: string) => {
+    const response = await fetch(base + path, {
+      method,
+      headers: {
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(token && selectedSpaces.has(token) ? { 'x-nummiox-household-id': selectedSpaces.get(token)! } : {}),
+        // Keep the integration test focused on household behavior rather than
+        // exhausting the production per-IP invitation creation rate limit.
+        ...(path.startsWith('/api/household/invitations') && method !== 'GET'
+          ? { 'x-forwarded-for': `198.51.100.${invitationRequestIp++}` }
+          : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    if (path === '/api/household/invitations/accept' && response.ok && token) {
+      const accepted = await response.clone().json() as { householdId?: string };
+      if (accepted.householdId) selectedSpaces.set(token, accepted.householdId);
+    }
+    return response;
+  };
   const register = async (label: string) => {
     const response = await request('/api/auth/register', 'POST', {
       email: `household-${label}-${suffix}@example.test`,
@@ -112,7 +121,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
 
     const accepted = await request('/api/household/invitations/accept', 'POST', { token: inviteToken }, spouse.token);
     assert.equal(accepted.status, 200);
-    const acceptedBody = await accepted.json() as { householdName: string; memberName: string };
+    const acceptedBody = await accepted.json() as { householdId: string; householdName: string; memberName: string };
     assert.equal(acceptedBody.memberName, 'Wife');
 
     const renamedHousehold = await request('/api/household', 'PATCH', { name: 'Our family budget' }, owner.token);
@@ -287,8 +296,7 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.ok(legacyDashboard.expenses.some(item => item.id === legacyExpenseBody.id));
     assert.ok(legacyDashboard.exchanges.some(item => item.id === legacyExchangeBody.id));
 
-    // An owner with active members must not be allowed to join another household,
-    // because that would revoke their owner access and orphan the existing household.
+    // Joining a shared household must preserve the user's own household and its members.
     const secondOwner = await register('second-owner');
     const secondOwnerProfileResponse = await request('/api/personal-finance/members', 'POST', { name: 'Second household member' }, secondOwner.token);
     assert.equal(secondOwnerProfileResponse.status, 201);
@@ -298,12 +306,16 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const secondOwnerInvite = await secondOwnerInviteResponse.json() as { inviteLink: string };
     const secondOwnerToken = tokenFromInviteLink(secondOwnerInvite.inviteLink);
     assert.ok(secondOwnerToken);
+    const ownerSpacesResponse = await request('/api/household/spaces', 'GET', undefined, owner.token);
+    const ownerSpaces = await ownerSpacesResponse.json() as Array<{ id: string; isPersonal: boolean }>;
+    const ownerPersonalSpaceId = ownerSpaces.find(space => space.isPersonal)!.id;
     const ownerJoinAttempt = await request('/api/household/invitations/accept', 'POST', { token: secondOwnerToken }, owner.token);
-    assert.equal(ownerJoinAttempt.status, 409, 'an owner must not orphan a household with active members');
-    const ownerHouseholdAfterBlockedJoin = await request('/api/household', 'GET', undefined, owner.token);
-    assert.equal(ownerHouseholdAfterBlockedJoin.status, 200, 'the original owner access must remain active');
-    const spouseHouseholdAfterBlockedJoin = await request('/api/household', 'GET', undefined, spouse.token);
-    assert.equal(spouseHouseholdAfterBlockedJoin.status, 200, 'the existing member must remain attached to the original household');
+    assert.equal(ownerJoinAttempt.status, 200, 'an owner may join a family without losing their own household');
+    selectedSpaces.set(owner.token, ownerPersonalSpaceId);
+    const ownerPersonalAfterJoin = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, owner.token);
+    assert.equal(ownerPersonalAfterJoin.status, 200, 'the original personal space remains accessible');
+    const spouseHouseholdAfterJoin = await request('/api/household', 'GET', undefined, spouse.token);
+    assert.equal(spouseHouseholdAfterJoin.status, 200, 'the existing member remains attached to the original household');
 
     const outsiderData = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, outsider.token);
     assert.equal(outsiderData.status, 200);
@@ -318,17 +330,30 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(secondInvite.status, 201);
     const secondInviteBody = await secondInvite.json() as { inviteLink: string };
     const secondToken = tokenFromInviteLink(secondInviteBody.inviteLink);
-    const blockedJoin = await request('/api/household/invitations/accept', 'POST', { token: secondToken }, dataAccount.token);
-    assert.equal(blockedJoin.status, 409, 'accounts with existing financial records must not be silently merged');
+    const dataSpacesResponse = await request('/api/household/spaces', 'GET', undefined, dataAccount.token);
+    const dataSpaces = await dataSpacesResponse.json() as Array<{ id: string; isPersonal: boolean }>;
+    const dataPersonalSpaceId = dataSpaces.find(space => space.isPersonal)!.id;
+    const joinedWithExistingData = await request('/api/household/invitations/accept', 'POST', { token: secondToken }, dataAccount.token);
+    const joinedBody = await joinedWithExistingData.clone().json() as { householdId: string };
+    assert.equal(joinedWithExistingData.status, 200, 'accounts with existing records may join without merging them');
+    const sharedAfterJoin = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, dataAccount.token);
+    assert.equal(sharedAfterJoin.status, 200);
+    assert.equal((await sharedAfterJoin.json() as { expenses: Array<{ title: string }> }).expenses.some(item => item.title === 'Shared groceries'), true, 'the invited account sees shared family records');
+    selectedSpaces.set(dataAccount.token, dataPersonalSpaceId);
+    const personalAfterJoin = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, dataAccount.token);
+    assert.equal(personalAfterJoin.status, 200);
+    assert.equal((await personalAfterJoin.json() as { expenses: Array<{ title: string }> }).expenses.some(item => item.title === 'Private record'), true, 'the invited account retains its original personal records');
+    selectedSpaces.set(dataAccount.token, joinedBody.householdId);
 
     const revoke = await request('/api/household/access/' + encodeURIComponent(spouse.user.id), 'DELETE', undefined, owner.token);
     assert.equal(revoke.status, 204);
     const revokedRequest = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, spouse.token);
-    assert.equal(revokedRequest.status, 403, 'revocation must take effect on the next request despite a valid JWT');
+    assert.equal(revokedRequest.status, 200, 'revoking family access must not revoke the user's personal space');
+    assert.equal((await revokedRequest.json() as { expenses: Array<{ title: string }> }).expenses.some(item => item.title === 'Shared groceries'), false, 'revoked users no longer see shared records');
 
     for (const path of ['/api/expenses', '/api/exchanges', '/api/receipts', '/api/dashboard']) {
-      const revokedLegacyRequest = await request(path, 'GET', undefined, spouse.token);
-      assert.equal(revokedLegacyRequest.status, 403, `revoked members must lose access to ${path} immediately`);
+      const personalRequest = await request(path, 'GET', undefined, spouse.token);
+      assert.equal(personalRequest.status, 200, `revoked members retain personal access to ${path}`);
     }
 
     const privateDataStillExists = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, dataAccount.token);
