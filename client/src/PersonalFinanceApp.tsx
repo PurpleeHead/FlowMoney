@@ -330,7 +330,13 @@ export default function PersonalFinanceApp() {
       : (spaceData.find(space => space.isPersonal)?.id ?? householdData.id);
     if (resolvedSpaceId) { setActiveHouseholdId(resolvedSpaceId); setActiveHouseholdIdState(resolvedSpaceId); }
     const mappedProfile = householdData.currentUser.memberId;
-    if (mappedProfile) {
+    if (resetMemberFilter) {
+      setIncomeMember(mappedProfile ?? '');
+      setExpenseMember(mappedProfile ?? '');
+      setObligationMember(mappedProfile ?? '');
+      setBudgetMember(mappedProfile ?? '');
+      setBudgetCategory('');
+    } else if (mappedProfile) {
       setIncomeMember(current => current || mappedProfile);
       setExpenseMember(current => current || mappedProfile);
       setObligationMember(current => current || mappedProfile);
@@ -662,6 +668,7 @@ export default function PersonalFinanceApp() {
     setActiveHouseholdId(householdId);
     setActiveHouseholdIdState(householdId);
     setFilterMember('all');
+    setFilterCategory('all');
     setTab('overview');
     setLoading(true);
     setError('');
