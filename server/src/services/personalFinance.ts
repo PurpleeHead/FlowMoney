@@ -154,7 +154,7 @@ export type ObligationPeriodTotals = { due: number; paid: number; unpaid: number
 
 /** Summarizes obligations by due date within the already-selected period. */
 export function calculateObligationPeriodTotals(
-  occurrences: Array<{ status: string; plannedAmount: number | string; actualAmount?: number | string | null }>,
+  occurrences: Array<{ status: string; plannedAmount: number | string | { toString(): string }; actualAmount?: number | string | { toString(): string } | null }>,
 ): ObligationPeriodTotals {
   return occurrences.reduce<ObligationPeriodTotals>((totals, item) => {
     const planned = Number(item.plannedAmount);
