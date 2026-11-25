@@ -12,6 +12,25 @@ const invitationCreateLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, st
 const invitationAcceptLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false });
 
 function current(req: AuthedRequest) { return req.user!; }
+
+router.get('/spaces', async (req: AuthedRequest, res, next) => {
+  try {
+    const accesses = await prisma.householdAccess.findMany({
+      where: { userId: current(req).accountId, revokedAt: null },
+      include: { household: { select: { id: true, name: true, ownerUserId: true } } },
+      orderBy: { joinedAt: 'asc' },
+    });
+    const personal = accesses.find(access => access.role === 'OWNER' && access.household.ownerUserId === current(req).accountId);
+    const shared = accesses.find(access => access.role === 'MEMBER');
+    return res.json({
+      activeSpace: req.query.space === 'personal' ? 'personal' : 'household',
+      spaces: [
+        ...(personal ? [{ id: personal.household.id, name: 'Личные финансы', type: 'personal' as const, role: 'OWNER' as const }] : []),
+        ...(shared ? [{ id: shared.household.id, name: shared.household.name, type: 'household' as const, role: 'MEMBER' as const }] : []),
+      ],
+    });
+  } catch (error) { return next(error); }
+});
 function ownerOnly(req: AuthedRequest, res: import('express').Response) {
   if (current(req).role !== 'OWNER') {
     res.status(403).json({ message: 'Only the household owner can manage invitations and access.' });
