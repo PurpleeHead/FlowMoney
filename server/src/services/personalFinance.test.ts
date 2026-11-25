@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateActualBalance, calculateCoverage, calculateForecastBalance, generateOccurrences } from './personalFinance.js';
+import { calculateActualBalance, calculateCoverage, calculateForecastBalance, calculateObligationPeriodTotals, generateOccurrences } from './personalFinance.js';
 
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const keys = (values: Date[]) => values.map(value => value.toISOString().slice(0, 10));
@@ -54,4 +54,19 @@ test('forecast adds planned income and subtracts unpaid obligations', () => {
 test('coverage reports shortfall and surplus', () => {
   assert.deepEqual(calculateCoverage(5000, 10000), { covered: false, difference: -5000, shortfall: 5000, surplus: 0 });
   assert.deepEqual(calculateCoverage(12000, 10000), { covered: true, difference: 2000, shortfall: 0, surplus: 2000 });
+});
+
+test('monthly obligation totals include only paid and unpaid occurrences due in the selected period', () => {
+  assert.deepEqual(calculateObligationPeriodTotals([
+    { status: 'PAID', plannedAmount: 1000, actualAmount: 1200 },
+    { status: 'UPCOMING', plannedAmount: 2000 },
+    { status: 'OVERDUE', plannedAmount: 500 },
+    { status: 'SKIPPED', plannedAmount: 900 },
+  ]), { due: 3500, paid: 1200, unpaid: 2500 });
+});
+
+test('monthly obligation totals use planned amount when actual paid amount is absent', () => {
+  assert.deepEqual(calculateObligationPeriodTotals([
+    { status: 'PAID', plannedAmount: '750.50', actualAmount: null },
+  ]), { due: 750.5, paid: 750.5, unpaid: 0 });
 });
