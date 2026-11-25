@@ -6,8 +6,6 @@ import { parseReceiptLines, ReceiptItem } from '../lib/receiptParser';
 type OcrLanguage = 'rus' | 'eng' | 'rus+eng';
 type Props = {
   onSave: (items: ReceiptItem[], rawText: string) => Promise<void>;
-  vndPerUsdt: number;
-  vndPerRub: number;
   lang?: 'en' | 'ru';
 };
 
@@ -35,7 +33,7 @@ const ru: Record<string, string> = {
 
 const tr = (lang: 'en' | 'ru', value: string) => lang === 'ru' ? (ru[value] || value) : value;
 
-export default function ReceiptScanner({ onSave, vndPerUsdt, vndPerRub, lang = 'en' }: Props) {
+export default function ReceiptScanner({ onSave, lang = 'en' }: Props) {
   const [text, setText] = useState('');
   const [items, setItems] = useState<ReceiptItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -162,19 +160,16 @@ export default function ReceiptScanner({ onSave, vndPerUsdt, vndPerRub, lang = '
                 <label>
                   <input
                     className="receipt-edit-price"
-                    aria-label={'Item ' + (index + 1) + ' price in VND'}
-                    inputMode="numeric"
+                    aria-label={'Item ' + (index + 1) + ' price in RUB'}
+                    inputMode="decimal"
                     value={String(item.price)}
                     onChange={event => {
-                      const value = Number(event.target.value.replace(/[^\\d]/g, ''));
-                      setItems(current => current.map((entry, i) => i === index ? { ...entry, price: value } : entry));
+                      const normalized = event.target.value.replace(/[^\d.,]/g, '').replace(',', '.');
+                      const value = Number(normalized);
+                      setItems(current => current.map((entry, i) => i === index ? { ...entry, price: Number.isFinite(value) ? value : 0 } : entry));
                     }}
-                  /> ₫
+                  /> ₽
                 </label>
-                <small className="receipt-conversions">
-                  {vndPerRub > 0 ? '≈ ' + (item.price / vndPerRub).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' RUB' : ''}
-                  {vndPerUsdt > 0 ? ' · ' + (item.price / vndPerUsdt).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' USDT' : ''}
-                </small>
               </div>
             </div>
           ))}
