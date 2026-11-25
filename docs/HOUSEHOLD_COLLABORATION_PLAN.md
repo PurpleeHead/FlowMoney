@@ -40,7 +40,7 @@ Store only a cryptographic hash of invite tokens. Generate tokens from a cryptog
 ## Migration and compatibility
 
 1. Create one personal household for each existing user and make that user its owner.
-2. Create an owner access record for every existing account. Preserve this access when the account joins a shared household.
+2. Create an owner access record for every existing account. If an earlier release revoked that personal access when the account joined a family, restore it during the follow-up migration.
 3. Preserve all existing financial rows and IDs. Do not copy or rewrite historical transactions during the first migration.
 4. Keep existing `userId` ownership as the canonical data-owner key for the first release. Resolve an authenticated user's household owner on the server and use that owner key for all personal-finance reads/writes. Never accept an owner ID from the client.
 5. Add the authenticated user's `memberId` to the request context for attribution defaults, while still allowing an explicit shared/unassigned transaction where product rules permit.
