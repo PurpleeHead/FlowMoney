@@ -231,6 +231,7 @@ export default function PersonalFinanceApp() {
   const [archivedIncomeSources, setArchivedIncomeSources] = useState<IncomeSource[]>([]);
   const [archivedObligations, setArchivedObligations] = useState<ObligationRecord[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [calendarExpenses, setCalendarExpenses] = useState<Expense[]>([]);
   const [hasMoreExpenses, setHasMoreExpenses] = useState(false);
   const [adjustments, setAdjustments] = useState<Array<{ id: string; amount: number | string; date: string; reason: string }>>([]);
 
@@ -291,10 +292,23 @@ export default function PersonalFinanceApp() {
     webApp.setBackgroundColor?.('#F4F5F4');
   }, []);
   const refresh = useCallback(async () => {
-    const [dash, income, expenseData, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData] = await Promise.all([
+    const calendarExpenseData = (async () => {
+      const all: Expense[] = [];
+      let skip = 0;
+      let hasMore = true;
+      while (hasMore) {
+        const page = await api<{ expenses: Expense[]; page: { hasMore: boolean } }>(`${PF}/expenses?from=${ranges.from}&to=${ranges.to}&take=250&skip=${skip}`);
+        all.push(...page.expenses);
+        hasMore = page.page.hasMore && page.expenses.length > 0;
+        skip += page.expenses.length;
+      }
+      return all;
+    })();
+    const [dash, income, expenseData, calendarExpenseRows, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData] = await Promise.all([
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<{ entries: IncomeEntry[]; sources: IncomeSource[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}&includeArchived=true`),
       api<{ expenses: Expense[]; total: number; page: { take: number; skip: number; hasMore: boolean }; categories: Category[] }>(`${PF}/expenses?take=100&skip=0`),
+      calendarExpenseData,
       api<{ occurrences: ObligationOccurrence[]; obligations: ObligationRecord[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}${showSkippedObligations ? '&includeSkipped=true' : ''}&includeArchived=true`),
       api<Member[]>(`${PF}/members`),
       api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`),
@@ -304,7 +318,7 @@ export default function PersonalFinanceApp() {
       api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean; telegramRemindersEnabled: boolean; telegramReminderTime: string }>(`${PF}/settings`),
       api<HouseholdInfo>('/household')
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setCalendarExpenses(calendarExpenseRows); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
     const mappedProfile = householdData.currentUser.memberId;
     if (mappedProfile) {
       setIncomeMember(current => current || mappedProfile);
@@ -797,7 +811,7 @@ export default function PersonalFinanceApp() {
   const analyticsMax = analytics ? Math.max(1, ...analytics.months.flatMap(item => [item.income, item.expenses])) : 1;
   const calendarEvents = [
     ...visibleIncome.filter(x => x.plannedDate >= ranges.from && x.plannedDate <= ranges.to).map(x => ({ id: x.id, date: x.plannedDate.slice(0,10), title: x.source?.title ?? (lang === 'ru' ? 'Доход' : 'Income'), amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'income' as const, status: x.status })),
-    ...memberExpenses.filter(x => !x.obligationOccurrence && x.date >= ranges.from && x.date <= ranges.to).map(x => ({ id: x.id, date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
+    ...calendarExpenses.filter(x => matchesMember(x.memberId ?? x.member?.id) && !x.obligationOccurrence).map(x => ({ id: x.id, date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
     ...monthObligations.map(x => ({ id: x.id, date: x.dueDate.slice(0,10), title: x.obligation.title, amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'obligation' as const, status: x.status })),
   ].sort((a,b) => a.date.localeCompare(b.date));
   const selectedCalendarEvents = calendarEvents.filter(item => item.date === selectedCalendarDate);
