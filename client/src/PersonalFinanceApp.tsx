@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { api, getToken, setToken } from './lib/api';
+import { api, getFinanceSpace, getToken, setFinanceSpace, setToken, type FinanceSpace } from './lib/api';
 import { getHouseholdInviteToken } from './lib/householdInvites';
 import { householdErrorMessage } from './lib/householdErrors';
 import { calculateMonthlyCashflow } from './lib/monthlyCashflow';
@@ -20,6 +20,7 @@ type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | str
 type SavingsGoal = { id: string; title: string; targetAmount: number | string; currentAmount: number | string; targetDate?: string | null; status: string };
 type PendingHouseholdInvite = { alreadyAccepted: boolean; householdName: string; memberName: string; ownerName: string; expiresAt?: string };
 type HouseholdInviteRecord = { id: string; expiresAt: string; acceptedAt: string | null; revokedAt: string | null; member: { id: string; name: string } };
+type FinanceSpaceOption = { id: string; name: string; type: FinanceSpace; role: 'OWNER' | 'MEMBER' };
 type HouseholdInfo = {
   id: string; name: string; ownerUserId: string; role: 'OWNER' | 'MEMBER';
   currentUser: { id: string; memberId: string | null };
@@ -211,6 +212,8 @@ export default function PersonalFinanceApp() {
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [household, setHousehold] = useState<HouseholdInfo | null>(null);
+  const [financeSpace, setFinanceSpaceState] = useState<FinanceSpace>(() => getFinanceSpace());
+  const [availableSpaces, setAvailableSpaces] = useState<FinanceSpaceOption[]>([]);
   const [pendingInvite, setPendingInvite] = useState<PendingHouseholdInvite | null>(null);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [inviteMemberId, setInviteMemberId] = useState('');
@@ -304,7 +307,7 @@ export default function PersonalFinanceApp() {
       }
       return all;
     })();
-    const [dash, income, expenseData, calendarExpenseRows, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData] = await Promise.all([
+    const [dash, income, expenseData, calendarExpenseRows, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData, spacesData] = await Promise.all([
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<{ entries: IncomeEntry[]; sources: IncomeSource[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}&includeArchived=true`),
       api<{ expenses: Expense[]; total: number; page: { take: number; skip: number; hasMore: boolean }; categories: Category[] }>(`${PF}/expenses?take=100&skip=0`),
@@ -316,9 +319,10 @@ export default function PersonalFinanceApp() {
       api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
       api<SavingsGoal[]>(`${PF}/savings-goals`),
       api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean; telegramRemindersEnabled: boolean; telegramReminderTime: string }>(`${PF}/settings`),
-      api<HouseholdInfo>('/household')
+      api<HouseholdInfo>('/household'),
+      api<{ spaces: FinanceSpaceOption[] }>('/household/spaces'),
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setCalendarExpenses(calendarExpenseRows); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setOwnerProfileId(householdData.currentUser.memberId ?? '');
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setCalendarExpenses(calendarExpenseRows); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setAvailableSpaces(spacesData.spaces); setOwnerProfileId(householdData.currentUser.memberId ?? '');
     const mappedProfile = householdData.currentUser.memberId;
     if (mappedProfile) {
       setIncomeMember(current => current || mappedProfile);
@@ -829,7 +833,7 @@ export default function PersonalFinanceApp() {
       <div className="pf-sidebar-bottom"><div className="pf-avatar">{(user.displayName || user.email)[0].toUpperCase()}</div><div className="pf-user"><strong>{user.displayName || user.email.split('@')[0]}</strong><small>{user.email.endsWith('@telegram.flowmoney.invalid') ? 'Telegram' : user.email}</small></div>{!window.Telegram?.WebApp?.initData && <button className="pf-icon-button" type="button" title={tr(lang, 'logout')} aria-label={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button>}</div>
     </aside>
     <main className="pf-main" id="pf-main-content" tabIndex={-1}>
-      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions"><input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) { setSelectedMonth(e.target.value); setSelectedCalendarDate(e.target.value + '-01'); } }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.isArchived ? `${m.name} · ${lang === 'ru' ? 'архив' : 'archived'}` : m.name}</option>)}</select><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
+      <header className="pf-topbar"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИЧНЫЙ ФИНАНСОВЫЙ ПЛАН' : 'PERSONAL FINANCE'}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions">{availableSpaces.length > 1 && <select className="pf-member-filter" value={financeSpace} aria-label={lang === 'ru' ? 'Финансовое пространство' : 'Finance space'} onChange={e => { const next = e.target.value as FinanceSpace; setFinanceSpace(next); setFinanceSpaceState(next); void refresh(); }}><option value="personal">{lang === 'ru' ? 'Личные финансы' : 'Personal finances'}</option><option value="household">{lang === 'ru' ? 'Семейный бюджет' : 'Household budget'}</option></select>}<input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) { setSelectedMonth(e.target.value); setSelectedCalendarDate(e.target.value + '-01'); } }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.isArchived ? `${m.name} · ${lang === 'ru' ? 'архив' : 'archived'}` : m.name}</option>)}</select><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
       {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}<button type="button" aria-label={lang === 'ru' ? 'Закрыть сообщение об ошибке' : 'Dismiss error message'} onClick={() => setError('')}>×</button></div>}
       {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}<button type="button" aria-label={lang === 'ru' ? 'Закрыть уведомление' : 'Dismiss notification'} onClick={() => setNotice('')}>×</button></div>}
 
