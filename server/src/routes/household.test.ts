@@ -320,6 +320,10 @@ test('household invitations share finances, isolate other accounts and revoke ac
     const secondToken = tokenFromInviteLink(secondInviteBody.inviteLink);
     const joinedWithExistingData = await request('/api/household/invitations/accept', 'POST', { token: secondToken }, dataAccount.token);
     assert.equal(joinedWithExistingData.status, 200, 'accounts with existing financial records must be able to join without merging them');
+    const availableSpaces = await request('/api/household/spaces', 'GET', undefined, dataAccount.token);
+    assert.equal(availableSpaces.status, 200);
+    const spacesBody = await availableSpaces.json() as { spaces: Array<{ type: string }> };
+    assert.deepEqual(spacesBody.spaces.map(space => space.type).sort(), ['household', 'personal']);
 
     const personalSpaceData = await request('/api/personal-finance/expenses?take=50&skip=0&space=personal', 'GET', undefined, dataAccount.token);
     assert.equal(personalSpaceData.status, 200);
@@ -336,6 +340,8 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(revoke.status, 204);
     const revokedRequest = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, spouse.token);
     assert.equal(revokedRequest.status, 403, 'revocation must take effect on the next request despite a valid JWT');
+    const spousePersonalSpaceAfterRevoke = await request('/api/household?space=personal', 'GET', undefined, spouse.token);
+    assert.equal(spousePersonalSpaceAfterRevoke.status, 200, 'revoking shared access must not revoke the member\'s personal space');
 
     for (const path of ['/api/expenses', '/api/exchanges', '/api/receipts', '/api/dashboard']) {
       const revokedLegacyRequest = await request(path, 'GET', undefined, spouse.token);
