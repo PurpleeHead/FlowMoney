@@ -266,6 +266,15 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
       if (activeAccesses.some(access => access.role === 'MEMBER')) {
         return { error: 'already-member' as const };
       }
+      const personalOwnerAccess = activeAccesses.find(access =>
+        access.role === 'OWNER' && access.household.ownerUserId === user.accountId
+      );
+      if (personalOwnerAccess) {
+        const existingHouseholdMembers = await tx.householdAccess.count({
+          where: { householdId: personalOwnerAccess.householdId, revokedAt: null, userId: { not: user.accountId } },
+        });
+        if (existingHouseholdMembers > 0) return { error: 'owner-has-members' as const };
+      }
       const assignedProfile = await tx.householdAccess.findFirst({
         where: {
           householdId: invite.householdId,
@@ -301,6 +310,7 @@ router.post('/invitations/accept', invitationAcceptLimit, async (req: AuthedRequ
         invalid: [400, 'This invitation is invalid, expired, revoked or already used.'],
         self: [400, 'The household owner cannot accept their own invitation.'],
         'already-member': [409, 'This account already belongs to another shared household.'],
+        'owner-has-members': [409, 'The owner cannot join another household while other members still depend on their own household. Remove or transfer those memberships first.'],
         'profile-occupied': [409, 'This household profile is already linked to an active account. Ask the owner to revoke that access before reusing the profile.'],
       } as const;
       const [status, message] = messages[accepted.error as keyof typeof messages];
