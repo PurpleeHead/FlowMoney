@@ -159,9 +159,14 @@ export function calculateObligationPeriodTotals(
   return occurrences.reduce<ObligationPeriodTotals>((totals, item) => {
     const planned = Number(item.plannedAmount);
     if (!Number.isFinite(planned) || planned < 0) return totals;
+    if (item.status !== 'PAID' && item.status !== 'UPCOMING' && item.status !== 'OVERDUE') return totals;
     totals.due += planned;
-    if (item.status === 'PAID') totals.paid += Number(item.actualAmount ?? item.plannedAmount);
-    else if (item.status === 'UPCOMING' || item.status === 'OVERDUE') totals.unpaid += planned;
+    if (item.status === 'PAID') {
+      const actual = Number(item.actualAmount ?? item.plannedAmount);
+      totals.paid += Number.isFinite(actual) && actual >= 0 ? actual : planned;
+    } else {
+      totals.unpaid += planned;
+    }
     return totals;
   }, { due: 0, paid: 0, unpaid: 0 });
 }
