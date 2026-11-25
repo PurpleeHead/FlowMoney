@@ -49,18 +49,22 @@ async function authenticate(req: AuthedRequest, res: Response, next: NextFunctio
     // Resolve membership on every request so revocation takes effect immediately,
     // even while a previously issued JWT is still valid.
     const requestedSpace = req.query.space === 'personal' ? 'personal' : 'household';
-    const activeAccesses = await prisma.householdAccess.findMany({
-      where: { userId: claims.id, revokedAt: null },
+    const accessHistory = await prisma.householdAccess.findMany({
+      where: { userId: claims.id },
       include: { household: { select: { id: true, ownerUserId: true } } },
       orderBy: { joinedAt: 'asc' },
     });
+    const activeAccesses = accessHistory.filter(item => item.revokedAt === null);
+    const hasRevokedSharedMembership = accessHistory.some(item => item.role === 'MEMBER' && item.revokedAt !== null);
     const personalAccess = activeAccesses.find(item =>
       item.role === 'OWNER' && item.household.ownerUserId === claims.id
     );
     const sharedAccess = activeAccesses.find(item =>
       item.role === 'MEMBER' || (item.role === 'OWNER' && item.household.ownerUserId === claims.id)
     );
-    const access = requestedSpace === 'personal' ? personalAccess : sharedAccess ?? personalAccess;
+    const access = requestedSpace === 'personal'
+      ? personalAccess
+      : sharedAccess ?? (hasRevokedSharedMembership ? undefined : personalAccess);
     if (!access && requireHousehold) {
       res.status(403).json({ message: 'Your household access is no longer active. Ask the household owner for a new invitation.' });
       return;
