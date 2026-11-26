@@ -4,7 +4,7 @@ on:
   push:
     branches: [feature/personal-finance-rework, feature/telegram-mini-app, feature/nummiox-branding, feature/household-collaboration, feature/nummiox-ui-polish, feature/nummiox-responsive-polish, fix/render-trust-proxy]
   pull_request:
-    branches: [main, feature/telegram-mini-app, feature/nummiox-branding, feature/household-collaboration]
+    branches: [main, feature/telegram-mini-app, feature/nummiox-branding, feature/household-collaboration, feat/personal-and-household-spaces]
 
 permissions:
   contents: read
