@@ -1,0 +1,29 @@
+name: One-time Supabase to Neon data import
+
+on:
+  push:
+    branches:
+      - ops/supabase-to-neon-data-migration
+
+permissions:
+  contents: read
+
+jobs:
+  import:
+    if: vars.ALLOW_NUMMIOX_DATA_IMPORT == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout migration utility
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Import and verify staging data
+        env:
+          SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
+          TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
+        run: node server/scripts/importSupabaseToNeon.mjs
