@@ -110,6 +110,13 @@ async function main() {
 
     const householdMap = new Map(sourceHouseholds.map((h) => [h.id, h.id]));
     householdMap.set(primarySourceHouseholds[0].id, primaryTargetHouseholds[0].id);
+    for (const household of sourceHouseholds) {
+      const existing = targetHouseholds.find((candidate) => candidate.id === household.id);
+      if (existing && household.id !== primarySourceHouseholds[0].id &&
+          existing.ownerUserId !== (userMap.get(household.ownerUserId) ?? household.ownerUserId)) {
+        throw new Error("Household ID collision detected; no data was imported.");
+      }
+    }
 
     const sourceCategories = sourceRows.ExpenseCategory;
     const targetCategories = await readRows(target, "ExpenseCategory");
@@ -124,7 +131,8 @@ async function main() {
       }
       categoryMap.set(category.id, targetMatch ? targetMatch.id : category.id);
       const idCollision = targetCategories.find((candidate) => candidate.id === category.id);
-      if (idCollision && idCollision.slug !== category.slug) {
+      if (idCollision && (idCollision.slug !== category.slug ||
+          (idCollision.userId ?? null) !== mappedUserId)) {
         throw new Error("Category ID collision detected; no data was imported.");
       }
     }
