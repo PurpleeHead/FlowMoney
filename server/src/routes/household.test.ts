@@ -318,20 +318,37 @@ test('household invitations share finances, isolate other accounts and revoke ac
     assert.equal(secondInvite.status, 201);
     const secondInviteBody = await secondInvite.json() as { inviteLink: string };
     const secondToken = tokenFromInviteLink(secondInviteBody.inviteLink);
-    const blockedJoin = await request('/api/household/invitations/accept', 'POST', { token: secondToken }, dataAccount.token);
-    assert.equal(blockedJoin.status, 409, 'accounts with existing financial records must not be silently merged');
+    const joinedWithExistingData = await request('/api/household/invitations/accept', 'POST', { token: secondToken }, dataAccount.token);
+    assert.equal(joinedWithExistingData.status, 200, 'accounts with existing financial records must be able to join without merging them');
+    const availableSpaces = await request('/api/household/spaces', 'GET', undefined, dataAccount.token);
+    assert.equal(availableSpaces.status, 200);
+    const spacesBody = await availableSpaces.json() as { spaces: Array<{ type: string }> };
+    assert.deepEqual(spacesBody.spaces.map(space => space.type).sort(), ['household', 'personal']);
+
+    const personalSpaceData = await request('/api/personal-finance/expenses?take=50&skip=0&space=personal', 'GET', undefined, dataAccount.token);
+    assert.equal(personalSpaceData.status, 200);
+    const personalSpaceBody = await personalSpaceData.json() as { expenses: Array<{ title: string }> };
+    assert.ok(personalSpaceBody.expenses.some(item => item.title === 'Private record'), 'the member must retain their personal history');
+
+    const sharedSpaceData = await request('/api/personal-finance/expenses?take=50&skip=0&space=household', 'GET', undefined, dataAccount.token);
+    assert.equal(sharedSpaceData.status, 200);
+    const sharedSpaceBody = await sharedSpaceData.json() as { expenses: Array<{ title: string }> };
+    assert.equal(sharedSpaceBody.expenses.some(item => item.title === 'Private record'), false, 'personal records must not leak into the shared household');
+    assert.ok(sharedSpaceBody.expenses.some(item => item.title === 'Shared groceries'), 'the member must see the invited household data');
 
     const revoke = await request('/api/household/access/' + encodeURIComponent(spouse.user.id), 'DELETE', undefined, owner.token);
     assert.equal(revoke.status, 204);
     const revokedRequest = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, spouse.token);
     assert.equal(revokedRequest.status, 403, 'revocation must take effect on the next request despite a valid JWT');
+    const spousePersonalSpaceAfterRevoke = await request('/api/household?space=personal', 'GET', undefined, spouse.token);
+    assert.equal(spousePersonalSpaceAfterRevoke.status, 200, 'revoking shared access must not revoke the member\'s personal space');
 
     for (const path of ['/api/expenses', '/api/exchanges', '/api/receipts', '/api/dashboard']) {
       const revokedLegacyRequest = await request(path, 'GET', undefined, spouse.token);
       assert.equal(revokedLegacyRequest.status, 403, `revoked members must lose access to ${path} immediately`);
     }
 
-    const privateDataStillExists = await request('/api/personal-finance/expenses?take=50&skip=0', 'GET', undefined, dataAccount.token);
+    const privateDataStillExists = await request('/api/personal-finance/expenses?take=50&skip=0&space=personal', 'GET', undefined, dataAccount.token);
     assert.equal(privateDataStillExists.status, 200);
     const privateBody = await privateDataStillExists.json() as { expenses: Array<{ title: string }> };
     assert.ok(privateBody.expenses.some(item => item.title === 'Private record'));
