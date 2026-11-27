@@ -646,17 +646,17 @@ export default function PersonalFinanceApp() {
     finally { setBusy(false); }
   }
   async function adjustDebt(debt: DebtRecord) {
-    const raw = await promptAction(lang === 'ru' ? 'Укажи новый остаток долга.' : 'Enter the new remaining balance.', String(debt.remainingAmount), lang === 'ru' ? 'Корректировка долга' : 'Adjust debt balance', 'number', lang === 'ru' ? 'Продолжить' : 'Continue');
+    const raw = await promptAction(lang === 'ru' ? 'На сколько изменить долг? Положительное число увеличит долг, отрицательное уменьшит. Например: 5000 или -1000.' : 'Change the debt by this amount. Positive increases it; negative reduces it. Example: 5000 or -1000.', '', lang === 'ru' ? 'Изменение долга' : 'Change debt', 'number', lang === 'ru' ? 'Продолжить' : 'Continue');
     if (raw === null) return;
-    const remainingAmount = Number(raw.trim().replace(',', '.'));
-    if (!Number.isFinite(remainingAmount) || remainingAmount < 0) { setError(lang === 'ru' ? 'Остаток не может быть отрицательным.' : 'Balance cannot be negative.'); return; }
-    const reason = await promptAction(lang === 'ru' ? 'Почему изменился остаток? Например: начислены проценты.' : 'Why did the balance change? e.g. Interest charged.', '', lang === 'ru' ? 'Причина корректировки' : 'Adjustment reason');
+    const amountChange = Number(raw.trim().replace(',', '.'));
+    if (!Number.isFinite(amountChange) || amountChange === 0) { setError(lang === 'ru' ? 'Введите ненулевую сумму изменения.' : 'Enter a non-zero amount.'); return; }
+    const reason = await promptAction(lang === 'ru' ? 'Причина: новая покупка, проценты, комиссия или корректировка.' : 'Reason: new purchase, interest, fee or correction.', '', lang === 'ru' ? 'Причина изменения' : 'Change reason');
     if (reason === null || !reason.trim()) return;
     setBusy(true); setError('');
     try {
-      await api(`${PF}/debts/${debt.id}/adjust`, { method: 'POST', body: JSON.stringify({ remainingAmount, date: moscowToday(), reason: reason.trim() }) });
+      await api(`${PF}/debts/${debt.id}/adjust`, { method: 'POST', body: JSON.stringify({ amountChange, date: moscowToday(), reason: reason.trim() }) });
       await refresh();
-      setNotice(lang === 'ru' ? 'Остаток долга скорректирован, изменение сохранено в истории.' : 'Debt balance adjusted and change saved to history.');
+      setNotice(lang === 'ru' ? 'Долг изменён, операция сохранена в истории.' : 'Debt changed and transaction saved.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
     finally { setBusy(false); }
   }
