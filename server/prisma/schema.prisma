@@ -37,6 +37,7 @@ model User {
   obligationOccurrences ObligationOccurrence[]
   debts Debt[]
   debtTransactions DebtTransaction[]
+  obligationPayments ObligationPayment[]
   balanceAdjustments BalanceAdjustment[]
   budgets Budget[]
   savingsGoals SavingsGoal[]
@@ -211,6 +212,7 @@ model LedgerExpense {
   category    ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   obligationOccurrence ObligationOccurrence?
   debtTransaction DebtTransaction?
+  obligationPayment ObligationPayment?
 
   @@index([userId, date])
   @@index([userId, categoryId, date])
@@ -236,6 +238,8 @@ model Obligation {
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   member            HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
   occurrences       ObligationOccurrence[]
+  debtId            String?
+  debt              Debt? @relation(fields: [debtId], references: [id], onDelete: SetNull)
 
   @@index([userId, isActive])
   @@index([memberId])
@@ -256,6 +260,7 @@ model ObligationOccurrence {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   obligation   Obligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
   expense      LedgerExpense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  payments     ObligationPayment[]
   telegramReminderDeliveries TelegramReminderDelivery[]
 
   @@unique([obligationId, dueDate])
@@ -415,6 +420,7 @@ model Debt {
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   member          HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
   transactions    DebtTransaction[]
+  obligations     Obligation[]
 
   @@index([userId, isActive])
   @@index([memberId])
@@ -436,4 +442,19 @@ model DebtTransaction {
   expense        LedgerExpense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
 
   @@index([userId, debtId, date])
+}
+
+model ObligationPayment {
+  id           String   @id @default(cuid())
+  userId       String
+  occurrenceId String
+  amount       Decimal  @db.Decimal(14, 2)
+  paidAt       DateTime
+  expenseId    String   @unique
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  occurrence   ObligationOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  expense      LedgerExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurrenceId, paidAt])
 }
