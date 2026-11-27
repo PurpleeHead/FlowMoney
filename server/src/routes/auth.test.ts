@@ -496,9 +496,15 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(partialPayment.payments.length, 1);
     const partialForecastResponse = await get(`/api/personal-finance/dashboard?from=${todayString}&to=${todayString}&horizon=${todayString}`, first.token);
     assert.equal(partialForecastResponse.status, 200);
-    const partialForecast = await partialForecastResponse.json() as { forecast: { unpaidObligations: number }; nextPayments: Array<{ id: string }> };
+    const partialForecast = await partialForecastResponse.json() as {
+      forecast: { unpaidObligations: number };
+      nextPayments: Array<{ id: string }>;
+      obligations: { paidInPeriod: number };
+    };
     assert.equal(Number(partialForecast.forecast.unpaidObligations), 9000,
       'the forecast must retain the 9,000 unpaid remainder after a 1,000 partial payment');
+    assert.equal(Number(partialForecast.obligations.paidInPeriod), 1000,
+      'the paid-in-period summary must include actual partial payment amounts');
     assert.ok(partialForecast.nextPayments.some(item => item.id === partialOccurrence.id),
       'partially paid obligations must remain in the upcoming payments list');
     const removePartialExpense = await del(`/api/personal-finance/expenses/${partialPayment.payments[0].expenseId}`, first.token);
