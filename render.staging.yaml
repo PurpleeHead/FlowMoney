@@ -1,4 +1,4 @@
-# Isolated staging service. The database is the dedicated Supabase staging project;
+# Isolated staging service. The database is the dedicated Neon Free staging project;
 # DATABASE_URL is supplied as a Render secret and is never stored in this repository.
 services:
   - type: web
