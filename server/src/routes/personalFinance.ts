@@ -810,27 +810,29 @@ router.post('/debts/:id/payments', async (req: AuthedRequest, res, next) => {
 router.post('/debts/:id/adjust', async (req: AuthedRequest, res, next) => {
   try {
     const parsed = z.object({
-      remainingAmount: z.number().finite().min(0).max(1_000_000_000),
+      amountChange: z.number().finite().min(-1_000_000_000).max(1_000_000_000).refine(value => value !== 0),
       date: dateSchema, reason: z.string().trim().min(1).max(200),
     }).safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid new balance, date and reason.' });
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a non-zero signed balance change, date and reason.' });
     const userId = uid(req), id = String(req.params.id), input = parsed.data;
     const result = await prisma.$transaction(async tx => {
       const debt = await tx.debt.findFirst({ where: { id, userId, isActive: true } });
       if (!debt) return { kind: 'missing' as const };
-      const delta = input.remainingAmount - Number(debt.remainingAmount);
+      const nextBalance = Number(debt.remainingAmount) + input.amountChange;
+      if (nextBalance < 0) return { kind: 'negative' as const };
       const changed = await tx.debt.updateMany({
         where: { id, userId, isActive: true, remainingAmount: debt.remainingAmount },
-        data: { remainingAmount: input.remainingAmount },
+        data: { remainingAmount: { increment: input.amountChange } },
       });
       if (!changed.count) return { kind: 'conflict' as const };
       await tx.debtTransaction.create({ data: {
-        userId, debtId: id, type: 'ADJUSTMENT', amount: Math.abs(delta), balanceChange: delta,
+        userId, debtId: id, type: 'ADJUSTMENT', amount: Math.abs(input.amountChange), balanceChange: input.amountChange,
         date: dateValue(input.date), reason: input.reason,
       } });
       return { kind: 'ok' as const, debt: await tx.debt.findFirst({ where: { id, userId }, include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }) };
     });
     if (result.kind === 'missing') return res.status(404).json({ message: 'Active debt not found.' });
+    if (result.kind === 'negative') return res.status(400).json({ message: 'Debt balance cannot become negative.' });
     if (result.kind === 'conflict') return res.status(409).json({ message: 'Debt balance changed. Reload and try again.' });
     return res.json(result.debt);
   } catch (error) { return next(error); }
