@@ -474,6 +474,31 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(Number(paidObligationAnalyticsData.totals.obligations), 750,
       'analytics obligation totals must use the actual amount paid, not the planned amount');
 
+    const partialObligationResponse = await post('/api/personal-finance/obligations', {
+      title: 'Partial payment regression test', category: 'credit', amount: 10000,
+      recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
+    }, first.token);
+    assert.equal(partialObligationResponse.status, 201);
+    const partialObligation = await partialObligationResponse.json() as { id: string };
+    const partialRowsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
+    const partialRows = await partialRowsResponse.json() as { occurrences: Array<{ id: string; obligationId: string }> };
+    const partialOccurrence = partialRows.occurrences.find(item => item.obligationId === partialObligation.id);
+    assert.ok(partialOccurrence);
+    const partialPaymentResponse = await post(`/api/personal-finance/obligation-occurrences/${partialOccurrence.id}/pay`, { actualAmount: 1000 }, first.token);
+    assert.equal(partialPaymentResponse.status, 200);
+    const partialPayment = await partialPaymentResponse.json() as { id: string; status: string; actualAmount: number; payments: Array<{ expenseId: string }> };
+    assert.equal(partialPayment.status, 'PARTIAL');
+    assert.equal(Number(partialPayment.actualAmount), 1000, 'a 1,000 payment against 10,000 must leave 9,000 outstanding');
+    assert.equal(partialPayment.payments.length, 1);
+    const removePartialExpense = await del(`/api/personal-finance/expenses/${partialPayment.payments[0].expenseId}`, first.token);
+    assert.equal(removePartialExpense.status, 204, 'deleting a linked partial-payment expense must safely reverse the obligation payment');
+    const restoredPartialRows = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
+    const restoredPartialData = await restoredPartialRows.json() as { occurrences: Array<{ id: string; status: string; actualAmount: number }> };
+    const restoredPartial = restoredPartialData.occurrences.find(item => item.id === partialOccurrence.id);
+    assert.ok(restoredPartial);
+    assert.equal(Number(restoredPartial.actualAmount), 0, 'reversing the expense must restore the full unpaid amount');
+    assert.ok(['UPCOMING', 'OVERDUE'].includes(restoredPartial.status));
+
     // Archiving and reactivating an obligation must never erase an already-paid occurrence.
     const archivePaidObligation = await patch(`/api/personal-finance/obligations/${occurrence.obligationId}`, { isActive: false }, first.token);
     assert.equal(archivePaidObligation.status, 200);
