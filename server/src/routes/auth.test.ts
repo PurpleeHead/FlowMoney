@@ -785,6 +785,49 @@ test('authentication works and household records stay isolated between accounts'
     assert.deepEqual(await secondAdjustments.json(), [],
       'a household must not be able to read another account balance adjustments');
 
+    // A partial payment on a debt-linked obligation must reduce both balances by the actual amount only.
+    const linkedDebtResponse = await post('/api/personal-finance/debts', {
+      title: 'Linked credit card regression', category: 'credit', originalAmount: 100000,
+    }, first.token);
+    assert.equal(linkedDebtResponse.status, 201);
+    const linkedDebt = await linkedDebtResponse.json() as { id: string; remainingAmount: number };
+    const linkedObligationResponse = await post('/api/personal-finance/obligations', {
+      title: 'Linked credit card payment', category: 'credit', amount: 100000,
+      recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString, debtId: linkedDebt.id,
+    }, first.token);
+    assert.equal(linkedObligationResponse.status, 201);
+    const linkedObligation = await linkedObligationResponse.json() as { id: string };
+    const linkedRowsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
+    const linkedRows = await linkedRowsResponse.json() as { occurrences: Array<{ id: string; obligationId: string }> };
+    const linkedOccurrence = linkedRows.occurrences.find(item => item.obligationId === linkedObligation.id);
+    assert.ok(linkedOccurrence);
+    const linkedPartialResponse = await post(`/api/personal-finance/obligation-occurrences/${linkedOccurrence.id}/pay`, {
+      actualAmount: 35000,
+    }, first.token);
+    assert.equal(linkedPartialResponse.status, 200);
+    const linkedPartial = await linkedPartialResponse.json() as { status: string; actualAmount: number };
+    assert.equal(linkedPartial.status, 'PARTIAL');
+    assert.equal(Number(linkedPartial.actualAmount), 35000);
+    const debtAfterLinkedPartialResponse = await get('/api/personal-finance/debts', first.token);
+    const debtAfterLinkedPartial = (await debtAfterLinkedPartialResponse.json() as Array<{ id: string; remainingAmount: number }>)
+      .find(item => item.id === linkedDebt.id);
+    assert.ok(debtAfterLinkedPartial);
+    assert.equal(Number(debtAfterLinkedPartial.remainingAmount), 65000,
+      'a 35,000 partial payment against a 100,000 linked debt must leave 65,000 debt');
+    const linkedFinalResponse = await post(`/api/personal-finance/obligation-occurrences/${linkedOccurrence.id}/pay`, {
+      actualAmount: 65000,
+    }, first.token);
+    assert.equal(linkedFinalResponse.status, 200);
+    const linkedFinal = await linkedFinalResponse.json() as { status: string; actualAmount: number };
+    assert.equal(linkedFinal.status, 'PAID');
+    assert.equal(Number(linkedFinal.actualAmount), 100000);
+    const debtAfterLinkedFullResponse = await get('/api/personal-finance/debts', first.token);
+    const debtAfterLinkedFull = (await debtAfterLinkedFullResponse.json() as Array<{ id: string; remainingAmount: number }>)
+      .find(item => item.id === linkedDebt.id);
+    assert.ok(debtAfterLinkedFull);
+    assert.equal(Number(debtAfterLinkedFull.remainingAmount), 0,
+      'paying the remaining 65,000 must close the linked debt only after the full 100,000 is paid');
+
     const firstMembers = await get('/api/personal-finance/members', first.token);
     const secondMembers = await get('/api/personal-finance/members', second.token);
     assert.equal(firstMembers.status, 200);
