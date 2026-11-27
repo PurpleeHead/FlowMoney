@@ -720,7 +720,16 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
     if (result.kind === 'overpay') return res.status(400).json({ message: `Payment exceeds the remaining scheduled amount of ${result.remaining.toFixed(2)}.` });
     if (result.kind === 'debt_insufficient') return res.status(409).json({ message: `Payment exceeds the remaining linked debt balance of ${result.remaining.toFixed(2)}.` });
     return res.json(result.occurrence);
-  } catch (error) { return next(error); }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Obligation payment changed concurrently. Please retry.') {
+      const current = await prisma.obligationOccurrence.findFirst({
+        where: { id: String(req.params.id), userId: uid(req), status: 'PAID' },
+        include: { obligation: { include: { debt: true } }, expense: true, payments: { include: { expense: true }, orderBy: { paidAt: 'asc' } } },
+      });
+      if (current) return res.json(current);
+    }
+    return next(error);
+  }
 });
 
 
