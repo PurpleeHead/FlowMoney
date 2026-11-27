@@ -503,6 +503,37 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(Number(restoredPartial.actualAmount), 0, 'reversing the expense must restore the full unpaid amount');
     assert.ok(['UPCOMING', 'OVERDUE'].includes(restoredPartial.status));
 
+    // Deleting a debt-repayment expense must restore the linked debt balance exactly once.
+    const debtCreateResponse = await post('/api/personal-finance/debts', {
+      title: 'Debt repayment deletion regression', category: 'credit', originalAmount: 10000,
+    }, first.token);
+    assert.equal(debtCreateResponse.status, 201);
+    const createdDebt = await debtCreateResponse.json() as { id: string; remainingAmount: number };
+    assert.equal(Number(createdDebt.remainingAmount), 10000);
+    const debtPaymentResponse = await post(`/api/personal-finance/debts/${createdDebt.id}/payments`, {
+      amount: 1000, date: todayString, note: 'Regression payment',
+    }, first.token);
+    assert.equal(debtPaymentResponse.status, 201);
+    const debtAfterPayment = await debtPaymentResponse.json() as {
+      remainingAmount: number;
+      transactions: Array<{ type: string; expense?: { id: string } | null }>;
+    };
+    assert.equal(Number(debtAfterPayment.remainingAmount), 9000);
+    const linkedDebtExpenseId = debtAfterPayment.transactions.find(item => item.type === 'PAYMENT')?.expense?.id;
+    assert.ok(linkedDebtExpenseId, 'debt repayment must have a linked ledger expense');
+    const removeDebtExpense = await del(`/api/personal-finance/expenses/${linkedDebtExpenseId}`, first.token);
+    assert.equal(removeDebtExpense.status, 204, 'deleting a debt repayment must reverse its balance transaction');
+    const debtAfterReversalResponse = await get('/api/personal-finance/debts', first.token);
+    const debtsAfterReversal = await debtAfterReversalResponse.json() as Array<{
+      id: string; remainingAmount: number; transactions: Array<{ type: string }>;
+    }>;
+    const debtAfterReversal = debtsAfterReversal.find(item => item.id === createdDebt.id);
+    assert.ok(debtAfterReversal);
+    assert.equal(Number(debtAfterReversal.remainingAmount), 10000,
+      'deleting a 1,000 repayment must restore the debt from 9,000 to 10,000');
+    assert.ok(debtAfterReversal.transactions.some(item => item.type === 'REVERSED'),
+      'the original debt payment must be marked reversed in the audit history');
+
     // Archiving and reactivating an obligation must never erase an already-paid occurrence.
     const archivePaidObligation = await patch(`/api/personal-finance/obligations/${occurrence.obligationId}`, { isActive: false }, first.token);
     assert.equal(archivePaidObligation.status, 200);
