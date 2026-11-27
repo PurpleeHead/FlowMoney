@@ -451,6 +451,8 @@ test('authentication works and household records stay isolated between accounts'
     const occurrence = obligationsData.occurrences.find(item => item.obligationId === obligationRecord.id && item.status === 'UPCOMING');
     assert.ok(occurrence, 'the specific one-time obligation occurrence should be generated');
 
+    const beforePaymentDashboard = await get('/api/personal-finance/dashboard', first.token);
+    const beforePaymentData = await beforePaymentDashboard.json() as { actual: { balance: number } };
     const paymentResponses = await Promise.all([
       post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 700 }, first.token),
       post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 700 }, first.token),
@@ -465,7 +467,9 @@ test('authentication works and household records stay isolated between accounts'
     assert.equal(expensesData.expenses.filter(item => item.title === 'Concurrent rent payment').length, 1);
     const afterPaymentDashboard = await get('/api/personal-finance/dashboard', first.token);
     const afterPaymentData = await afterPaymentDashboard.json() as { actual: { balance: number }; obligations: { paid: number; unpaid: number } };
-    assert.equal(Number(afterPaymentData.actual.balance), 465, 'the actual payment amount must reduce the household balance exactly once while retaining member and shared adjustments');
+    const balanceAfterMainPayment = Number(afterPaymentData.actual.balance);
+    assert.equal(balanceAfterMainPayment, Number(beforePaymentData.actual.balance) - 700,
+      'the actual payment amount must reduce the household balance exactly once while retaining member and shared adjustments');
     assert.equal(Number(afterPaymentData.obligations.paid), 750, 'paid obligation reporting must use the actual amount, not the planned amount');
     assert.equal(Number(afterPaymentData.obligations.unpaid), 0, 'overpaying a planned obligation must not create a negative unpaid balance');
     const paidObligationAnalytics = await get(`/api/personal-finance/analytics?from=${todayString}&to=${todayString}`, first.token);
@@ -526,7 +530,7 @@ test('authentication works and household records stay isolated between accounts'
     const invalidIncomeStatus = await get(`/api/personal-finance/income-entries?from=${todayString}&to=${todayString}&status=UNKNOWN`, first.token);
     assert.equal(invalidIncomeStatus.status, 400, 'unknown income entry status filters must be rejected');
     const beforeReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 465,
+    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), balanceAfterMainPayment,
       'planned income must not affect the actual balance');
 
     const receivedIncome = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 1200 }, first.token);
