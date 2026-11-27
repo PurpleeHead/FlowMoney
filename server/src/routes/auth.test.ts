@@ -605,10 +605,10 @@ test('authentication works and household records stay isolated between accounts'
     };
     assert.equal(Number(futureMonthData.forecast.plannedIncome), 500,
       'forecast must include planned income between today and a future selected month');
-    assert.equal(Number(futureMonthData.forecast.unpaidObligations), 250,
-      'forecast must include unpaid obligations due before a future selected month');
-    assert.equal(Number(futureMonthData.forecast.balance), 1915,
-      'future-month forecast must reconcile from current actual balance plus near-term income less near-term obligations');
+    assert.equal(Number(futureMonthData.forecast.unpaidObligations), 10250,
+      'forecast must include all unpaid obligations due by the future horizon, including the 10,000 obligation restored by reversing its partial payment');
+    assert.equal(Number(futureMonthData.forecast.balance), balanceAfterMainPayment + 1200 + 500 - 10250,
+      'future-month forecast must reconcile from current actual balance plus near-term income less all near-term obligations');
 
     const priorMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
     const priorFrom = priorMonth.toISOString().slice(0, 10);
