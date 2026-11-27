@@ -14,6 +14,7 @@ test('authentication works and household records stay isolated between accounts'
   const thirdEmail = `flowmoney-test-race-${suffix}@example.test`;
   const fourthEmail = `flowmoney-test-foreign-${suffix}@example.test`;
   const fifthEmail = `flowmoney-test-expense-foreign-${suffix}@example.test`;
+  const bcryptBoundaryEmail = `flowmoney-test-bcrypt-boundary-${suffix}@example.test`;
   const server = createApp().listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
   const address = server.address() as AddressInfo;
@@ -52,10 +53,50 @@ test('authentication works and household records stay isolated between accounts'
     const duplicate = await post('/api/auth/register', { email: firstEmail.toUpperCase(), password: 'Safe-test-password-123!' });
     assert.equal(duplicate.status, 409);
 
+    const bcryptBoundary = await post('/api/auth/register', {
+      email: bcryptBoundaryEmail,
+      password: 'a'.repeat(72),
+    });
+    assert.equal(bcryptBoundary.status, 201, 'a password of exactly 72 UTF-8 bytes must be accepted');
+    const overlongAsciiPassword = await post('/api/auth/register', {
+      email: `flowmoney-test-overlong-${suffix}@example.test`,
+      password: 'a'.repeat(73),
+    });
+    assert.equal(overlongAsciiPassword.status, 400, 'passwords over bcrypt’s 72-byte limit must be rejected');
+    const overlongUtf8Password = await post('/api/auth/register', {
+      email: `flowmoney-test-overlong-utf8-${suffix}@example.test`,
+      password: 'я'.repeat(37),
+    });
+    assert.equal(overlongUtf8Password.status, 400, 'the password limit must count UTF-8 bytes, not JavaScript characters');
+
     const login = await post('/api/auth/login', { email: firstEmail, password: 'Safe-test-password-123!' });
     assert.equal(login.status, 200);
     const loggedIn = await login.json() as { token: string };
     assert.ok(loggedIn.token);
+
+    const rememberedLogin = await post('/api/auth/login', {
+      email: firstEmail, password: 'Safe-test-password-123!', rememberMe: true,
+    });
+    assert.equal(rememberedLogin.status, 200);
+    const remembered = await rememberedLogin.json() as { token: string };
+    const rememberedClaims = JSON.parse(Buffer.from(remembered.token.split('.')[1], 'base64url').toString()) as { iat: number; exp: number };
+    assert.equal(rememberedClaims.exp - rememberedClaims.iat, 30 * 24 * 60 * 60,
+      'remember me must issue a 30-day session');
+
+    const regularLogin = await post('/api/auth/login', {
+      email: firstEmail, password: 'Safe-test-password-123!', rememberMe: false,
+    });
+    assert.equal(regularLogin.status, 200);
+    const regular = await regularLogin.json() as { token: string };
+    const regularClaims = JSON.parse(Buffer.from(regular.token.split('.')[1], 'base64url').toString()) as { iat: number; exp: number };
+    assert.equal(regularClaims.exp - regularClaims.iat, 7 * 24 * 60 * 60,
+      'unchecked remember me must retain the standard 7-day session');
+
+    const excessiveTranslation = await post('/api/translate', {
+      text: Array.from({ length: 81 }, (_, index) => `Receipt line ${index + 1}`).join('\n'),
+    }, first.token);
+    assert.equal(excessiveTranslation.status, 400,
+      'translation must reject excessive line counts before making outbound provider requests');
 
     const createdMember = await post('/api/personal-finance/members', { name: 'First household member' }, first.token);
     assert.equal(createdMember.status, 201);
@@ -258,6 +299,24 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(recurringObligation.status, 201);
     const recurringObligationRecord = await recurringObligation.json() as { id: string };
+
+    const customCategoryObligation = await post('/api/personal-finance/obligations', {
+      title: 'Custom category persistence test', category: 'Долг другу', amount: 75,
+      recurrence: 'ONCE', startDate: todayString,
+    }, first.token);
+    assert.equal(customCategoryObligation.status, 201);
+    const customCategoryRecord = await customCategoryObligation.json() as { id: string; category: string };
+    assert.equal(customCategoryRecord.category, 'Долг другу');
+    const customCategoryList = await get(`/api/personal-finance/obligations?from=${todayString}`, first.token);
+    const customCategoryData = await customCategoryList.json() as { obligations: Array<{ id: string; category: string }> };
+    assert.equal(customCategoryData.obligations.find(item => item.id === customCategoryRecord.id)?.category, 'Долг другу',
+      'user-defined obligation categories must persist and be returned by the API');
+    const archiveCustomCategoryObligation = await patch(
+      `/api/personal-finance/obligations/${customCategoryRecord.id}`, { isActive: false }, first.token,
+    );
+    assert.equal(archiveCustomCategoryObligation.status, 200,
+      'the custom-category fixture must be archived so it cannot affect later dashboard assertions');
+
     const obligationScheduleEdit = await patch(`/api/personal-finance/obligations/${recurringObligationRecord.id}`, {
       recurrence: 'ONCE', recurrenceConfig: {},
     }, first.token);
@@ -358,6 +417,7 @@ test('authentication works and household records stay isolated between accounts'
       recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
     }, first.token);
     assert.equal(obligationResponse.status, 201);
+    const obligationRecord = await obligationResponse.json() as { id: string };
     // Deactivating and reactivating an obligation must restore unpaid future occurrences.
     const reactivationObligation = await post('/api/personal-finance/obligations', {
       title: 'Reactivation obligation test', category: 'housing', amount: 450,
@@ -388,12 +448,14 @@ test('authentication works and household records stay isolated between accounts'
     const obligationsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
     assert.equal(obligationsResponse.status, 200);
     const obligationsData = await obligationsResponse.json() as { occurrences: Array<{ id: string; status: string; obligationId: string }> };
-    const occurrence = obligationsData.occurrences.find(item => item.status === 'UPCOMING');
-    assert.ok(occurrence, 'one-time obligation occurrence should be generated');
+    const occurrence = obligationsData.occurrences.find(item => item.obligationId === obligationRecord.id && item.status === 'UPCOMING');
+    assert.ok(occurrence, 'the specific one-time obligation occurrence should be generated');
 
+    const beforePaymentDashboard = await get('/api/personal-finance/dashboard', first.token);
+    const beforePaymentData = await beforePaymentDashboard.json() as { actual: { balance: number } };
     const paymentResponses = await Promise.all([
-      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 750 }, first.token),
-      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 750 }, first.token),
+      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 700 }, first.token),
+      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 700 }, first.token),
     ]);
     assert.ok(paymentResponses.every(response => response.status === 200));
     const paymentResults = await Promise.all(paymentResponses.map(response => response.json() as Promise<{ status: string; expenseId: string | null }>));
@@ -404,15 +466,89 @@ test('authentication works and household records stay isolated between accounts'
     const expensesData = await expensesResponse.json() as { expenses: Array<{ title: string }> };
     assert.equal(expensesData.expenses.filter(item => item.title === 'Concurrent rent payment').length, 1);
     const afterPaymentDashboard = await get('/api/personal-finance/dashboard', first.token);
-    const afterPaymentData = await afterPaymentDashboard.json() as { actual: { balance: number }; obligations: { paid: number; unpaid: number } };
-    assert.equal(Number(afterPaymentData.actual.balance), 465, 'the actual payment amount must reduce the household balance exactly once while retaining member and shared adjustments');
-    assert.equal(Number(afterPaymentData.obligations.paid), 750, 'paid obligation reporting must use the actual amount, not the planned amount');
+    const afterPaymentData = await afterPaymentDashboard.json() as {
+      actual: { balance: number };
+      obligations: { paid: number; unpaid: number; paidInPeriod: number };
+    };
+    const balanceAfterMainPayment = Number(afterPaymentData.actual.balance);
+    assert.equal(balanceAfterMainPayment, Number(beforePaymentData.actual.balance) - 700,
+      'the actual payment amount must reduce the household balance exactly once while retaining member and shared adjustments');
+    assert.equal(Number(afterPaymentData.obligations.paid), 700, 'paid obligation reporting must use the actual amount, not the planned amount');
     assert.equal(Number(afterPaymentData.obligations.unpaid), 0, 'overpaying a planned obligation must not create a negative unpaid balance');
     const paidObligationAnalytics = await get(`/api/personal-finance/analytics?from=${todayString}&to=${todayString}`, first.token);
     assert.equal(paidObligationAnalytics.status, 200);
     const paidObligationAnalyticsData = await paidObligationAnalytics.json() as { totals: { obligations: number } };
-    assert.equal(Number(paidObligationAnalyticsData.totals.obligations), 750,
+    assert.equal(Number(paidObligationAnalyticsData.totals.obligations), 700,
       'analytics obligation totals must use the actual amount paid, not the planned amount');
+
+    const partialObligationResponse = await post('/api/personal-finance/obligations', {
+      title: 'Partial payment regression test', category: 'credit', amount: 10000,
+      recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString,
+    }, first.token);
+    assert.equal(partialObligationResponse.status, 201);
+    const partialObligation = await partialObligationResponse.json() as { id: string };
+    const partialRowsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
+    const partialRows = await partialRowsResponse.json() as { occurrences: Array<{ id: string; obligationId: string }> };
+    const partialOccurrence = partialRows.occurrences.find(item => item.obligationId === partialObligation.id);
+    assert.ok(partialOccurrence);
+    const partialPaymentResponse = await post(`/api/personal-finance/obligation-occurrences/${partialOccurrence.id}/pay`, { actualAmount: 1000 }, first.token);
+    assert.equal(partialPaymentResponse.status, 200);
+    const partialPayment = await partialPaymentResponse.json() as { id: string; status: string; actualAmount: number; payments: Array<{ expenseId: string }> };
+    assert.equal(partialPayment.status, 'PARTIAL');
+    assert.equal(Number(partialPayment.actualAmount), 1000, 'a 1,000 payment against 10,000 must leave 9,000 outstanding');
+    assert.equal(partialPayment.payments.length, 1);
+    const partialForecastResponse = await get(`/api/personal-finance/dashboard?from=${todayString}&to=${todayString}&horizon=${todayString}`, first.token);
+    assert.equal(partialForecastResponse.status, 200);
+    const partialForecast = await partialForecastResponse.json() as {
+      forecast: { unpaidObligations: number };
+      nextPayments: Array<{ id: string }>;
+      obligations: { paidInPeriod: number };
+    };
+    assert.equal(Number(partialForecast.forecast.unpaidObligations), 9000,
+      'the forecast must retain the 9,000 unpaid remainder after a 1,000 partial payment');
+    assert.equal(Number(partialForecast.obligations.paidInPeriod), Number(afterPaymentData.obligations.paidInPeriod) + 1000,
+      'the paid-in-period summary must include the new partial payment on top of earlier payments');
+    assert.ok(partialForecast.nextPayments.some(item => item.id === partialOccurrence.id),
+      'partially paid obligations must remain in the upcoming payments list');
+    const removePartialExpense = await del(`/api/personal-finance/expenses/${partialPayment.payments[0].expenseId}`, first.token);
+    assert.equal(removePartialExpense.status, 204, 'deleting a linked partial-payment expense must safely reverse the obligation payment');
+    const restoredPartialRows = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
+    const restoredPartialData = await restoredPartialRows.json() as { occurrences: Array<{ id: string; status: string; actualAmount: number }> };
+    const restoredPartial = restoredPartialData.occurrences.find(item => item.id === partialOccurrence.id);
+    assert.ok(restoredPartial);
+    assert.equal(Number(restoredPartial.actualAmount), 0, 'reversing the expense must restore the full unpaid amount');
+    assert.ok(['UPCOMING', 'OVERDUE'].includes(restoredPartial.status));
+
+    // Deleting a debt-repayment expense must restore the linked debt balance exactly once.
+    const debtCreateResponse = await post('/api/personal-finance/debts', {
+      title: 'Debt repayment deletion regression', category: 'credit', originalAmount: 10000,
+    }, first.token);
+    assert.equal(debtCreateResponse.status, 201);
+    const createdDebt = await debtCreateResponse.json() as { id: string; remainingAmount: number };
+    assert.equal(Number(createdDebt.remainingAmount), 10000);
+    const debtPaymentResponse = await post(`/api/personal-finance/debts/${createdDebt.id}/payments`, {
+      amount: 1000, date: todayString, note: 'Regression payment',
+    }, first.token);
+    assert.equal(debtPaymentResponse.status, 201);
+    const debtAfterPayment = await debtPaymentResponse.json() as {
+      remainingAmount: number;
+      transactions: Array<{ type: string; expense?: { id: string } | null }>;
+    };
+    assert.equal(Number(debtAfterPayment.remainingAmount), 9000);
+    const linkedDebtExpenseId = debtAfterPayment.transactions.find(item => item.type === 'PAYMENT')?.expense?.id;
+    assert.ok(linkedDebtExpenseId, 'debt repayment must have a linked ledger expense');
+    const removeDebtExpense = await del(`/api/personal-finance/expenses/${linkedDebtExpenseId}`, first.token);
+    assert.equal(removeDebtExpense.status, 204, 'deleting a debt repayment must reverse its balance transaction');
+    const debtAfterReversalResponse = await get('/api/personal-finance/debts', first.token);
+    const debtsAfterReversal = await debtAfterReversalResponse.json() as Array<{
+      id: string; remainingAmount: number; transactions: Array<{ type: string }>;
+    }>;
+    const debtAfterReversal = debtsAfterReversal.find(item => item.id === createdDebt.id);
+    assert.ok(debtAfterReversal);
+    assert.equal(Number(debtAfterReversal.remainingAmount), 10000,
+      'deleting a 1,000 repayment must restore the debt from 9,000 to 10,000');
+    assert.ok(debtAfterReversal.transactions.some(item => item.type === 'REVERSED'),
+      'the original debt payment must be marked reversed in the audit history');
 
     // Archiving and reactivating an obligation must never erase an already-paid occurrence.
     const archivePaidObligation = await patch(`/api/personal-finance/obligations/${occurrence.obligationId}`, { isActive: false }, first.token);
@@ -441,7 +577,7 @@ test('authentication works and household records stay isolated between accounts'
     const invalidIncomeStatus = await get(`/api/personal-finance/income-entries?from=${todayString}&to=${todayString}&status=UNKNOWN`, first.token);
     assert.equal(invalidIncomeStatus.status, 400, 'unknown income entry status filters must be rejected');
     const beforeReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 465,
+    assert.equal(Number((await beforeReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), balanceAfterMainPayment,
       'planned income must not affect the actual balance');
 
     const receivedIncome = await post(`/api/personal-finance/income-entries/${plannedIncome.id}/receive`, { actualAmount: 1200 }, first.token);
@@ -467,7 +603,7 @@ test('authentication works and household records stay isolated between accounts'
     const deleteReceivedIncome = await del(`/api/personal-finance/income-entries/${plannedIncome.id}`, first.token);
     assert.equal(deleteReceivedIncome.status, 404, 'received income history must remain protected');
     const afterReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1665,
+    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), balanceAfterMainPayment + 1200,
       'receiving the same income entry again must not count it twice or overwrite the first actual amount');
 
     // Dated balance adjustments affect actual cash only once their date is reached,
@@ -487,7 +623,7 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(futureMemberAdjustment.status, 201);
     const balanceAfterDatedAdjustments = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await balanceAfterDatedAdjustments.json() as { actual: { balance: number } }).actual.balance), 1665,
+    assert.equal(Number((await balanceAfterDatedAdjustments.json() as { actual: { balance: number } }).actual.balance), balanceAfterMainPayment + 1200,
       'future and pre-opening adjustments must not affect the current household balance');
     const memberBalanceAfterFutureAdjustment = await get(`/api/personal-finance/dashboard?memberId=${member.id}`, first.token);
     assert.equal(Number((await memberBalanceAfterFutureAdjustment.json() as { actual: { balance: number } }).actual.balance), 175,
@@ -516,10 +652,10 @@ test('authentication works and household records stay isolated between accounts'
     };
     assert.equal(Number(futureMonthData.forecast.plannedIncome), 500,
       'forecast must include planned income between today and a future selected month');
-    assert.equal(Number(futureMonthData.forecast.unpaidObligations), 250,
-      'forecast must include unpaid obligations due before a future selected month');
-    assert.equal(Number(futureMonthData.forecast.balance), 1915,
-      'future-month forecast must reconcile from current actual balance plus near-term income less near-term obligations');
+    assert.equal(Number(futureMonthData.forecast.unpaidObligations), 10250,
+      'forecast must include all unpaid obligations due by the future horizon, including the 10,000 obligation restored by reversing its partial payment');
+    assert.equal(Number(futureMonthData.forecast.balance), balanceAfterMainPayment + 1200 + 500 - 10250,
+      'future-month forecast must reconcile from current actual balance plus near-term income less all near-term obligations');
 
     const priorMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
     const priorFrom = priorMonth.toISOString().slice(0, 10);
@@ -573,8 +709,8 @@ test('authentication works and household records stay isolated between accounts'
       'concurrent receipt requests must return the same winning actual amount');
     const afterConcurrentReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
     const afterConcurrentReceiptData = await afterConcurrentReceiptDashboard.json() as { actual: { balance: number } };
-    assert.equal(Number(afterConcurrentReceiptData.actual.balance), 1665 + Number(concurrentReceiptResults[0].actualAmount),
-      'concurrent receipt requests must add the winning actual amount to the balance exactly once');
+    assert.equal(Number(afterConcurrentReceiptData.actual.balance), balanceAfterMainPayment + 1200 + Number(concurrentReceiptResults[0].actualAmount),
+      'concurrent receipt requests must add the winning actual amount to the balance exactly once, without including receipts before the accounting start date');
 
     const invalidBudgetMonth = await get('/api/personal-finance/budgets?month=2026-02-30', first.token);
     assert.equal(invalidBudgetMonth.status, 400, 'impossible budget month dates must be rejected');
@@ -665,6 +801,49 @@ test('authentication works and household records stay isolated between accounts'
     assert.deepEqual(await secondAdjustments.json(), [],
       'a household must not be able to read another account balance adjustments');
 
+    // A partial payment on a debt-linked obligation must reduce both balances by the actual amount only.
+    const linkedDebtResponse = await post('/api/personal-finance/debts', {
+      title: 'Linked credit card regression', category: 'credit', originalAmount: 100000,
+    }, first.token);
+    assert.equal(linkedDebtResponse.status, 201);
+    const linkedDebt = await linkedDebtResponse.json() as { id: string; remainingAmount: number };
+    const linkedObligationResponse = await post('/api/personal-finance/obligations', {
+      title: 'Linked credit card payment', category: 'credit', amount: 100000,
+      recurrence: 'ONCE', recurrenceConfig: {}, startDate: todayString, debtId: linkedDebt.id,
+    }, first.token);
+    assert.equal(linkedObligationResponse.status, 201);
+    const linkedObligation = await linkedObligationResponse.json() as { id: string };
+    const linkedRowsResponse = await get(`/api/personal-finance/obligations?from=${todayString}&to=${todayString}`, first.token);
+    const linkedRows = await linkedRowsResponse.json() as { occurrences: Array<{ id: string; obligationId: string }> };
+    const linkedOccurrence = linkedRows.occurrences.find(item => item.obligationId === linkedObligation.id);
+    assert.ok(linkedOccurrence);
+    const linkedPartialResponse = await post(`/api/personal-finance/obligation-occurrences/${linkedOccurrence.id}/pay`, {
+      actualAmount: 35000,
+    }, first.token);
+    assert.equal(linkedPartialResponse.status, 200);
+    const linkedPartial = await linkedPartialResponse.json() as { status: string; actualAmount: number };
+    assert.equal(linkedPartial.status, 'PARTIAL');
+    assert.equal(Number(linkedPartial.actualAmount), 35000);
+    const debtAfterLinkedPartialResponse = await get('/api/personal-finance/debts', first.token);
+    const debtAfterLinkedPartial = (await debtAfterLinkedPartialResponse.json() as Array<{ id: string; remainingAmount: number }>)
+      .find(item => item.id === linkedDebt.id);
+    assert.ok(debtAfterLinkedPartial);
+    assert.equal(Number(debtAfterLinkedPartial.remainingAmount), 65000,
+      'a 35,000 partial payment against a 100,000 linked debt must leave 65,000 debt');
+    const linkedFinalResponse = await post(`/api/personal-finance/obligation-occurrences/${linkedOccurrence.id}/pay`, {
+      actualAmount: 65000,
+    }, first.token);
+    assert.equal(linkedFinalResponse.status, 200);
+    const linkedFinal = await linkedFinalResponse.json() as { status: string; actualAmount: number };
+    assert.equal(linkedFinal.status, 'PAID');
+    assert.equal(Number(linkedFinal.actualAmount), 100000);
+    const debtAfterLinkedFullResponse = await get('/api/personal-finance/debts', first.token);
+    const debtAfterLinkedFull = (await debtAfterLinkedFullResponse.json() as Array<{ id: string; remainingAmount: number }>)
+      .find(item => item.id === linkedDebt.id);
+    assert.ok(debtAfterLinkedFull);
+    assert.equal(Number(debtAfterLinkedFull.remainingAmount), 0,
+      'paying the remaining 65,000 must close the linked debt only after the full 100,000 is paid');
+
     const firstMembers = await get('/api/personal-finance/members', first.token);
     const secondMembers = await get('/api/personal-finance/members', second.token);
     assert.equal(firstMembers.status, 200);
@@ -684,7 +863,7 @@ test('authentication works and household records stay isolated between accounts'
     assert.deepEqual(concurrentRegistrations.map(response => response.status).sort((a, b) => a - b), [201, 409]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-    await prisma.user.deleteMany({ where: { email: { in: [firstEmail, secondEmail, thirdEmail, fourthEmail, fifthEmail] } } });
+    await prisma.user.deleteMany({ where: { email: { in: [firstEmail, secondEmail, thirdEmail, fourthEmail, fifthEmail, bcryptBoundaryEmail] } } });
   }
 });
 
@@ -722,11 +901,14 @@ test('Telegram Mini App authentication creates one account per verified Telegram
   });
 
   try {
-    const firstResponse = await authenticate(signedInitData('Flow Tester', 'flow_tester'));
-    assert.equal(firstResponse.status, 200);
-    const first = await firstResponse.json() as { token: string; user: { id: string; displayName: string } };
+    const initialData = signedInitData('Flow Tester', 'flow_tester');
+    const firstResponses = await Promise.all([authenticate(initialData), authenticate(initialData)]);
+    assert.deepEqual(firstResponses.map(response => response.status), [200, 200]);
+    const first = await firstResponses[0].json() as { token: string; user: { id: string; displayName: string } };
+    const concurrent = await firstResponses[1].json() as { user: { id: string } };
     assert.ok(first.token);
     assert.equal(first.user.displayName, 'Flow Tester');
+    assert.equal(concurrent.user.id, first.user.id, 'simultaneous first launches must resolve to one Telegram account');
 
     const profileResponse = await fetch(baseUrl + '/api/auth/me', {
       headers: { authorization: `Bearer ${first.token}` },
@@ -753,5 +935,187 @@ test('Telegram Mini App authentication creates one account per verified Telegram
     await prisma.user.deleteMany({ where: { telegramId } });
     if (previousBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = previousBotToken;
+  }
+});
+
+
+test('Telegram identity can only be linked from an authenticated account using signed initData', { skip: !process.env.DATABASE_URL }, async () => {
+  process.env.JWT_SECRET = 'flowmoney-telegram-link-test-secret-32-chars';
+  const botToken = 'flowmoney-test-telegram-bot-token';
+  process.env.TELEGRAM_BOT_TOKEN = botToken;
+  const suffix = randomUUID();
+  const server = createApp().listen(0, '127.0.0.1');
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  const address = server.address() as AddressInfo;
+  const baseUrl = 'http://127.0.0.1:' + address.port;
+  const post = (path: string, body: unknown, token?: string) => fetch(baseUrl + path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: 'Bearer ' + token } : {}) },
+    body: JSON.stringify(body),
+  });
+  const signedInitData = (telegramId: number) => {
+    const params = new URLSearchParams({
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      query_id: 'nummiox-link-test',
+      user: JSON.stringify({ id: telegramId, first_name: 'Linked User', username: 'linked_user' }),
+    });
+    const checkString = [...params.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => key + '=' + value)
+      .join('\n');
+    const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
+    params.set('hash', createHmac('sha256', secret).update(checkString).digest('hex'));
+    return params.toString();
+  };
+
+  try {
+    const firstResponse = await post('/api/auth/register', {
+      email: 'telegram-link-first-' + suffix + '@example.test',
+      password: 'Safe-test-password-123!',
+    });
+    const secondResponse = await post('/api/auth/register', {
+      email: 'telegram-link-second-' + suffix + '@example.test',
+      password: 'Safe-test-password-123!',
+    });
+    assert.equal(firstResponse.status, 201);
+    assert.equal(secondResponse.status, 201);
+    const first = await firstResponse.json() as { token: string; user: { id: string; email: string } };
+    const second = await secondResponse.json() as { token: string; user: { id: string } };
+    const initData = signedInitData(987654321);
+
+    const unauthenticated = await post('/api/auth/telegram/link', { initData });
+    assert.equal(unauthenticated.status, 401, 'identity linking must require an active authenticated session');
+
+    const forged = await post('/api/auth/telegram/link', { initData: initData + 'tampered' }, first.token);
+    assert.equal(forged.status, 401, 'unsigned or tampered Telegram data must be rejected');
+
+    const linked = await post('/api/auth/telegram/link', { initData }, first.token);
+    assert.equal(linked.status, 200);
+    const linkedBody = await linked.json() as { success: boolean; user: { id: string; email: string } };
+    assert.equal(linkedBody.success, true);
+    assert.equal(linkedBody.user.id, first.user.id);
+    assert.equal(linkedBody.user.email, first.user.email, 'linking must preserve the existing FlowMoney account');
+    const refreshedSession = await fetch(baseUrl + '/api/auth/me', { headers: { authorization: 'Bearer ' + first.token } });
+    assert.equal(refreshedSession.status, 200);
+    assert.equal((await refreshedSession.json() as { telegramLinked: boolean }).telegramLinked, true,
+      'the account settings endpoint must expose the verified Telegram link state');
+
+    const telegramLogin = await post('/api/auth/telegram', { initData });
+    assert.equal(telegramLogin.status, 200);
+    const telegramLoginBody = await telegramLogin.json() as { user: { id: string } };
+    assert.equal(telegramLoginBody.user.id, first.user.id, 'Telegram login must return the linked account');
+
+    const claimedBySecond = await post('/api/auth/telegram/link', { initData }, second.token);
+    assert.equal(claimedBySecond.status, 409, 'one Telegram identity must not be linked to two accounts');
+
+    const differentIdentity = await post('/api/auth/telegram/link', { initData: signedInitData(987654322) }, first.token);
+    assert.equal(differentIdentity.status, 409, 'linking must not silently replace an account’s existing Telegram identity');
+
+    const unverifiedIdentityClaim = await post('/api/auth/telegram/link', { telegramId: '987654323' }, second.token);
+    assert.equal(unverifiedIdentityClaim.status, 400, 'client-supplied Telegram IDs must never authorize account linking');
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    delete process.env.TELEGRAM_BOT_TOKEN;
+  }
+});
+
+
+test('password recovery uses one-time hashed tokens and revokes existing sessions', { skip: !process.env.DATABASE_URL }, async () => {
+  process.env.JWT_SECRET = 'flowmoney-password-reset-test-secret-32-chars';
+  const previousApiKey = process.env.RESEND_API_KEY;
+  const previousFrom = process.env.RESEND_FROM_EMAIL;
+  const previousBaseUrl = process.env.APP_BASE_URL;
+  process.env.RESEND_API_KEY = 're_test_key';
+  process.env.RESEND_FROM_EMAIL = 'nummioX Test <onboarding@resend.dev>';
+  process.env.APP_BASE_URL = 'https://nummiox.example.test';
+  const originalFetch = globalThis.fetch;
+  const delivered: Array<{ to: string[]; html: string }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === 'https://api.resend.com/emails') {
+      const payload = JSON.parse(String(init?.body ?? '{}')) as { to: string[]; html: string };
+      delivered.push(payload);
+      return Response.json({ id: 'email_test_id' }, { status: 200 });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const suffix = randomUUID();
+  const email = `password-reset-${suffix}@example.test`;
+  const server = createApp().listen(0, '127.0.0.1');
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const post = (path: string, body: unknown, token?: string) => fetch(baseUrl + path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+
+  let userId = '';
+  try {
+    const registration = await post('/api/auth/register', { email, password: 'Original-password-123!' });
+    assert.equal(registration.status, 201);
+    const account = await registration.json() as { token: string; user: { id: string } };
+    userId = account.user.id;
+
+    process.env.APP_BASE_URL = 'javascript:alert(1)';
+    const invalidBaseUrlRequest = await post('/api/auth/password-reset/request', { email: email.toUpperCase() });
+    assert.equal(invalidBaseUrlRequest.status, 503, 'invalid reset URL configuration must fail closed');
+    assert.equal(delivered.length, 0, 'no reset email may be sent with an invalid application URL');
+
+    process.env.APP_BASE_URL = 'https://nummiox.example.test';
+    const request = await post('/api/auth/password-reset/request', { email: email.toUpperCase() });
+    assert.equal(request.status, 200);
+    assert.match((await request.json() as { message: string }).message, /If an account exists/i);
+    assert.equal(delivered.length, 1);
+    const resetUrl = delivered[0].html.match(/href="([^"]+\/reset-password\?token=[^"]+)"/)?.[1];
+    assert.ok(resetUrl, 'email must contain a reset URL');
+    const rawToken = new URL(resetUrl).searchParams.get('token');
+    assert.ok(rawToken);
+
+    const stored = await prisma.passwordResetToken.findFirst({ where: { userId } });
+    assert.ok(stored);
+    assert.notEqual(stored.tokenHash, rawToken, 'only a hash of the raw token may be stored');
+    assert.equal(stored.tokenHash.length, 64);
+
+    const reset = await post('/api/auth/password-reset/confirm', { token: rawToken, password: 'New-password-456!' });
+    assert.equal(reset.status, 200);
+    assert.equal((await reset.json() as { message: string }).message, 'Password updated. Please sign in with your new password.');
+
+    const oldSession = await fetch(baseUrl + '/api/auth/me', { headers: { authorization: `Bearer ${account.token}` } });
+    assert.equal(oldSession.status, 401, 'password reset must revoke previously issued sessions');
+    const oldLogin = await post('/api/auth/login', { email, password: 'Original-password-123!' });
+    assert.equal(oldLogin.status, 401);
+    const newLogin = await post('/api/auth/login', { email, password: 'New-password-456!' });
+    assert.equal(newLogin.status, 200);
+
+    const replay = await post('/api/auth/password-reset/confirm', { token: rawToken, password: 'Another-password-789!' });
+    assert.equal(replay.status, 400, 'a recovery token must only be usable once');
+
+    const unknown = await post('/api/auth/password-reset/request', { email: `missing-${suffix}@example.test` });
+    assert.equal(unknown.status, 200);
+    assert.equal(delivered.length, 1, 'unknown accounts must not trigger email delivery');
+
+    const secondRequest = await post('/api/auth/password-reset/request', { email });
+    assert.equal(secondRequest.status, 200);
+    const secondUrl = delivered[1].html.match(/href="([^"]+\/reset-password\?token=[^"]+)"/)?.[1];
+    assert.ok(secondUrl);
+    const expiredToken = new URL(secondUrl).searchParams.get('token');
+    assert.ok(expiredToken);
+    const { createHash } = await import('node:crypto');
+    await prisma.passwordResetToken.update({
+      where: { tokenHash: createHash('sha256').update(expiredToken).digest('hex') },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const expired = await post('/api/auth/password-reset/confirm', { token: expiredToken, password: 'Another-password-789!' });
+    assert.equal(expired.status, 400, 'expired recovery tokens must be rejected');
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    if (userId) await prisma.user.delete({ where: { id: userId } });
+    globalThis.fetch = originalFetch;
+    if (previousApiKey === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = previousApiKey;
+    if (previousFrom === undefined) delete process.env.RESEND_FROM_EMAIL; else process.env.RESEND_FROM_EMAIL = previousFrom;
+    if (previousBaseUrl === undefined) delete process.env.APP_BASE_URL; else process.env.APP_BASE_URL = previousBaseUrl;
   }
 });

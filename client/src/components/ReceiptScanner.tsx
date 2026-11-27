@@ -1,8 +1,180 @@
-import {useState} from 'react'; import {Camera,FileImage,LoaderCircle,Languages,CheckCircle2} from 'lucide-react'; import {createWorker} from 'tesseract.js'; import {parseReceiptLines,ReceiptItem} from '../lib/receiptParser'; import {api} from '../lib/api';
-type Props={onSave:(items:ReceiptItem[],rawText:string)=>Promise<void>;vndPerUsdt:number;vndPerRub:number;lang?:'en'|'ru'};
-const ru:Record<string,string>={'SMART RECEIPT':'УМНЫЙ ЧЕК','Scan a receipt':'Сканировать чек','OCR runs in your browser. Check the extracted details before saving.':'Распознавание работает в браузере. Проверьте данные перед сохранением.','Choose receipt':'Выбрать чек','Vietnamese + English':'Вьетнамский + английский','English':'Английский','Russian':'Русский','OCR language':'Язык распознавания','Recognized text':'Распознанный текст','Upload a receipt to extract its text, or paste OCR text here…':'Загрузите чек или вставьте распознанный текст…','Translate to Russian':'Перевести на русский','Save':'Сохранить','items':'товаров','Detected items — review before saving':'Распознанные товары — проверьте перед сохранением','Loading OCR language data…':'Загружаем языковые данные OCR…','Reading receipt locally…':'Распознаём чек локально…','Translation complete. Check the amounts and item names.':'Перевод готов. Проверьте названия и суммы.','No items detected to translate. Check the OCR text and correct it first.':'Не удалось найти товары для перевода. Проверьте и исправьте распознанный текст.','Translation complete. Prices and original OCR text were preserved.':'Названия переведены. Цены и исходный текст OCR сохранены.'};
-const tr=(lang:'en'|'ru',value:string)=>lang==='ru'?(ru[value]||value):value;
-export default function ReceiptScanner({onSave,vndPerUsdt,vndPerRub,lang='en'}:Props){const [text,setText]=useState('');const [items,setItems]=useState<ReceiptItem[]>([]);const [busy,setBusy]=useState(false);const [status,setStatus]=useState('');const [language,setLanguage]=useState('vie+eng');
- async function scan(file?:File){if(!file)return;setBusy(true);setStatus(tr(lang,'Loading OCR language data…'));let worker:Awaited<ReturnType<typeof createWorker>>|null=null;try{worker=await createWorker(language);setStatus(tr(lang,'Reading receipt locally…'));const bitmap=await createImageBitmap(file);const canvas=document.createElement('canvas');const scale=Math.min(3,2400/bitmap.width);canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('Could not prepare receipt image');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const image=ctx.getImageData(0,0,canvas.width,canvas.height);for(let i=0;i<image.data.length;i+=4){const gray=.299*image.data[i]+.587*image.data[i+1]+.114*image.data[i+2];const contrast=Math.max(0,Math.min(255,(gray-128)*1.65+128));image.data[i]=contrast;image.data[i+1]=contrast;image.data[i+2]=contrast;image.data[i+3]=255;}ctx.putImageData(image,0,0);try{await worker.setParameters({tessedit_pageseg_mode:'6' as never,preserve_interword_spaces:'1' as never,user_defined_dpi:'300' as never});}catch{/* OCR can still run with the worker defaults. */}const result=await worker.recognize(canvas);const recognized=result.data.text;setText(recognized);const parsed=parseReceiptLines(recognized);setItems(parsed);setStatus(`OCR finished. Review ${parsed.length} detected item(s); verify all prices before saving.`);}catch(e){setStatus(e instanceof Error?e.message:'OCR failed');}finally{if(worker)await worker.terminate().catch(()=>undefined);setBusy(false);}}
- async function translate(){if(!items.length){setStatus(tr(lang,'No items detected to translate. Check the OCR text and correct it first.'));return;}setBusy(true);try{const names=items.map(item=>item.name);const r=await api<{translatedText:string}>('/translate',{method:'POST',body:JSON.stringify({text:names.join('\n'),source:'vi',target:'ru'})});const translated=r.translatedText.split(/\r?\n/);setItems(current=>current.map((item,index)=>({...item,name:translated[index]?.trim()||item.name})));setStatus(tr(lang,'Translation complete. Prices and original OCR text were preserved.'));}catch(e){setStatus(e instanceof Error?e.message:'Translation service unavailable');}finally{setBusy(false);}}
- return <section className="panel receipt-panel"><div className="section-heading"><div><span className="eyebrow">{tr(lang,'SMART RECEIPT')}</span><h3>{tr(lang,'Scan a receipt')}</h3><p>{tr(lang,'OCR runs in your browser. Check the extracted details before saving.')}</p></div><Camera size={22}/></div><div className="scan-controls"><label className="upload-button"><FileImage size={18}/> {tr(lang,'Choose receipt')}<input type="file" accept="image/*" capture="environment" onChange={e=>scan(e.target.files?.[0])}/></label><select value={language} onChange={e=>setLanguage(e.target.value)} aria-label={tr(lang,'OCR language')}><option value="vie+eng">{tr(lang,'Vietnamese + English')}</option><option value="eng">{tr(lang,'English')}</option><option value="rus">{tr(lang,'Russian')}</option></select></div>{busy&&<p className="status"><LoaderCircle className="spin" size={16}/>{status}</p>}{!busy&&status&&<p className="status"><CheckCircle2 size={16}/>{status}</p>}<label className="field-label">{tr(lang,'Recognized text')} <textarea rows={5} value={text} onChange={e=>{setText(e.target.value);setItems(parseReceiptLines(e.target.value));}} placeholder={tr(lang,'Upload a receipt to extract its text, or paste OCR text here…')}/></label><div className="receipt-actions"><button className="button secondary" onClick={translate} disabled={!items.length||busy}><Languages size={16}/> {tr(lang,'Translate to Russian')}</button><button className="button primary" onClick={()=>onSave(items,text)} disabled={!items.length||busy}>{tr(lang,'Save')} {items.length||''} {tr(lang,'items')}</button></div>{items.length>0&&<div className="detected-items"><strong>{tr(lang,'Detected items — review before saving')}</strong>{items.map((item,i)=><div className="detected-row" key={i}><input className="receipt-edit-name" aria-label={'Item '+(i+1)+' name'} value={item.name} onChange={e=>setItems(current=>current.map((x,index)=>index===i?{...x,name:e.target.value}:x))}/><div className="receipt-edit-amount"><label><input className="receipt-edit-price" aria-label={'Item '+(i+1)+' price in VND'} inputMode="numeric" value={String(item.price)} onChange={e=>{const value=Number(e.target.value.replace(/[^\d]/g,''));setItems(current=>current.map((x,index)=>index===i?{...x,price:value}:x));}}/> ₫</label><small className="receipt-conversions">{vndPerRub>0?'≈ '+(item.price/vndPerRub).toLocaleString('en-US',{maximumFractionDigits:2})+' RUB':''}{vndPerUsdt>0?' · '+(item.price/vndPerUsdt).toLocaleString('en-US',{maximumFractionDigits:2})+' USDT':''}</small></div></div>)}</div>}</section>}
+import { useState } from 'react';
+import { Camera, FileImage, LoaderCircle, CheckCircle2 } from 'lucide-react';
+import { createWorker } from 'tesseract.js';
+import { parseReceiptLines, ReceiptItem } from '../lib/receiptParser';
+
+type OcrLanguage = 'rus' | 'eng' | 'rus+eng';
+type Props = {
+  onSave: (items: ReceiptItem[], rawText: string) => Promise<void>;
+  lang?: 'en' | 'ru';
+};
+
+const ru: Record<string, string> = {
+  'SMART RECEIPT': 'УМНЫЙ ЧЕК',
+  'Scan a receipt': 'Сканировать чек',
+  'OCR runs in your browser. Check the extracted details before saving.': 'Распознавание работает в браузере. Проверьте данные перед сохранением.',
+  'Choose receipt': 'Выбрать чек',
+  'Russian': 'Русский',
+  'English': 'Английский',
+  'Russian + English': 'Русский + английский',
+  'OCR language': 'Язык распознавания',
+  'Recognized text': 'Распознанный текст',
+  'Upload a receipt to extract its text, or paste OCR text here…': 'Загрузите чек или вставьте распознанный текст…',
+  'Save': 'Сохранить',
+  'items': 'товаров',
+  'Detected items — review before saving': 'Распознанные товары — проверьте перед сохранением',
+  'Loading OCR language data…': 'Загружаем языковые данные OCR…',
+  'Reading receipt locally…': 'Распознаём чек локально…',
+  'OCR finished. Review detected items and verify all prices before saving.': 'Чек распознан. Проверьте названия товаров и суммы перед сохранением.',
+  'No items detected. Try a clearer photo or correct the recognized text manually.': 'Не удалось распознать товары. Попробуйте снимок получше или исправьте текст вручную.',
+  'Could not prepare receipt image': 'Не удалось обработать изображение чека',
+  'OCR failed': 'Не удалось распознать чек',
+};
+
+const tr = (lang: 'en' | 'ru', value: string) => lang === 'ru' ? (ru[value] || value) : value;
+
+export default function ReceiptScanner({ onSave, lang = 'en' }: Props) {
+  const [text, setText] = useState('');
+  const [items, setItems] = useState<ReceiptItem[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+  const [language, setLanguage] = useState<OcrLanguage>('rus+eng');
+
+  async function scan(file?: File) {
+    if (!file) return;
+    setBusy(true);
+    setStatus(tr(lang, 'Loading OCR language data…'));
+    let worker: Awaited<ReturnType<typeof createWorker>> | null = null;
+
+    try {
+      worker = await createWorker(language);
+      setStatus(tr(lang, 'Reading receipt locally…'));
+
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(3, 2400 / bitmap.width);
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) throw new Error(tr(lang, 'Could not prepare receipt image'));
+
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < image.data.length; i += 4) {
+        const gray = .299 * image.data[i] + .587 * image.data[i + 1] + .114 * image.data[i + 2];
+        const contrast = Math.max(0, Math.min(255, (gray - 128) * 1.65 + 128));
+        image.data[i] = contrast;
+        image.data[i + 1] = contrast;
+        image.data[i + 2] = contrast;
+        image.data[i + 3] = 255;
+      }
+      ctx.putImageData(image, 0, 0);
+
+      try {
+        await worker.setParameters({
+          tessedit_pageseg_mode: '6' as never,
+          preserve_interword_spaces: '1' as never,
+          user_defined_dpi: '300' as never,
+        });
+      } catch {
+        // OCR can still run with the worker defaults.
+      }
+
+      const result = await worker.recognize(canvas);
+      const recognized = result.data.text.trim();
+      const parsed = parseReceiptLines(recognized);
+      setText(recognized);
+      setItems(parsed);
+      setStatus(parsed.length
+        ? tr(lang, 'OCR finished. Review detected items and verify all prices before saving.')
+        : tr(lang, 'No items detected. Try a clearer photo or correct the recognized text manually.'));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : tr(lang, 'OCR failed'));
+    } finally {
+      if (worker) await worker.terminate().catch(() => undefined);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel receipt-panel">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">{tr(lang, 'SMART RECEIPT')}</span>
+          <h3>{tr(lang, 'Scan a receipt')}</h3>
+          <p>{tr(lang, 'OCR runs in your browser. Check the extracted details before saving.')}</p>
+        </div>
+        <Camera size={22} />
+      </div>
+
+      <div className="scan-controls">
+        <label className="upload-button">
+          <FileImage size={18} /> {tr(lang, 'Choose receipt')}
+          <input type="file" accept="image/*" capture="environment" onChange={event => scan(event.target.files?.[0])} />
+        </label>
+        <select value={language} onChange={event => setLanguage(event.target.value as OcrLanguage)} aria-label={tr(lang, 'OCR language')}>
+          <option value="rus">{tr(lang, 'Russian')}</option>
+          <option value="eng">{tr(lang, 'English')}</option>
+          <option value="rus+eng">{tr(lang, 'Russian + English')}</option>
+        </select>
+      </div>
+
+      {busy && <p className="status"><LoaderCircle className="spin" size={16} />{status}</p>}
+      {!busy && status && <p className="status"><CheckCircle2 size={16} />{status}</p>}
+
+      <label className="field-label">
+        {tr(lang, 'Recognized text')}
+        <textarea
+          rows={5}
+          value={text}
+          onChange={event => {
+            setText(event.target.value);
+            setItems(parseReceiptLines(event.target.value));
+          }}
+          placeholder={tr(lang, 'Upload a receipt to extract its text, or paste OCR text here…')}
+        />
+      </label>
+
+      <div className="receipt-actions">
+        <button className="button primary" onClick={() => onSave(items, text)} disabled={!items.length || busy}>
+          {tr(lang, 'Save')} {items.length || ''} {tr(lang, 'items')}
+        </button>
+      </div>
+
+      {items.length > 0 && (
+        <div className="detected-items">
+          <strong>{tr(lang, 'Detected items — review before saving')}</strong>
+          {items.map((item, index) => (
+            <div className="detected-row" key={index}>
+              <input
+                className="receipt-edit-name"
+                aria-label={'Item ' + (index + 1) + ' name'}
+                value={item.name}
+                onChange={event => setItems(current => current.map((entry, i) => i === index ? { ...entry, name: event.target.value } : entry))}
+              />
+              <div className="receipt-edit-amount">
+                <label>
+                  <input
+                    className="receipt-edit-price"
+                    aria-label={'Item ' + (index + 1) + ' price in RUB'}
+                    inputMode="decimal"
+                    value={String(item.price)}
+                    onChange={event => {
+                      const normalized = event.target.value.replace(/[^\d.,]/g, '').replace(',', '.');
+                      const value = Number(normalized);
+                      setItems(current => current.map((entry, i) => i === index ? { ...entry, price: Number.isFinite(value) ? value : 0 } : entry));
+                    }}
+                  /> ₽
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

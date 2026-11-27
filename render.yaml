@@ -2,6 +2,8 @@ services:
   - type: web
     name: flowmoney-app
     runtime: node
+    branch: main
+    autoDeployTrigger: checksPass
     plan: free
     region: singapore
     buildCommand: npm ci && npm run db:generate && npm run build
@@ -17,5 +19,7 @@ services:
         generateValue: true
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        value: nummioX_bot
       - key: CLIENT_ORIGIN
         value: https://flowmoney-app.onrender.com

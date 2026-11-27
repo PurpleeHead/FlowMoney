@@ -1,8 +1,12 @@
 # Cross-account household collaboration
 
+## Implementation status (2026-11-11)
+
+Backend schema, migration, request-level household resolution, invitation API, immediate revocation, Telegram invite UI and household isolation tests are implemented on `feature/household-collaboration`. Secure linking of a verified Telegram identity to an existing authenticated email account is implemented in the follow-up staging change `feature/secure-telegram-account-linking`. These changes are staging-only and are not production-enabled until the migration and release are reviewed and explicitly approved.
+
 ## Why this is a separate milestone
 
-The current `HouseholdMember` records are attribution labels inside one account. They are not login identities. A second Telegram user currently receives a separate FlowMoney account and cannot see the first user's financial data. Do not describe the current model as shared multi-user access.
+`HouseholdMember` records remain attribution labels, while `HouseholdAccess` links a real authenticated account to one profile. Shared multi-user access is implemented on staging; the security requirements below describe the invariants that must remain true as the feature evolves.
 
 ## Target behavior
 
@@ -36,7 +40,7 @@ Store only a cryptographic hash of invite tokens. Generate tokens from a cryptog
 3. Preserve all existing financial rows and IDs. Do not copy or rewrite historical transactions during the first migration.
 4. Keep existing `userId` ownership as the canonical data-owner key for the first release. Resolve an authenticated user's household owner on the server and use that owner key for all personal-finance reads/writes. Never accept an owner ID from the client.
 5. Add the authenticated user's `memberId` to the request context for attribution defaults, while still allowing an explicit shared/unassigned transaction where product rules permit.
-6. A joining account with existing finance records must not silently merge or lose them. Initially reject joining if the account already owns financial records; a separately reviewed data-transfer flow can be built later.
+6. A joining account keeps its personal household OWNER access and all existing personal records. Accepting an invitation adds a separate MEMBER access to the invited household; it never copies, merges, rewrites or deletes personal records. The client selects `personal` or `household`, and the server resolves the corresponding owner from the authenticated account's active access records.
 7. Preserve email/password login and Telegram login as independent authentication methods attached to the same FlowMoney user account. Linking an existing email account to Telegram must require an authenticated session and a verified Telegram signature; never auto-link by matching email text.
 
 This approach avoids a destructive migration of every existing financial table and allows access revocation to take effect on the next API request.
@@ -48,15 +52,20 @@ This approach avoids a destructive migration of every existing financial table a
 - The UI shares a Telegram Mini App deep link using the configured bot username and `startapp` parameter. Also provide a copyable invitation code for manual entry.
 - Recipient opens the Mini App, authenticates with signed Telegram `initData`, reviews the household name and selected member profile, then explicitly accepts.
 - Server validates expiry, revocation, single-use status, recipient account eligibility and household membership in one transaction.
-- The recipient sees a clear confirmation before switching from their empty personal household to the invited household.
+- The recipient sees a clear confirmation before joining. Existing personal records remain available in the personal space, and the app switches to the invited household after acceptance.
+- An account may keep one personal OWNER space and join one shared MEMBER household. The database permits multiple active accesses for the same account but still enforces one active account per household member profile.
+- Revoking a shared membership must not revoke personal access; the revoked member can continue using the personal space but must receive 403 for the revoked household space.
 
 ## API surface to implement
+- `POST /api/auth/telegram/link` — link a signed Telegram Web App identity to the currently authenticated FlowMoney account; reject identities already linked elsewhere.
 
 - `POST /api/personal-finance/household/invitations` — owner creates invite.
 - `GET /api/personal-finance/household/invitations` — owner lists pending/recent invites without exposing token hashes.
 - `DELETE /api/personal-finance/household/invitations/:id` — owner revokes invite.
 - `POST /api/personal-finance/household/invitations/accept` — authenticated user accepts token and selected member profile.
-- `GET /api/personal-finance/household` — returns household name, role, current user profile and members.
+- `GET /api/household` — returns household name, role, current user profile and members.
+- `PATCH /api/household/profile` — owner links their own account to an attribution profile.
+- `PATCH /api/household` — owner renames the household.
 - `DELETE /api/personal-finance/household/access/:userId` — owner revokes a member's access.
 
 ## Required security and integration tests
@@ -68,7 +77,7 @@ This approach avoids a destructive migration of every existing financial table a
 - Only the owner can create or revoke invitations or revoke household access.
 - Revoked users lose access on the next API request, even with a still-valid JWT.
 - Existing users receive personal households after migration without changing financial row IDs or balances.
-- A joining account with existing finance records is rejected without modifying either account.
+- A joining account with existing finance records can join; the records remain visible only in the personal space and the invited household's records remain visible only in the shared space.
 - Account linking requires both an authenticated FlowMoney session and verified Telegram identity; matching a synthetic Telegram email is never sufficient.
 
 ## Release boundary

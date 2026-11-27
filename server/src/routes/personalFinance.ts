@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../services/prisma.js';
 import { auth } from '../middleware/auth.js';
 import type { AuthedRequest } from '../types.js';
-import { generateOccurrences, type Recurrence, type RecurrenceConfig } from '../services/personalFinance.js';
+import { calculateObligationPeriodTotals, generateOccurrences, type Recurrence, type RecurrenceConfig } from '../services/personalFinance.js';
 
 const router = Router();
 router.use(auth);
@@ -16,6 +16,8 @@ const dateSchema = z.string()
   }, 'Invalid calendar date.');
 const money = z.number().finite().positive().max(1_000_000_000);
 const optionalMember = z.string().cuid().nullable().optional();
+// Category IDs include both Prisma-generated custom IDs and stable system IDs from migrations.
+const optionalCategoryId = z.string().trim().min(1).max(128).nullable().optional();
 const recurrence = z.enum(['ONCE', 'DAILY', 'WEEKLY', 'TWICE_MONTHLY', 'MONTHLY', 'YEARLY']);
 const configSchema = z.object({
   weekdays: z.array(z.number().int().min(0).max(6)).optional(),
@@ -137,24 +139,51 @@ async function createObligationOccurrences(obligation: {
 
 router.get('/settings', async (req: AuthedRequest, res, next) => {
   try {
-    const settings = await prisma.user.findUnique({ where: { id: uid(req) }, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } });
-    if (!settings) return res.status(404).json({ message: 'User settings not found.' });
-    return res.json(settings);
+    // Language and timezone belong to the signed-in person; the opening balance belongs
+    // to the shared ledger owner so family members cannot overwrite each other's preferences.
+    const [personal, ledger] = await Promise.all([
+      prisma.user.findUnique({ where: { id: req.user!.accountId }, select: { timezone: true, locale: true, telegramRemindersEnabled: true, telegramReminderTime: true } }),
+      prisma.user.findUnique({ where: { id: uid(req) }, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } }),
+    ]);
+    if (!personal || !ledger) return res.status(404).json({ message: 'User settings not found.' });
+    return res.json({ ...personal, ...ledger });
   } catch (error) { return next(error); }
 });
 router.patch('/settings', async (req: AuthedRequest, res, next) => {
   try {
-    const parsed = z.object({ timezone: z.string().trim().min(1).max(80).optional(), locale: z.enum(['ru', 'en']).optional(), openingBalance: z.number().finite().min(-1_000_000_000).max(1_000_000_000).optional(), openingBalanceDate: dateSchema.optional() }).safeParse(req.body);
-    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid timezone or language.' });
+    const parsed = z.object({ timezone: z.string().trim().min(1).max(80).optional(), locale: z.enum(['ru', 'en']).optional(), telegramRemindersEnabled: z.boolean().optional(), telegramReminderTime: z.string().regex(/^(?:[01]\d|2[0-3]):(?:00|15|30|45)$/).optional(), openingBalance: z.number().finite().min(-1_000_000_000).max(1_000_000_000).optional(), openingBalanceDate: dateSchema.optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid timezone, language or opening balance.' });
+    if (parsed.data.telegramRemindersEnabled === true) {
+      const account = await prisma.user.findUnique({ where: { id: req.user!.accountId }, select: { telegramId: true } });
+      if (!account?.telegramId) return res.status(409).json({ message: 'Link Telegram to this account before enabling reminders.' });
+    }
     if (parsed.data.timezone) {
       try { new Intl.DateTimeFormat('en-US', { timeZone: parsed.data.timezone }); }
       catch { return res.status(400).json({ message: 'Unknown IANA timezone.' }); }
     }
+    const changesLedger = parsed.data.openingBalance !== undefined || parsed.data.openingBalanceDate !== undefined;
+    if (changesLedger && req.user!.role !== 'OWNER') {
+      return res.status(403).json({ message: 'Only the household owner can change the shared opening balance.' });
+    }
     if (parsed.data.openingBalanceDate && parsed.data.openingBalanceDate > dateString(await userToday(uid(req)))) return res.status(400).json({ message: 'Opening balance date cannot be in the future.' });
-    const data: Record<string, unknown> = { ...parsed.data };
-    if (parsed.data.openingBalanceDate) data.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
-    if (parsed.data.openingBalance !== undefined || parsed.data.openingBalanceDate !== undefined) data.openingBalanceConfigured = true;
-    return res.json(await prisma.user.update({ where: { id: uid(req) }, data: data as never, select: { timezone: true, locale: true, openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } }));
+
+    const personalData: Record<string, unknown> = {};
+    if (parsed.data.timezone !== undefined) personalData.timezone = parsed.data.timezone;
+    if (parsed.data.locale !== undefined) personalData.locale = parsed.data.locale;
+    if (parsed.data.telegramRemindersEnabled !== undefined) personalData.telegramRemindersEnabled = parsed.data.telegramRemindersEnabled;
+    if (parsed.data.telegramReminderTime !== undefined) personalData.telegramReminderTime = parsed.data.telegramReminderTime;
+    const ledgerData: Record<string, unknown> = {};
+    if (parsed.data.openingBalance !== undefined) ledgerData.openingBalance = parsed.data.openingBalance;
+    if (parsed.data.openingBalanceDate !== undefined) ledgerData.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
+    if (changesLedger) ledgerData.openingBalanceConfigured = true;
+
+    const personal = Object.keys(personalData).length
+      ? await prisma.user.update({ where: { id: req.user!.accountId }, data: personalData as never, select: { timezone: true, locale: true, telegramRemindersEnabled: true, telegramReminderTime: true } })
+      : await prisma.user.findUniqueOrThrow({ where: { id: req.user!.accountId }, select: { timezone: true, locale: true, telegramRemindersEnabled: true, telegramReminderTime: true } });
+    const ledger = changesLedger
+      ? await prisma.user.update({ where: { id: uid(req) }, data: ledgerData as never, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } })
+      : await prisma.user.findUniqueOrThrow({ where: { id: uid(req) }, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } });
+    return res.json({ ...personal, ...ledger });
   } catch (error) { return next(error); }
 });
 
@@ -164,6 +193,7 @@ router.get('/members', async (req: AuthedRequest, res, next) => {
 });
 router.post('/members', async (req: AuthedRequest, res, next) => {
   try {
+    if (req.user!.role !== 'OWNER') return res.status(403).json({ message: 'Only the household owner can manage member profiles.' });
     const parsed = z.object({ name: z.string().trim().min(1).max(60), color: z.string().max(24).optional() }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Enter a household member name.' });
     return res.status(201).json(await prisma.householdMember.create({ data: { ...parsed.data, userId: uid(req) } }));
@@ -176,12 +206,39 @@ router.post('/members', async (req: AuthedRequest, res, next) => {
 });
 router.patch('/members/:id', async (req: AuthedRequest, res, next) => {
   try {
+    if (req.user!.role !== 'OWNER') return res.status(403).json({ message: 'Only the household owner can manage member profiles.' });
     const parsed = z.object({ name: z.string().trim().min(1).max(60).optional(), color: z.string().max(24).nullable().optional(), isArchived: z.boolean().optional() }).safeParse(req.body);
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid member update.' });
-    const result = await prisma.householdMember.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: parsed.data });
-    if (!result.count) return res.status(404).json({ message: 'Household member not found.' });
-    return res.json(await prisma.householdMember.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
+    // Archive checks and writes must be one serializable transaction. Otherwise an
+    // invitation can be accepted between the access check and the profile update,
+    // leaving an active account linked to an archived profile.
+    const outcome = await prisma.$transaction(async tx => {
+      if (parsed.data.isArchived === true) {
+        const linked = await tx.householdAccess.findFirst({
+          where: { householdId: req.user!.householdId, memberId: String(req.params.id), revokedAt: null },
+          select: { id: true },
+        });
+        if (linked) return { status: 'linked' as const };
+      }
+      const result = await tx.householdMember.updateMany({
+        where: { id: String(req.params.id), userId: uid(req) },
+        data: parsed.data,
+      });
+      if (!result.count) return { status: 'missing' as const };
+      const member = await tx.householdMember.findFirst({
+        where: { id: String(req.params.id), userId: uid(req) },
+      });
+      return { status: 'ok' as const, member };
+    }, { isolationLevel: 'Serializable' });
+    if (outcome.status === 'linked') {
+      return res.status(409).json({ message: 'Revoke the linked account before archiving this profile.' });
+    }
+    if (outcome.status === 'missing') return res.status(404).json({ message: 'Household member not found.' });
+    return res.json(outcome.member);
   } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2034') {
+      return res.status(409).json({ message: 'This household profile changed while you were updating it. Refresh and try again.' });
+    }
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
       return res.status(409).json({ message: 'A household member with this name already exists.' });
     }
@@ -290,11 +347,15 @@ router.patch('/income-entries/:id', async (req: AuthedRequest, res, next) => {
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid planned income update.' });
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
-    const data: Record<string, unknown> = { ...input };
-    if (input.plannedDate) data.plannedDate = dateValue(input.plannedDate);
     const id = String(req.params.id);
     const existing = await prisma.incomeEntry.findFirst({ where: { id, userId }, include: { source: { select: { isActive: true } } } });
-    if (!existing || existing.status === 'RECEIVED') return res.status(404).json({ message: 'Editable planned income not found.' });
+    if (!existing || (existing.status === 'RECEIVED' && input.status !== 'SKIPPED')) return res.status(404).json({ message: 'Editable planned income not found.' });
+    const data: Record<string, unknown> = { ...input };
+    if (existing.status === 'RECEIVED' && input.status === 'SKIPPED') {
+      data.actualAmount = null;
+      data.receivedAt = null;
+    }
+    if (input.plannedDate) data.plannedDate = dateValue(input.plannedDate);
     if (input.status === 'PLANNED' && existing.sourceId && !existing.source?.isActive) {
       return res.status(409).json({ message: 'Reactivate the income source before restoring this planned entry.' });
     }
@@ -302,7 +363,7 @@ router.patch('/income-entries/:id', async (req: AuthedRequest, res, next) => {
       ? { OR: [{ sourceId: null }, { source: { is: { isActive: true } } }] }
       : {};
     const result = await prisma.incomeEntry.updateMany({
-      where: { id, userId, status: { not: 'RECEIVED' }, ...activeSourceWhere },
+      where: { id, userId, status: existing.status, ...activeSourceWhere },
       data: data as never,
     });
     if (!result.count) return res.status(409).json({ message: 'Income entry changed while it was being updated.' });
@@ -378,7 +439,7 @@ router.post('/income-entries', async (req: AuthedRequest, res, next) => {
 
 const expenseSchema = z.object({
   title: z.string().trim().min(1).max(140), amount: money, date: dateSchema,
-  categoryId: z.string().cuid().nullable().optional(), memberId: optionalMember,
+  categoryId: optionalCategoryId, memberId: optionalMember,
   note: z.string().max(500).nullable().optional(),
 });
 router.get('/expenses', async (req: AuthedRequest, res, next) => {
@@ -415,7 +476,7 @@ router.get('/expenses', async (req: AuthedRequest, res, next) => {
     };
     const [expenses, total, categories] = await Promise.all([
       prisma.ledgerExpense.findMany({
-        where, include: { category: true, member: true, obligationOccurrence: true },
+        where, include: { category: true, member: true, obligationOccurrence: true, debtTransaction: true },
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }], take, skip,
       }),
       prisma.ledgerExpense.count({ where }),
@@ -470,15 +531,69 @@ router.patch('/expenses/:id', async (req: AuthedRequest, res, next) => {
     if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
     const data: Record<string, unknown> = { ...input };
     if (input.date) data.date = dateValue(input.date);
-    const result = await prisma.ledgerExpense.updateMany({ where: { id: String(req.params.id), userId, obligationOccurrence: { is: null } }, data: data as never });
+    const result = await prisma.ledgerExpense.updateMany({ where: { id: String(req.params.id), userId, obligationOccurrence: { is: null }, debtTransaction: { is: null } }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Editable expense not found.' });
     return res.json(await prisma.ledgerExpense.findFirst({ where: { id: String(req.params.id), userId }, include: { category: true, member: true } }));
   } catch (error) { return next(error); }
 });
 router.delete('/expenses/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const result = await prisma.ledgerExpense.deleteMany({ where: { id: String(req.params.id), userId: uid(req), obligationOccurrence: { is: null } } });
-    if (!result.count) return res.status(404).json({ message: 'Editable expense not found.' });
+    const userId = uid(req), expenseId = String(req.params.id);
+    const result = await prisma.$transaction(async tx => {
+      const expense = await tx.ledgerExpense.findFirst({
+        where: { id: expenseId, userId },
+        include: {
+          debtTransaction: true,
+          obligationPayment: { include: { occurrence: true } },
+          obligationOccurrence: true,
+        },
+      });
+      if (!expense) return { kind: 'missing' as const };
+      const payment = expense.obligationPayment;
+      const occurrence = payment?.occurrence ?? expense.obligationOccurrence;
+      const paidAmount = payment ? Number(payment.amount) : occurrence ? Number(expense.amount) : 0;
+
+      if (expense.debtTransaction) {
+        const transaction = expense.debtTransaction;
+        if (transaction.type === 'REVERSED') return { kind: 'reversed' as const };
+        const balanceChange = Number(transaction.balanceChange);
+        const restoredAmount = -balanceChange;
+        const restored = await tx.debt.updateMany({
+          where: { id: transaction.debtId, userId },
+          data: { remainingAmount: { increment: restoredAmount } },
+        });
+        if (!restored.count) return { kind: 'missingDebt' as const };
+        await tx.debtTransaction.update({ where: { id: transaction.id }, data: { type: 'REVERSED' } });
+        await tx.debtTransaction.create({ data: {
+          userId, debtId: transaction.debtId, type: 'REVERSAL',
+          amount: transaction.amount, balanceChange: restoredAmount,
+          date: await userToday(userId), reason: 'Reversal of transaction ' + transaction.id,
+        } });
+      }
+
+      if (occurrence && paidAmount > 0) {
+        const newPaidAmount = Math.max(0, Number(occurrence.actualAmount ?? 0) - paidAmount);
+        const dueDate = new Date(occurrence.dueDate);
+        const today = await userToday(userId);
+        const nextStatus = newPaidAmount >= Number(occurrence.plannedAmount) - 0.000001
+          ? 'PAID'
+          : newPaidAmount > 0 ? 'PARTIAL'
+          : dueDate < today ? 'OVERDUE' : 'UPCOMING';
+        await tx.obligationOccurrence.update({
+          where: { id: occurrence.id },
+          data: {
+            actualAmount: newPaidAmount,
+            status: nextStatus,
+            paidAt: nextStatus === 'PAID' ? occurrence.paidAt : null,
+          },
+        });
+      }
+      await tx.ledgerExpense.delete({ where: { id: expenseId } });
+      return { kind: 'ok' as const };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Expense not found.' });
+    if (result.kind === 'reversed') return res.status(409).json({ message: 'This payment has already been reversed.' });
+    if (result.kind === 'missingDebt') return res.status(409).json({ message: 'Linked debt was not found; expense was not deleted.' });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
@@ -486,7 +601,7 @@ router.delete('/expenses/:id', async (req: AuthedRequest, res, next) => {
 const obligationSchema = z.object({
   title: z.string().trim().min(1).max(120), category: z.string().trim().min(1).max(60), amount: money,
   recurrence, recurrenceConfig: configSchema, startDate: dateSchema, endDate: dateSchema.nullable().optional(),
-  memberId: optionalMember, note: z.string().max(500).nullable().optional(),
+  memberId: optionalMember, debtId: z.string().cuid().nullable().optional(), note: z.string().max(500).nullable().optional(),
 });
 router.get('/obligations', async (req: AuthedRequest, res, next) => {
   try {
@@ -498,7 +613,7 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
     if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
     const includeArchived = req.query.includeArchived === 'true';
-    const obligations = await prisma.obligation.findMany({ where: { userId, ...(includeArchived ? {} : { isActive: true }), ...memberWhere }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
+    const obligations = await prisma.obligation.findMany({ where: { userId, ...(includeArchived ? {} : { isActive: true }), ...memberWhere }, include: { debt: true }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
     for (const obligation of obligations) if (obligation.isActive) await createObligationOccurrences(obligation, from, to, now);
     const today = now;
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
@@ -507,7 +622,7 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
         userId, ...(req.query.includeSkipped === 'true' ? {} : { status: { not: 'SKIPPED' } }), dueDate: { gte: from, lte: to },
         ...(memberId ? { obligation: { is: memberWhere } } : {}),
       },
-      include: { obligation: true, expense: true }, orderBy: { dueDate: 'asc' },
+      include: { obligation: { include: { debt: true } }, expense: true, payments: { include: { expense: true }, orderBy: { paidAt: 'asc' } } }, orderBy: { dueDate: 'asc' },
     });
     return res.json({ obligations, occurrences });
   } catch (error) { return next(error); }
@@ -521,6 +636,7 @@ router.post('/obligations', async (req: AuthedRequest, res, next) => {
     if (recurrenceError) return res.status(400).json({ message: recurrenceError });
     if (input.endDate && input.endDate < input.startDate) return res.status(400).json({ message: 'End date cannot be before start date.' });
     if (!(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.debtId && !(await prisma.debt.findFirst({ where: { id: input.debtId, userId, isActive: true } }))) return res.status(400).json({ message: 'Select an active debt belonging to this account.' });
     const obligation = await prisma.obligation.create({
       data: { ...input, userId, startDate: dateValue(input.startDate), endDate: input.endDate ? dateValue(input.endDate) : null, recurrenceConfig: JSON.parse(JSON.stringify(input.recurrenceConfig)) },
     });
@@ -534,6 +650,7 @@ router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid obligation update.' });
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.debtId && !(await prisma.debt.findFirst({ where: { id: input.debtId, userId, isActive: true } }))) return res.status(400).json({ message: 'Select an active debt belonging to this account.' });
     const existing = await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } });
     if (!existing) return res.status(404).json({ message: 'Obligation not found.' });
     const effectiveRecurrence = input.recurrence ?? existing.recurrence;
@@ -613,29 +730,181 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
     const userId = uid(req);
     const paidAt = parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date();
     const paidDate = await userDateAt(userId, paidAt);
-    const paid = await prisma.$transaction(async tx => {
+    const result = await prisma.$transaction(async tx => {
       const occurrence = await tx.obligationOccurrence.findFirst({ where: { id: String(req.params.id), userId } });
-      if (!occurrence) return null;
-      const obligation = await tx.obligation.findFirst({ where: { id: occurrence.obligationId, userId } });
-      if (!obligation) return null;
-      if (occurrence.status === 'PAID') return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id }, include: { expense: true, obligation: true } });
-      if (!['UPCOMING', 'OVERDUE'].includes(occurrence.status)) return null;
-      const amount = parsed.data.actualAmount ?? Number(occurrence.plannedAmount);
+      if (!occurrence) return { kind: 'missing' as const };
+      const obligation = await tx.obligation.findFirst({ where: { id: occurrence.obligationId, userId }, include: { debt: true } });
+      if (!obligation) return { kind: 'missing' as const };
+      if (!['UPCOMING', 'OVERDUE', 'PARTIAL'].includes(occurrence.status)) return { kind: 'closed' as const };
+      const amount = parsed.data.actualAmount ?? Math.max(0, Number(occurrence.plannedAmount) - Number(occurrence.actualAmount ?? 0));
+      const alreadyPaid = Number(occurrence.actualAmount ?? 0);
+      const newPaidTotal = alreadyPaid + amount;
+      const planned = Number(occurrence.plannedAmount);
+      if (amount <= 0 || newPaidTotal > planned + 0.000001) return { kind: 'overpay' as const, remaining: Math.max(0, planned - alreadyPaid) };
+      if (obligation.debtId && (!obligation.debt || Number(obligation.debt.remainingAmount) < amount)) {
+        return { kind: 'debt_insufficient' as const, remaining: Number(obligation.debt?.remainingAmount ?? 0) };
+      }
       const expense = await tx.ledgerExpense.create({
         data: { userId, memberId: obligation.memberId, title: obligation.title, amount, date: paidDate, note: 'Obligation payment' },
       });
       const claimed = await tx.obligationOccurrence.updateMany({
-        where: { id: occurrence.id, userId, status: { in: ['UPCOMING', 'OVERDUE'] } },
-        data: { status: 'PAID', paidAt, actualAmount: amount, expenseId: expense.id },
+        where: { id: occurrence.id, userId, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, actualAmount: occurrence.actualAmount },
+        data: { status: newPaidTotal + 0.000001 >= planned ? 'PAID' : 'PARTIAL', paidAt: newPaidTotal + 0.000001 >= planned ? paidAt : occurrence.paidAt, actualAmount: newPaidTotal },
       });
-      if (!claimed.count) {
-        await tx.ledgerExpense.delete({ where: { id: expense.id } });
-        return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id, userId }, include: { expense: true, obligation: true } });
+      if (!claimed.count) throw new Error('Obligation payment changed concurrently. Please retry.');
+      await tx.obligationPayment.create({ data: { userId, occurrenceId: occurrence.id, amount, paidAt, expenseId: expense.id } });
+      if (obligation.debtId) {
+        const changed = await tx.debt.updateMany({
+          where: { id: obligation.debtId, userId, isActive: true, remainingAmount: { gte: amount } },
+          data: { remainingAmount: { decrement: amount } },
+        });
+        if (!changed.count) throw Object.assign(new Error('Debt balance changed. Reload and try again.'), { status: 409 });
+        await tx.debtTransaction.create({ data: {
+          userId, debtId: obligation.debtId, type: 'PAYMENT', amount, balanceChange: -amount,
+          date: paidDate, reason: 'Payment from recurring obligation', expenseId: expense.id,
+        } });
       }
-      return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id, userId }, include: { expense: true, obligation: true } });
+      return { kind: 'ok' as const, occurrence: await tx.obligationOccurrence.findFirst({
+        where: { id: occurrence.id, userId },
+        include: { obligation: { include: { debt: true } }, expense: true, payments: { include: { expense: true }, orderBy: { paidAt: 'asc' } } },
+      }) };
     });
-    if (!paid) return res.status(404).json({ message: 'Payable obligation occurrence not found.' });
-    return res.json(paid);
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Payable obligation occurrence not found.' });
+    if (result.kind === 'closed') return res.status(409).json({ message: 'This obligation occurrence is not payable.' });
+    if (result.kind === 'overpay') return res.status(400).json({ message: `Payment exceeds the remaining scheduled amount of ${result.remaining.toFixed(2)}.` });
+    if (result.kind === 'debt_insufficient') return res.status(409).json({ message: `Payment exceeds the remaining linked debt balance of ${result.remaining.toFixed(2)}.` });
+    return res.json(result.occurrence);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Obligation payment changed concurrently. Please retry.') {
+      const current = await prisma.obligationOccurrence.findFirst({
+        where: { id: String(req.params.id), userId: uid(req), status: 'PAID' },
+        include: { obligation: { include: { debt: true } }, expense: true, payments: { include: { expense: true }, orderBy: { paidAt: 'asc' } } },
+      });
+      if (current) return res.json(current);
+    }
+    return next(error);
+  }
+});
+
+
+const debtSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  category: z.string().trim().min(1).max(60),
+  originalAmount: money,
+  memberId: optionalMember,
+  note: z.string().max(500).nullable().optional(),
+});
+router.get('/debts', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req);
+    const debts = await prisma.debt.findMany({
+      where: { userId, ...(req.query.includeArchived === 'true' ? {} : { isActive: true }) },
+      include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } },
+      orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
+    });
+    return res.json(debts);
+  } catch (error) { return next(error); }
+});
+router.post('/debts', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = debtSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Check the debt title, category and initial amount.' });
+    const input = parsed.data, userId = uid(req);
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    const debt = await prisma.$transaction(async tx => {
+      const created = await tx.debt.create({ data: {
+        userId, memberId: input.memberId ?? null, title: input.title, category: input.category,
+        originalAmount: input.originalAmount, remainingAmount: input.originalAmount, note: input.note ?? null,
+      } });
+      await tx.debtTransaction.create({ data: {
+        userId, debtId: created.id, type: 'OPENING', amount: input.originalAmount,
+        balanceChange: input.originalAmount, date: await userToday(userId), reason: 'Initial debt balance',
+      } });
+      return tx.debt.findFirst({ where: { id: created.id, userId }, include: { member: true, transactions: true } });
+    });
+    return res.status(201).json(debt);
+  } catch (error) { return next(error); }
+});
+router.patch('/debts/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = debtSchema.partial().extend({ isActive: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid debt update.' });
+    const input = parsed.data, userId = uid(req);
+    if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    const result = await prisma.debt.updateMany({
+      where: { id: String(req.params.id), userId },
+      data: { ...input, ...(input.memberId === undefined ? {} : { memberId: input.memberId }) },
+    });
+    if (!result.count) return res.status(404).json({ message: 'Debt not found.' });
+    return res.json(await prisma.debt.findFirst({ where: { id: String(req.params.id), userId }, include: { member: true, transactions: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }));
+  } catch (error) { return next(error); }
+});
+router.post('/debts/:id/payments', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ amount: money, date: dateSchema, note: z.string().max(300).nullable().optional() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid payment amount and date.' });
+    const userId = uid(req), id = String(req.params.id), input = parsed.data;
+    const result = await prisma.$transaction(async tx => {
+      const debt = await tx.debt.findFirst({ where: { id, userId, isActive: true } });
+      if (!debt) return { kind: 'missing' as const };
+      const expense = await tx.ledgerExpense.create({ data: {
+        userId, memberId: debt.memberId, title: debt.title, amount: input.amount,
+        date: dateValue(input.date), note: input.note ?? 'Debt repayment',
+      } });
+      const updated = await tx.debt.updateMany({
+        where: { id, userId, isActive: true, remainingAmount: { gte: input.amount } },
+        data: { remainingAmount: { decrement: input.amount } },
+      });
+      if (!updated.count) {
+        await tx.ledgerExpense.delete({ where: { id: expense.id } });
+        return { kind: 'insufficient' as const };
+      }
+      await tx.debtTransaction.create({ data: {
+        userId, debtId: id, type: 'PAYMENT', amount: input.amount, balanceChange: -input.amount,
+        date: dateValue(input.date), reason: input.note ?? null, expenseId: expense.id,
+      } });
+      return { kind: 'ok' as const, debt: await tx.debt.findFirst({ where: { id, userId }, include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }) };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Active debt not found.' });
+    if (result.kind === 'insufficient') return res.status(409).json({ message: 'Payment exceeds the remaining debt balance.' });
+    return res.status(201).json(result.debt);
+  } catch (error) { return next(error); }
+});
+router.post('/debts/:id/adjust', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({
+      amountChange: z.number().finite().min(-1_000_000_000).max(1_000_000_000).refine(value => value !== 0),
+      date: dateSchema, reason: z.string().trim().min(1).max(200),
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a non-zero signed balance change, date and reason.' });
+    const userId = uid(req), id = String(req.params.id), input = parsed.data;
+    const result = await prisma.$transaction(async tx => {
+      const debt = await tx.debt.findFirst({ where: { id, userId, isActive: true } });
+      if (!debt) return { kind: 'missing' as const };
+      const nextBalance = Number(debt.remainingAmount) + input.amountChange;
+      if (nextBalance < 0) return { kind: 'negative' as const };
+      const changed = await tx.debt.updateMany({
+        where: { id, userId, isActive: true, remainingAmount: debt.remainingAmount },
+        data: { remainingAmount: { increment: input.amountChange } },
+      });
+      if (!changed.count) return { kind: 'conflict' as const };
+      await tx.debtTransaction.create({ data: {
+        userId, debtId: id, type: 'ADJUSTMENT', amount: Math.abs(input.amountChange), balanceChange: input.amountChange,
+        date: dateValue(input.date), reason: input.reason,
+      } });
+      return { kind: 'ok' as const, debt: await tx.debt.findFirst({ where: { id, userId }, include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }) };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Active debt not found.' });
+    if (result.kind === 'negative') return res.status(400).json({ message: 'Debt balance cannot become negative.' });
+    if (result.kind === 'conflict') return res.status(409).json({ message: 'Debt balance changed. Reload and try again.' });
+    return res.json(result.debt);
+  } catch (error) { return next(error); }
+});
+router.delete('/debts/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.debt.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: { isActive: false } });
+    if (!result.count) return res.status(404).json({ message: 'Debt not found.' });
+    return res.status(204).end();
   } catch (error) { return next(error); }
 });
 
@@ -662,7 +931,7 @@ router.post('/balance-adjustments', async (req: AuthedRequest, res, next) => {
 
 const budgetSchema = z.object({
   periodMonth: dateSchema, limitAmount: money, memberId: optionalMember,
-  categoryId: z.string().cuid().nullable().optional(),
+  categoryId: optionalCategoryId,
 });
 router.get('/budgets', async (req: AuthedRequest, res, next) => {
   try {
@@ -793,12 +1062,15 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
       prisma.incomeEntry.findMany({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedRange.from, lt: receivedRange.toExclusive } }, include: { member: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...(memberId ? { obligation: { is: { memberId: memberId === 'shared' ? null : memberId } } } : {}), dueDate: { gte: from, lte: to }, status: { not: 'SKIPPED' } }, include: { obligation: true } }),
     ]);
-    const categoryTotals = new Map<string, number>();
+    const categoryTotals = new Map<string, { id: string; slug: string; name: string; amount: number }>();
     const memberTotals = new Map<string, { id: string | null; name: string; income: number; expenses: number }>();
     const monthTotals = new Map<string, { income: number; expenses: number }>();
     for (const item of expenses) {
-      const category = item.category?.name ?? 'Uncategorized';
-      categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + Number(item.amount));
+      const categoryId = item.category?.id ?? 'uncategorized';
+      const slug = item.category?.slug ?? 'uncategorized';
+      const category = categoryTotals.get(categoryId) ?? { id: categoryId, slug, name: item.category?.name ?? 'Uncategorized', amount: 0 };
+      category.amount += Number(item.amount);
+      categoryTotals.set(categoryId, category);
       const id = item.memberId ?? null, key = id ?? '__shared__', name = item.member?.name ?? 'Shared';
       const totals = memberTotals.get(key) ?? { id, name, income: 0, expenses: 0 };
       totals.expenses += Number(item.amount); memberTotals.set(key, totals);
@@ -814,7 +1086,7 @@ router.get('/analytics', async (req: AuthedRequest, res, next) => {
     }
     return res.json({
       totals: { income: incomes.reduce((sum, item) => sum + Number(item.actualAmount ?? 0), 0), expenses: expenses.reduce((sum, item) => sum + Number(item.amount), 0), obligations: obligations.reduce((sum, item) => sum + Number(item.status === 'PAID' ? (item.actualAmount ?? item.plannedAmount) : item.plannedAmount), 0) },
-      categories: [...categoryTotals].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
+      categories: [...categoryTotals.values()].sort((a, b) => b.amount - a.amount),
       members: [...memberTotals.values()].map(totals => ({ ...totals, net: totals.income - totals.expenses })).sort((a, b) => a.name.localeCompare(b.name)),
       months: [...monthTotals].sort((a, b) => a[0].localeCompare(b[0])).map(([month, totals]) => ({ month, ...totals, net: totals.income - totals.expenses })),
     });
@@ -828,6 +1100,9 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     if (memberFilter && memberFilter !== 'shared' && !(await ownedMember(memberFilter, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
     const memberWhere = memberFilter === 'shared' ? { memberId: null } : memberFilter ? { memberId: memberFilter } : {};
     const obligationMemberWhere = memberFilter ? { obligation: { is: { memberId: memberFilter === 'shared' ? null : memberFilter } } } : {};
+    const obligationPaymentMemberWhere = memberFilter ? {
+      occurrence: { is: { obligation: { is: { memberId: memberFilter === 'shared' ? null : memberFilter } } } },
+    } : {};
     const from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, monthEnd(now));
     const requestedHorizon = dateQuery(req.query.horizon, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)));
@@ -856,7 +1131,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     // Date-only ledger entries use the user's current calendar day; receivedAt is a timestamp.
     const balanceDateCutoff = new Date(now.getTime() + 86400000 - 1);
     const balanceTimestampCutoff = new Date();
-    const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
+    const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, paidObligationsPeriod, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingIncomeRange.from, lte: balanceTimestampCutoff } }, _sum: { actualAmount: true } }),
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } }, _sum: { actualAmount: true } }),
       // The forecast starts at today, not at the selected reporting period's first day.
@@ -864,7 +1139,15 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
-      prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
+      // Sum each payment by its actual payment date, including partial payments.
+      prisma.obligationPayment.aggregate({
+        where: { userId, ...obligationPaymentMemberWhere, paidAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } },
+        _sum: { amount: true },
+      }),
+      prisma.obligationOccurrence.findMany({
+        where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, dueDate: { lte: horizon } },
+        select: { plannedAmount: true, actualAmount: true, status: true },
+      }),
       prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, actualAmount: true, status: true } }),
     ]);
@@ -873,17 +1156,15 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const householdOpeningBalance = memberFilter ? 0 : Number(openingSettings?.openingBalance ?? 0);
     const actualBalance = householdOpeningBalance + Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenseTotal;
     const plannedIncome = Number(plannedHorizon._sum.plannedAmount ?? 0);
-    const unpaidObligations = Number(forecastObligations._sum.plannedAmount ?? 0);
-    const dueTotal = monthOccurrences.reduce((sum, item) => sum + Number(item.plannedAmount), 0);
+    const unpaidObligations = forecastObligations.reduce((sum, item) => {
+      const paid = item.status === 'PARTIAL' ? Number(item.actualAmount ?? 0) : 0;
+      return sum + Math.max(0, Number(item.plannedAmount) - paid);
+    }, 0);
+    const { due: dueTotal, paid: paidMonth, unpaid: unpaidMonth } = calculateObligationPeriodTotals(monthOccurrences);
     const receivedThisMonth = Number(receivedPeriod._sum.actualAmount ?? 0);
     const plannedThisMonth = Number(plannedPeriod._sum.plannedAmount ?? 0);
-    const paidMonth = monthOccurrences.filter(item => item.status === 'PAID').reduce((sum, item) => sum + Number(item.actualAmount ?? item.plannedAmount), 0);
-    // Unpaid is the remaining planned amount only; subtracting actual paid amounts from planned due
-    // can produce a negative remainder when a payment exceeds the original estimate.
-    const unpaidMonth = monthOccurrences.filter(item => item.status === 'UPCOMING' || item.status === 'OVERDUE')
-      .reduce((sum, item) => sum + Number(item.plannedAmount), 0);
     const nextPayments = await prisma.obligationOccurrence.findMany({
-      where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } },
+      where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, dueDate: { gte: from, lte: horizon } },
       include: { obligation: true }, orderBy: { dueDate: 'asc' }, take: 10,
     });
     return res.json({
@@ -891,7 +1172,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       actual: { income: receivedThisMonth, expenses: Number(periodExpenses._sum.amount ?? 0), balance: actualBalance },
       forecast: { plannedIncome, unpaidObligations, balance: actualBalance + plannedIncome - unpaidObligations },
       obligations: {
-        due: dueTotal, paid: paidMonth, unpaid: unpaidMonth,
+        due: dueTotal, paid: paidMonth, paidInPeriod: Number(paidObligationsPeriod._sum.amount ?? 0), unpaid: unpaidMonth,
         coverage: { receivedIncome: receivedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth), surplus: Math.max(0, receivedThisMonth - dueTotal) },
         plannedCoverage: { income: receivedThisMonth + plannedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth - plannedThisMonth) },
       },

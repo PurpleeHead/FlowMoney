@@ -1,47 +1,44 @@
 # Dependency security snapshot
 
-Snapshot date: 2026-11-07  
-Source: `npm audit --json` from the pull-request CI run. This is a dependency-tree snapshot, not a runtime penetration test.
+Snapshot date: 2026-11-19 02:54 UTC  
+Source: GitHub Actions run `44447647615` on audit-refresh commit `48541c8242ecf3d28ad55f69f794ac18b7943f08`. This is an npm dependency audit, not a runtime penetration test.
 
-## Summary
+## Latest verified audit results
 
-- Full repository audit: 12 advisories (4 moderate, 6 high, 2 critical). The critical findings are in the Vitest test-runner dependency tree (`vitest`, `tinypool`).
-- Server workspace audit using `npm audit --workspace=@flowmoney/server --omit=dev`: 6 advisories (1 moderate, 5 high, 0 critical). Reported packages: `@prisma/config`, `body-parser`, `deepmerge-ts`, `prisma`, `qs` and `zod`.
-- The server-workspace result still includes Prisma CLI/config packages marked `devOptional` in the lockfile; treat it as a workspace-scoped audit with dev dependencies omitted, not a definitive inventory of only deployed runtime files.
-- The full-repository high advisories also include `vite`; moderate advisories include `@vitest/mocker`, `esbuild`, `qs` and `vite-node`.
+- Full repository dependency tree: **0 vulnerabilities** (0 low, 0 moderate, 0 high, 0 critical).
+- Isolated server production dependency tree: **0 vulnerabilities**.
+- Isolated client production dependency tree: **0 vulnerabilities**.
+- The audit run installed the existing lockfile with `npm ci`; no package or lockfile changes and no forced fixes were needed to obtain the clean result.
+- The previous 18 November snapshot reported five high findings in the development toolchain (`fdir`, `picomatch`, `tinyglobby`, `vite`, `vitest`). The fresh audit database no longer reports those findings.
+- The previous suggested automatic fix was a Vitest downgrade to `3.1.4`. It was not applied.
 
-## Supply-chain and authentication hardening
+The same CI run passed Prisma validation, client generation, all eight migrations against ephemeral PostgreSQL 17, server/client builds, and server/client tests.
 
-- The lockfile's 415 package tarball references were changed from the third-party `registry.npmmirror.com` mirror to the canonical `registry.npmjs.org` registry. Package versions and integrity hashes were retained in that edit; this is a registry-source normalization, not a substitute for an npm audit remediation.
-- JWT middleware now explicitly accepts only HS256 session tokens and rejects missing, empty, or incorrectly typed identity claims.
-- Added middleware tests for HS256 acceptance, HS384 rejection, malformed identity claims and missing bearer credentials.
-- Expanded authenticated API integration coverage for concurrent obligation payment (one linked expense only), repeated income receipt (one actual ledger entry), and cross-household attempts to pay/receive or assign records.
+## Exact toolchain versions in the lockfile
 
-These new tests must pass in CI before this branch is considered verified.
+- Vite: `6.4.6`
+- Vitest: `5.1.0`
+- fdir: `6.5.0`
+- picomatch: `4.0.7`
+- tinyglobby: `0.2.17`
 
-## Upgrade implications
+No dependency versions were changed as part of this audit refresh. Keep the current toolchain unless a new advisory affects the installed versions and a compatible patched release is identified.
 
-The audit report indicated compatible fixes for `@prisma/config`, `prisma`, `body-parser`, `deepmerge-ts` and `qs`. The remaining reported fixes require major-version changes in the Vitest toolchain (to Vitest 5.1.0) or Zod (to 4.6.7).
+## Supply-chain and authentication hardening already present
 
-No `npm audit fix --force` was run and no dependency major versions were changed as part of this feature. The CI audit step is informational and does not hide build or test failures.
+- The lockfile package tarball references use the canonical `registry.npmjs.org` registry.
+- JWT middleware accepts only HS256 session tokens and rejects missing, empty, or incorrectly typed identity claims.
+- Middleware tests cover HS256 acceptance, HS384 rejection, malformed identity claims and missing bearer credentials.
+- Authenticated API integration tests cover concurrent obligation payment (one linked expense only), repeated income receipt (one actual ledger entry), and cross-household attempts to pay/receive or assign records.
 
-## Safe local remediation helper
+## Safe remediation policy
 
-Run `UPDATE-DEPENDENCIES.ps1` from PowerShell after pulling this feature branch. It:
-- requires Node.js 22+ and the expected feature branch;
-- refuses to run with a dirty working tree;
-- backs up the root lockfile outside the repository;
-- runs `npm audit fix` without `--force`;
-- retains the lockfile update only if the server/client build and tests pass;
-- restores the original lockfile if verification fails.
+- Never run `npm audit fix --force` as an automatic release step.
+- Prefer compatible patch/minor updates and regenerate the lockfile using npm.
+- Review any major upgrade separately; run build, server/client tests, Prisma validation and migration replay before merging.
+- Keep server and client production audits separate from the full development-toolchain audit.
+- A clean dependency audit does not replace manual review of the application, CI environment or production infrastructure.
 
-The script does not commit changes, run migrations, or deploy. Review the resulting `package-lock.json` diff and the remaining audit counts before committing. Major upgrades to Vitest or Zod still require separate compatibility work if the compatible update cannot clear them.
+## Release gate
 
-## Recommended remediation sequence
-
-1. Apply the compatible lockfile-only updates and rerun build, migration and tests.
-2. Upgrade the Vitest/Vite toolchain in a separate reviewed change; verify all unit tests and CI.
-3. Plan Zod 3-to-4 migration separately, review validation error behavior and route schemas, then rerun all tests.
-4. Re-run `npm audit` and confirm the remaining advisory count is zero or explicitly accepted.
-
-Do not merge or deploy solely on the basis of green build checks while critical dependency advisories remain unresolved.
+The latest verified audit is clean across the full repository and both production dependency trees. Refresh it again on the exact release commit before production approval.
