@@ -693,8 +693,8 @@ test('authentication works and household records stay isolated between accounts'
       'concurrent receipt requests must return the same winning actual amount');
     const afterConcurrentReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
     const afterConcurrentReceiptData = await afterConcurrentReceiptDashboard.json() as { actual: { balance: number } };
-    assert.equal(Number(afterConcurrentReceiptData.actual.balance), balanceAfterMainPayment + 1200 + 250 + Number(concurrentReceiptResults[0].actualAmount),
-      'concurrent receipt requests must add the winning actual amount to the balance exactly once, on top of the prior received income and timezone receipt');
+    assert.equal(Number(afterConcurrentReceiptData.actual.balance), balanceAfterMainPayment + 1200 + Number(concurrentReceiptResults[0].actualAmount),
+      'concurrent receipt requests must add the winning actual amount to the balance exactly once, without including receipts before the accounting start date');
 
     const invalidBudgetMonth = await get('/api/personal-finance/budgets?month=2026-02-30', first.token);
     assert.equal(invalidBudgetMonth.status, 400, 'impossible budget month dates must be rejected');
