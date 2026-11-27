@@ -627,3 +627,17 @@ button:disabled { cursor: not-allowed; opacity: .56; }
   padding: 0 !important;
   accent-color: var(--pf-accent);
 }
+
+
+/*
+ * Prevent Safari on iOS from auto-zooming the page when a form control
+ * receives focus. iOS Safari zooms inputs whose computed font size is below
+ * 16px; keep the desktop typography unchanged.
+ */
+@media (max-width: 820px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
