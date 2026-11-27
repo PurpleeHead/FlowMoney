@@ -547,7 +547,7 @@ router.delete('/expenses/:id', async (req: AuthedRequest, res, next) => {
 const obligationSchema = z.object({
   title: z.string().trim().min(1).max(120), category: z.string().trim().min(1).max(60), amount: money,
   recurrence, recurrenceConfig: configSchema, startDate: dateSchema, endDate: dateSchema.nullable().optional(),
-  memberId: optionalMember, note: z.string().max(500).nullable().optional(),
+  memberId: optionalMember, debtId: z.string().cuid().nullable().optional(), note: z.string().max(500).nullable().optional(),
 });
 router.get('/obligations', async (req: AuthedRequest, res, next) => {
   try {
@@ -559,7 +559,7 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
     if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
     const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
     const includeArchived = req.query.includeArchived === 'true';
-    const obligations = await prisma.obligation.findMany({ where: { userId, ...(includeArchived ? {} : { isActive: true }), ...memberWhere }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
+    const obligations = await prisma.obligation.findMany({ where: { userId, ...(includeArchived ? {} : { isActive: true }), ...memberWhere }, include: { debt: true }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
     for (const obligation of obligations) if (obligation.isActive) await createObligationOccurrences(obligation, from, to, now);
     const today = now;
     await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
@@ -568,7 +568,7 @@ router.get('/obligations', async (req: AuthedRequest, res, next) => {
         userId, ...(req.query.includeSkipped === 'true' ? {} : { status: { not: 'SKIPPED' } }), dueDate: { gte: from, lte: to },
         ...(memberId ? { obligation: { is: memberWhere } } : {}),
       },
-      include: { obligation: true, expense: true }, orderBy: { dueDate: 'asc' },
+      include: { obligation: { include: { debt: true } }, expense: true, payments: { include: { expense: true }, orderBy: { paidAt: 'asc' } } }, orderBy: { dueDate: 'asc' },
     });
     return res.json({ obligations, occurrences });
   } catch (error) { return next(error); }
@@ -582,6 +582,7 @@ router.post('/obligations', async (req: AuthedRequest, res, next) => {
     if (recurrenceError) return res.status(400).json({ message: recurrenceError });
     if (input.endDate && input.endDate < input.startDate) return res.status(400).json({ message: 'End date cannot be before start date.' });
     if (!(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.debtId && !(await prisma.debt.findFirst({ where: { id: input.debtId, userId, isActive: true } }))) return res.status(400).json({ message: 'Select an active debt belonging to this account.' });
     const obligation = await prisma.obligation.create({
       data: { ...input, userId, startDate: dateValue(input.startDate), endDate: input.endDate ? dateValue(input.endDate) : null, recurrenceConfig: JSON.parse(JSON.stringify(input.recurrenceConfig)) },
     });
@@ -595,6 +596,7 @@ router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
     if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid obligation update.' });
     const input = parsed.data, userId = uid(req);
     if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.debtId && !(await prisma.debt.findFirst({ where: { id: input.debtId, userId, isActive: true } }))) return res.status(400).json({ message: 'Select an active debt belonging to this account.' });
     const existing = await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } });
     if (!existing) return res.status(404).json({ message: 'Obligation not found.' });
     const effectiveRecurrence = input.recurrence ?? existing.recurrence;
@@ -674,29 +676,51 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
     const userId = uid(req);
     const paidAt = parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date();
     const paidDate = await userDateAt(userId, paidAt);
-    const paid = await prisma.$transaction(async tx => {
+    const result = await prisma.$transaction(async tx => {
       const occurrence = await tx.obligationOccurrence.findFirst({ where: { id: String(req.params.id), userId } });
-      if (!occurrence) return null;
-      const obligation = await tx.obligation.findFirst({ where: { id: occurrence.obligationId, userId } });
-      if (!obligation) return null;
-      if (occurrence.status === 'PAID') return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id }, include: { expense: true, obligation: true } });
-      if (!['UPCOMING', 'OVERDUE'].includes(occurrence.status)) return null;
-      const amount = parsed.data.actualAmount ?? Number(occurrence.plannedAmount);
+      if (!occurrence) return { kind: 'missing' as const };
+      const obligation = await tx.obligation.findFirst({ where: { id: occurrence.obligationId, userId }, include: { debt: true } });
+      if (!obligation) return { kind: 'missing' as const };
+      if (!['UPCOMING', 'OVERDUE', 'PARTIAL'].includes(occurrence.status)) return { kind: 'closed' as const };
+      const amount = parsed.data.actualAmount ?? Math.max(0, Number(occurrence.plannedAmount) - Number(occurrence.actualAmount ?? 0));
+      const alreadyPaid = Number(occurrence.actualAmount ?? 0);
+      const newPaidTotal = alreadyPaid + amount;
+      const planned = Number(occurrence.plannedAmount);
+      if (amount <= 0 || newPaidTotal > planned + 0.000001) return { kind: 'overpay' as const, remaining: Math.max(0, planned - alreadyPaid) };
+      if (obligation.debtId && (!obligation.debt || Number(obligation.debt.remainingAmount) < amount)) {
+        return { kind: 'debt_insufficient' as const, remaining: Number(obligation.debt?.remainingAmount ?? 0) };
+      }
       const expense = await tx.ledgerExpense.create({
         data: { userId, memberId: obligation.memberId, title: obligation.title, amount, date: paidDate, note: 'Obligation payment' },
       });
       const claimed = await tx.obligationOccurrence.updateMany({
-        where: { id: occurrence.id, userId, status: { in: ['UPCOMING', 'OVERDUE'] } },
-        data: { status: 'PAID', paidAt, actualAmount: amount, expenseId: expense.id },
+        where: { id: occurrence.id, userId, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, actualAmount: occurrence.actualAmount },
+        data: { status: newPaidTotal + 0.000001 >= planned ? 'PAID' : 'PARTIAL', paidAt: newPaidTotal + 0.000001 >= planned ? paidAt : occurrence.paidAt, actualAmount: newPaidTotal },
       });
-      if (!claimed.count) {
-        await tx.ledgerExpense.delete({ where: { id: expense.id } });
-        return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id, userId }, include: { expense: true, obligation: true } });
+      if (!claimed.count) throw new Error('Obligation payment changed concurrently. Please retry.');
+      await tx.obligationPayment.create({ data: { userId, occurrenceId: occurrence.id, amount, paidAt, expenseId: expense.id } });
+      if (obligation.debtId) {
+        const changed = await tx.debt.updateMany({
+          where: { id: obligation.debtId, userId, isActive: true, remainingAmount: { gte: amount } },
+          data: { remainingAmount: { decrement: amount } },
+        });
+        if (!changed.count) return { kind: 'debt_conflict' as const };
+        await tx.debtTransaction.create({ data: {
+          userId, debtId: obligation.debtId, type: 'PAYMENT', amount, balanceChange: -amount,
+          date: paidDate, reason: 'Payment from recurring obligation', expenseId: expense.id,
+        } });
       }
-      return tx.obligationOccurrence.findFirst({ where: { id: occurrence.id, userId }, include: { expense: true, obligation: true } });
+      return { kind: 'ok' as const, occurrence: await tx.obligationOccurrence.findFirst({
+        where: { id: occurrence.id, userId },
+        include: { obligation: { include: { debt: true } }, expense: true, payments: { include: { expense: true }, orderBy: { paidAt: 'asc' } } },
+      }) };
     });
-    if (!paid) return res.status(404).json({ message: 'Payable obligation occurrence not found.' });
-    return res.json(paid);
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Payable obligation occurrence not found.' });
+    if (result.kind === 'closed') return res.status(409).json({ message: 'This obligation occurrence is not payable.' });
+    if (result.kind === 'overpay') return res.status(400).json({ message: `Payment exceeds the remaining scheduled amount of ${result.remaining.toFixed(2)}.` });
+    if (result.kind === 'debt_insufficient') return res.status(409).json({ message: `Payment exceeds the remaining linked debt balance of ${result.remaining.toFixed(2)}.` });
+    if (result.kind === 'debt_conflict') return res.status(409).json({ message: 'Debt balance changed. Reload and try again.' });
+    return res.json(result.occurrence);
   } catch (error) { return next(error); }
 });
 
