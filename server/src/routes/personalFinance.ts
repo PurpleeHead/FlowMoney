@@ -1100,6 +1100,9 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     if (memberFilter && memberFilter !== 'shared' && !(await ownedMember(memberFilter, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
     const memberWhere = memberFilter === 'shared' ? { memberId: null } : memberFilter ? { memberId: memberFilter } : {};
     const obligationMemberWhere = memberFilter ? { obligation: { is: { memberId: memberFilter === 'shared' ? null : memberFilter } } } : {};
+    const obligationPaymentMemberWhere = memberFilter ? {
+      occurrence: { is: { obligation: { is: { memberId: memberFilter === 'shared' ? null : memberFilter } } } },
+    } : {};
     const from = dateQuery(req.query.from, monthStart(now));
     const to = dateQuery(req.query.to, monthEnd(now));
     const requestedHorizon = dateQuery(req.query.horizon, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)));
@@ -1136,8 +1139,11 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
-      // Separate paid commitments by the date cash actually left the account, not by due date.
-      prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: 'PAID', paidAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } }, _sum: { actualAmount: true } }),
+      // Sum each payment by its actual payment date, including partial payments.
+      prisma.obligationPayment.aggregate({
+        where: { userId, ...obligationPaymentMemberWhere, paidAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } },
+        _sum: { amount: true },
+      }),
       prisma.obligationOccurrence.findMany({
         where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, dueDate: { lte: horizon } },
         select: { plannedAmount: true, actualAmount: true, status: true },
@@ -1166,7 +1172,7 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       actual: { income: receivedThisMonth, expenses: Number(periodExpenses._sum.amount ?? 0), balance: actualBalance },
       forecast: { plannedIncome, unpaidObligations, balance: actualBalance + plannedIncome - unpaidObligations },
       obligations: {
-        due: dueTotal, paid: paidMonth, paidInPeriod: Number(paidObligationsPeriod._sum.actualAmount ?? 0), unpaid: unpaidMonth,
+        due: dueTotal, paid: paidMonth, paidInPeriod: Number(paidObligationsPeriod._sum.amount ?? 0), unpaid: unpaidMonth,
         coverage: { receivedIncome: receivedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth), surplus: Math.max(0, receivedThisMonth - dueTotal) },
         plannedCoverage: { income: receivedThisMonth + plannedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth - plannedThisMonth) },
       },
