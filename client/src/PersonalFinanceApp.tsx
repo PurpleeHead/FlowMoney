@@ -605,14 +605,23 @@ export default function PersonalFinanceApp() {
   }
   async function skipObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/skip`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
   async function restoreObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/restore`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); setNotice(lang === 'ru' ? 'Платёж возвращён в график.' : 'Payment restored to schedule.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
-  async function markPaid(id: string, plannedAmount: number | string) {
-    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму, которую действительно заплатили.' : 'Enter the amount that was actually paid.', String(plannedAmount), lang === 'ru' ? 'Подтверждение оплаты' : 'Confirm payment', 'number', lang === 'ru' ? 'Подтвердить оплату' : 'Confirm payment');
-    if (rawAmount === null) return;
-    const actualAmount = Number(rawAmount.trim().replace(',', '.'));
-    if (!Number.isFinite(actualAmount) || actualAmount <= 0) { setError(lang === 'ru' ? 'Введите положительную фактическую сумму.' : 'Enter a positive actual amount.'); return; }
+  async function recordObligationPayment(id: string, actualAmount: number) {
+    if (!Number.isFinite(actualAmount) || actualAmount <= 0) { setError(lang === 'ru' ? 'Введите положительную сумму.' : 'Enter a positive amount.'); return; }
     setBusy(true); setError('');
-    try { await api(`${PF}/obligation-occurrences/${id}/pay`, { method: 'POST', body: JSON.stringify({ actualAmount }) }); await refresh(); setNotice(lang === 'ru' ? 'Фактический платёж сохранён и учтён в расходах один раз.' : 'Actual payment saved and recorded as one expense.'); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+    try {
+      await api(`${PF}/obligation-occurrences/${id}/pay`, { method: 'POST', body: JSON.stringify({ actualAmount }) });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Платёж сохранён. Остаток обязательства пересчитан.' : 'Payment saved. Remaining obligation recalculated.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function markPaidPartially(id: string, remainingAmount: number) {
+    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму частичного платежа.' : 'Enter the partial payment amount.', String(remainingAmount), lang === 'ru' ? 'Частичная оплата' : 'Partial payment', 'number', lang === 'ru' ? 'Внести частично' : 'Pay partially');
+    if (rawAmount === null) return;
+    await recordObligationPayment(id, Number(rawAmount.trim().replace(',', '.')));
+  }
+  async function markPaidFully(id: string, remainingAmount: number) {
+    if (!(await confirmAction(lang === 'ru' ? `Полностью оплатить оставшиеся ${rub(remainingAmount)}?` : `Pay the remaining ${rub(remainingAmount)} in full?`, lang === 'ru' ? 'Полная оплата' : 'Full payment'))) return;
+    await recordObligationPayment(id, remainingAmount);
   }
   async function createDebt(event: FormEvent) {
     event.preventDefault();
@@ -1044,7 +1053,7 @@ export default function PersonalFinanceApp() {
           </form>
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЛАН И ОПЛАТА' : 'DUE AND PAID'}</span><h2>{tr(lang, 'obligations')}</h2></div><div className="pf-row-action"><button className="pf-link" onClick={() => setShowSkippedObligations(value => !value)}>{showSkippedObligations ? (lang === 'ru' ? 'Скрыть пропущенные' : 'Hide skipped') : (lang === 'ru' ? 'Показать пропущенные' : 'Show skipped')}</button><span className="pf-count">{monthObligations.length}</span></div></div>
-          {visibleObligations.length ? visibleObligations.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.obligation.title}</strong><small>{item.obligation.category} · {dateLabel(item.dueDate, lang)}</small><small className={item.status === 'PAID' ? 'positive' : item.status === 'OVERDUE' || item.status === 'SKIPPED' ? 'negative' : ''}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : item.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : tr(lang, 'unpaid')}</small></div><div className="pf-row-action"><b>{rub(item.actualAmount ?? 0)} / {rub(item.plannedAmount)}</b>{item.status === 'SKIPPED' ? <button className="pf-button small" disabled={busy} onClick={() => restoreObligation(item.id)}>{lang === 'ru' ? 'Вернуть' : 'Restore'}</button> : item.status !== 'PAID' && <><button className="pf-edit" title={lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation'} aria-label={lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation'} onClick={() => {
+          {visibleObligations.length ? visibleObligations.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.obligation.title}</strong><small>{item.obligation.category} · {dateLabel(item.dueDate, lang)}</small><small className={item.status === 'PAID' ? 'positive' : item.status === 'OVERDUE' || item.status === 'SKIPPED' ? 'negative' : ''}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'PARTIAL' ? (lang === 'ru' ? 'Частично оплачено' : 'Partially paid') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : item.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : tr(lang, 'unpaid')}</small></div><div className="pf-row-action"><b>{rub(item.actualAmount ?? 0)} / {rub(item.plannedAmount)}</b>{item.status === 'SKIPPED' ? <button className="pf-button small" disabled={busy} onClick={() => restoreObligation(item.id)}>{lang === 'ru' ? 'Вернуть' : 'Restore'}</button> : item.status !== 'PAID' && <><button className="pf-edit" title={lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation'} aria-label={lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation'} onClick={() => {
                 const config = item.obligation.recurrenceConfig ?? {};
                 setEditingObligationId(item.obligation.id); setObligationTitle(item.obligation.title);
                 setObligationCategory(item.obligation.category); setObligationAmount(String(item.obligation.amount ?? item.plannedAmount));
@@ -1053,7 +1062,7 @@ export default function PersonalFinanceApp() {
                 setObligationDay(String(config.day ?? config.firstDay ?? Number(item.obligation.startDate.slice(8, 10))));
                 setObligationDay2(String(config.secondDay ?? 15)); setObligationMonth(String(config.month ?? Number(item.obligation.startDate.slice(5, 7))));
                 setObligationWeekday(String(config.weekdays?.[0] ?? 1)); setObligationIntervalWeeks(String(config.intervalWeeks ?? 1));
-              }}>✎</button><button className="pf-button small" disabled={busy} onClick={() => markPaid(item.id, Math.max(0, Number(item.plannedAmount) - Number(item.actualAmount ?? 0)))}>{tr(lang, 'paidAction')}</button><button className="pf-delete" title={lang === 'ru' ? 'Пропустить этот платёж' : 'Skip this occurrence'} aria-label={lang === 'ru' ? 'Пропустить этот платёж' : 'Skip this occurrence'} onClick={() => skipObligation(item.id)}>⊘</button><button className="pf-delete" title={lang === 'ru' ? 'Отключить обязательство' : 'Archive obligation'} aria-label={lang === 'ru' ? 'Отключить обязательство' : 'Archive obligation'} onClick={() => deleteObligation(item.obligation.id)}>×</button></>}</div></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyObligations')}</p>}
+              }}>✎</button><button className="pf-button small" disabled={busy} onClick={() => markPaidPartially(item.id, Math.max(0, Number(item.plannedAmount) - Number(item.actualAmount ?? 0)))}>{lang === 'ru' ? 'Внести частично' : 'Pay partially'}</button><button className="pf-button small primary" disabled={busy} onClick={() => markPaidFully(item.id, Math.max(0, Number(item.plannedAmount) - Number(item.actualAmount ?? 0)))}>{lang === 'ru' ? 'Оплатить полностью' : 'Pay in full'}</button><button className="pf-delete" title={lang === 'ru' ? 'Пропустить этот платёж' : 'Skip this occurrence'} aria-label={lang === 'ru' ? 'Пропустить этот платёж' : 'Skip this occurrence'} onClick={() => skipObligation(item.id)}>⊘</button><button className="pf-delete" title={lang === 'ru' ? 'Отключить обязательство' : 'Archive obligation'} aria-label={lang === 'ru' ? 'Отключить обязательство' : 'Archive obligation'} onClick={() => deleteObligation(item.obligation.id)}>×</button></>}</div></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyObligations')}</p>}
         </section>
         {archivedObligations.length > 0 && <section className="pf-card pf-archive-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'АРХИВ' : 'ARCHIVE'}</span><h2>{lang === 'ru' ? 'Отключённые обязательства' : 'Archived obligations'}</h2></div><span className="pf-count">{archivedObligations.length}</span></div>{archivedObligations.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category} · {rub(item.amount)} · {item.recurrence}</small></div><button className="pf-button small" disabled={busy} onClick={() => reactivateObligation(item.id)}>{lang === 'ru' ? 'Восстановить' : 'Restore'}</button></div>)}</section>}
       </div>}
