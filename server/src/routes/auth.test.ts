@@ -576,7 +576,7 @@ test('authentication works and household records stay isolated between accounts'
     }, first.token);
     assert.equal(futureMemberAdjustment.status, 201);
     const balanceAfterDatedAdjustments = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await balanceAfterDatedAdjustments.json() as { actual: { balance: number } }).actual.balance), 1665,
+    assert.equal(Number((await balanceAfterDatedAdjustments.json() as { actual: { balance: number } }).actual.balance), balanceAfterMainPayment + 1200,
       'future and pre-opening adjustments must not affect the current household balance');
     const memberBalanceAfterFutureAdjustment = await get(`/api/personal-finance/dashboard?memberId=${member.id}`, first.token);
     assert.equal(Number((await memberBalanceAfterFutureAdjustment.json() as { actual: { balance: number } }).actual.balance), 175,
