@@ -42,3 +42,7 @@ ALTER TABLE "DebtTransaction" ADD CONSTRAINT "DebtTransaction_debtId_fkey"
   FOREIGN KEY ("debtId") REFERENCES "Debt"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "DebtTransaction" ADD CONSTRAINT "DebtTransaction_expenseId_fkey"
   FOREIGN KEY ("expenseId") REFERENCES "LedgerExpense"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Match the database-wide security baseline: no direct client access to ledger tables.
+ALTER TABLE "Debt" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "DebtTransaction" ENABLE ROW LEVEL SECURITY;
