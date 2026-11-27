@@ -12,8 +12,8 @@ type Member = { id: string; name: string; color?: string | null; isArchived: boo
 type Category = { id: string; name: string; slug: string; userId: string | null; isArchived: boolean };
 type IncomeSource = { id: string; title: string; amount: number | string; createdAt?: string; recurrence: string; recurrenceConfig: { day?: number; month?: number; weekdays?: number[]; intervalWeeks?: number; firstDay?: number; secondDay?: number }; startDate: string; endDate?: string | null; memberId?: string | null; isActive: boolean };
 type IncomeEntry = { id: string; sourceId?: string | null; createdAt?: string; plannedDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; memberId?: string | null; member?: Member | null; source?: IncomeSource | null };
-type ObligationRecord = { id: string; title: string; category: string; amount: number | string; memberId?: string | null; member?: Member | null; recurrence: string; recurrenceConfig: { day?: number; month?: number; weekdays?: number[]; intervalWeeks?: number; firstDay?: number; secondDay?: number }; startDate: string; endDate?: string | null; isActive: boolean };
-type ObligationOccurrence = { id: string; dueDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; obligation: ObligationRecord };
+type ObligationRecord = { id: string; title: string; category: string; amount: number | string; memberId?: string | null; member?: Member | null; debtId?: string | null; debt?: DebtRecord | null; recurrence: string; recurrenceConfig: { day?: number; month?: number; weekdays?: number[]; intervalWeeks?: number; firstDay?: number; secondDay?: number }; startDate: string; endDate?: string | null; isActive: boolean };
+type ObligationOccurrence = { id: string; dueDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; payments?: Array<{ id: string; amount: number | string; paidAt: string }>; obligation: ObligationRecord };
 type DebtRecord = { id: string; title: string; category: string; originalAmount: number | string; remainingAmount: number | string; memberId?: string | null; member?: Member | null; isActive: boolean; transactions: Array<{ id: string; type: string; amount: number | string; balanceChange: number | string; date: string; reason?: string | null }> };
 type Expense = { id: string; title: string; amount: number | string; date: string; memberId?: string | null; category?: Category | null; member?: Member | null; obligationOccurrence?: { id: string } | null; note?: string | null };
 type Analytics = { totals: { income: number; expenses: number; obligations: number }; categories: Array<{ id: string; name: string; slug: string; amount: number }>; members: Array<{ id: string | null; name: string; income: number; expenses: number; net: number }>; months: Array<{ month: string; income: number; expenses: number; net: number }> };
@@ -277,6 +277,7 @@ export default function PersonalFinanceApp() {
   const [obligationWeekday, setObligationWeekday] = useState('1');
   const [obligationIntervalWeeks, setObligationIntervalWeeks] = useState('1');
   const [obligationMember, setObligationMember] = useState('');
+  const [obligationDebtId, setObligationDebtId] = useState('');
   const [editingObligationId, setEditingObligationId] = useState<string | null>(null);
   const [openingAmount, setOpeningAmount] = useState('');
   const [openingReason, setOpeningReason] = useState('Начальный остаток');
@@ -958,10 +959,10 @@ export default function PersonalFinanceApp() {
                 <small>{item.obligation.category} · {item.obligation.member?.name ?? tr(lang, 'shared')}</small>
               </div>
               <div className="pf-obligation-value">
-                <b>{rub(item.actualAmount ?? item.plannedAmount)}</b>
-                <span className={item.status === 'PAID' ? 'paid' : item.status === 'OVERDUE' ? 'overdue' : 'pending'}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : item.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : tr(lang, 'unpaid')}</span>
+                <b>{rub(item.actualAmount ?? 0)} / {rub(item.plannedAmount)}</b>
+                <span className={item.status === 'PAID' ? 'paid' : item.status === 'PARTIAL' ? 'pending' : item.status === 'OVERDUE' ? 'overdue' : 'pending'}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'PARTIAL' ? (lang === 'ru' ? 'Частично оплачено' : 'Partially paid') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : item.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : tr(lang, 'unpaid')}</span>
               </div>
-              {item.status !== 'PAID' && item.status !== 'SKIPPED' && <button className="pf-button small primary" disabled={busy} onClick={() => markPaid(item.id, item.plannedAmount)}>{lang === 'ru' ? 'Оплачено' : 'Mark paid'}</button>}
+              {item.status !== 'PAID' && item.status !== 'SKIPPED' && <button className="pf-button small primary" disabled={busy} onClick={() => markPaid(item.id, Math.max(0, Number(item.plannedAmount) - Number(item.actualAmount ?? 0)))}>{lang === 'ru' ? 'Оплачено' : 'Mark paid'}</button>}
             </div>)}
           </div> : <p className="pf-empty">{lang === 'ru' ? 'На этот месяц обязательные платежи не запланированы.' : 'No required payments are scheduled for this month.'}</p>}
           {monthObligations.length > 8 && <button className="pf-button ghost" onClick={() => setTab('obligations')}>{lang === 'ru' ? 'Показать все платежи' : 'Show all payments'}</button>}
@@ -1026,7 +1027,7 @@ export default function PersonalFinanceApp() {
               : obligationRecurrence === 'TWICE_MONTHLY' ? { firstDay: Number(obligationDay), secondDay: Number(obligationDay2) }
               : obligationRecurrence === 'WEEKLY' ? { weekdays: [Number(obligationWeekday)], intervalWeeks: Number(obligationIntervalWeeks) }
               : obligationRecurrence === 'YEARLY' ? { month: Number(obligationMonth), day: Number(obligationDay) } : {},
-            startDate: obligationDate, endDate: obligationEnd || null, memberId: obligationMember || null,
+            startDate: obligationDate, endDate: obligationEnd || null, memberId: obligationMember || null, debtId: obligationDebtId || null,
           }, editingObligationId ? (lang === 'ru' ? 'Обязательство и расписание обновлены.' : 'Obligation and schedule updated.') : (lang === 'ru' ? 'Обязательство добавлено.' : 'Obligation added.'), editingObligationId ? 'PATCH' : 'POST')}>
             <label>{tr(lang, 'title')}<input required value={obligationTitle} onChange={e => setObligationTitle(e.target.value)} placeholder={lang === 'ru' ? 'Например, автокредит' : 'e.g. Car loan'}/></label>
             <label>{tr(lang, 'category')}<input list="pf-obligation-category-options" maxLength={60} required value={obligationCategory} onChange={e => setObligationCategory(e.target.value)} placeholder={lang === 'ru' ? 'Например, Долг' : 'e.g. Debt'} /><datalist id="pf-obligation-category-options">{Array.from(new Set([...(lang === 'ru' ? ['Кредит','Автокредит','Ипотека','Аренда','Коммунальные услуги','Фитнес','Подписки','Долг','Налоги','Страхование','Другое'] : ['Loan','Car loan','Mortgage','Rent','Utilities','Fitness','Subscriptions','Debt','Taxes','Insurance','Other']), ...obligationRecords.map(item => item.category).filter(Boolean)])).map(x=><option key={x} value={x} />)}</datalist></label>
@@ -1038,7 +1039,8 @@ export default function PersonalFinanceApp() {
             {obligationRecurrence === 'WEEKLY' && <div className="pf-field-row"><label>{lang === 'ru' ? 'День недели' : 'Weekday'}<select value={obligationWeekday} onChange={e=>setObligationWeekday(e.target.value)}>{(lang === 'ru' ? ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'] : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']).map((d,i)=><option key={d} value={i}>{d}</option>)}</select></label><label>{lang === 'ru' ? 'Каждые N недель' : 'Every N weeks'}<input type="number" min="1" max="52" value={obligationIntervalWeeks} onChange={e=>setObligationIntervalWeeks(e.target.value)}/></label></div>}
             <div className="pf-field-row"><label>{tr(lang, 'startDate')}<input type="date" required value={obligationDate} onChange={e => setObligationDate(e.target.value)}/></label><label>{tr(lang, 'endDate')}<input type="date" min={obligationDate} value={obligationEnd} onChange={e => setObligationEnd(e.target.value)}/></label></div>
             <label>{tr(lang, 'member')}<select value={obligationMember} onChange={e => setObligationMember(e.target.value)}>{memberOptions}</select></label>
-            <div className="pf-form-actions">{editingObligationId && <button type="button" className="pf-button ghost" onClick={() => setEditingObligationId(null)}>{tr(lang, 'cancel')}</button>}<button className="pf-button primary" disabled={busy}>{editingObligationId ? tr(lang, 'save') : tr(lang, 'add')}</button></div>
+            <label>{lang === 'ru' ? 'Связанный общий долг (необязательно)' : 'Linked outstanding debt (optional)'}<select value={obligationDebtId} onChange={e => setObligationDebtId(e.target.value)}><option value="">{lang === 'ru' ? 'Не связывать' : 'Not linked'}</option>{debts.filter(debt => debt.isActive).map(debt => <option key={debt.id} value={debt.id}>{debt.title} · {rub(debt.remainingAmount)}</option>)}</select></label>
+            <div className="pf-form-actions">{editingObligationId && <button type="button" className="pf-button ghost" onClick={() => setEditingObligationId(null); setObligationDebtId(''); }>{tr(lang, 'cancel')}</button>}<button className="pf-button primary" disabled={busy}>{editingObligationId ? tr(lang, 'save') : tr(lang, 'add')}</button></div>
           </form>
         </section>
         <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЛАН И ОПЛАТА' : 'DUE AND PAID'}</span><h2>{tr(lang, 'obligations')}</h2></div><div className="pf-row-action"><button className="pf-link" onClick={() => setShowSkippedObligations(value => !value)}>{showSkippedObligations ? (lang === 'ru' ? 'Скрыть пропущенные' : 'Hide skipped') : (lang === 'ru' ? 'Показать пропущенные' : 'Show skipped')}</button><span className="pf-count">{monthObligations.length}</span></div></div>
@@ -1046,7 +1048,7 @@ export default function PersonalFinanceApp() {
                 const config = item.obligation.recurrenceConfig ?? {};
                 setEditingObligationId(item.obligation.id); setObligationTitle(item.obligation.title);
                 setObligationCategory(item.obligation.category); setObligationAmount(String(item.obligation.amount ?? item.plannedAmount));
-                setObligationMember(item.obligation.memberId ?? ''); setObligationRecurrence(item.obligation.recurrence);
+                setObligationMember(item.obligation.memberId ?? ''); setObligationDebtId(item.obligation.debtId ?? ''); setObligationRecurrence(item.obligation.recurrence);
                 setObligationDate(item.obligation.startDate.slice(0, 10)); setObligationEnd(item.obligation.endDate?.slice(0, 10) ?? '');
                 setObligationDay(String(config.day ?? config.firstDay ?? Number(item.obligation.startDate.slice(8, 10))));
                 setObligationDay2(String(config.secondDay ?? 15)); setObligationMonth(String(config.month ?? Number(item.obligation.startDate.slice(5, 7))));
