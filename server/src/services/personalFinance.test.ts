@@ -63,7 +63,7 @@ test('monthly obligation totals include only paid and unpaid occurrences due in 
     { status: 'OVERDUE', plannedAmount: 500 },
     { status: 'PARTIAL', plannedAmount: 1000, actualAmount: 300 },
     { status: 'SKIPPED', plannedAmount: 900 },
-  ]), { due: 4500, paid: 1500, unpaid: 3200 });
+  ]), { due: 4500, paid: 1300, unpaid: 3200 });
 });
 
 test('monthly obligation totals use planned amount when actual paid amount is absent', () => {
