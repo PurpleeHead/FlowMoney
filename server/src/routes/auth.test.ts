@@ -556,7 +556,7 @@ test('authentication works and household records stay isolated between accounts'
     const deleteReceivedIncome = await del(`/api/personal-finance/income-entries/${plannedIncome.id}`, first.token);
     assert.equal(deleteReceivedIncome.status, 404, 'received income history must remain protected');
     const afterReceiptDashboard = await get('/api/personal-finance/dashboard', first.token);
-    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), 1665,
+    assert.equal(Number((await afterReceiptDashboard.json() as { actual: { balance: number } }).actual.balance), balanceAfterMainPayment + 1200,
       'receiving the same income entry again must not count it twice or overwrite the first actual amount');
 
     // Dated balance adjustments affect actual cash only once their date is reached,
