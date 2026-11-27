@@ -452,8 +452,8 @@ test('authentication works and household records stay isolated between accounts'
     assert.ok(occurrence, 'the specific one-time obligation occurrence should be generated');
 
     const paymentResponses = await Promise.all([
-      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 750 }, first.token),
-      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 750 }, first.token),
+      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 700 }, first.token),
+      post(`/api/personal-finance/obligation-occurrences/${occurrence.id}/pay`, { actualAmount: 700 }, first.token),
     ]);
     assert.ok(paymentResponses.every(response => response.status === 200));
     const paymentResults = await Promise.all(paymentResponses.map(response => response.json() as Promise<{ status: string; expenseId: string | null }>));
