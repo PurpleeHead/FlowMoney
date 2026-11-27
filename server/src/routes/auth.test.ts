@@ -466,7 +466,10 @@ test('authentication works and household records stay isolated between accounts'
     const expensesData = await expensesResponse.json() as { expenses: Array<{ title: string }> };
     assert.equal(expensesData.expenses.filter(item => item.title === 'Concurrent rent payment').length, 1);
     const afterPaymentDashboard = await get('/api/personal-finance/dashboard', first.token);
-    const afterPaymentData = await afterPaymentDashboard.json() as { actual: { balance: number }; obligations: { paid: number; unpaid: number } };
+    const afterPaymentData = await afterPaymentDashboard.json() as {
+      actual: { balance: number };
+      obligations: { paid: number; unpaid: number; paidInPeriod: number };
+    };
     const balanceAfterMainPayment = Number(afterPaymentData.actual.balance);
     assert.equal(balanceAfterMainPayment, Number(beforePaymentData.actual.balance) - 700,
       'the actual payment amount must reduce the household balance exactly once while retaining member and shared adjustments');
@@ -503,8 +506,8 @@ test('authentication works and household records stay isolated between accounts'
     };
     assert.equal(Number(partialForecast.forecast.unpaidObligations), 9000,
       'the forecast must retain the 9,000 unpaid remainder after a 1,000 partial payment');
-    assert.equal(Number(partialForecast.obligations.paidInPeriod), 1000,
-      'the paid-in-period summary must include actual partial payment amounts');
+    assert.equal(Number(partialForecast.obligations.paidInPeriod), Number(afterPaymentData.obligations.paidInPeriod) + 1000,
+      'the paid-in-period summary must include the new partial payment on top of earlier payments');
     assert.ok(partialForecast.nextPayments.some(item => item.id === partialOccurrence.id),
       'partially paid obligations must remain in the upcoming payments list');
     const removePartialExpense = await del(`/api/personal-finance/expenses/${partialPayment.payments[0].expenseId}`, first.token);
