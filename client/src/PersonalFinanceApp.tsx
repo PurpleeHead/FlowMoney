@@ -892,7 +892,7 @@ export default function PersonalFinanceApp() {
   const calendarEvents = [
     ...visibleIncome.filter(x => x.plannedDate >= ranges.from && x.plannedDate <= ranges.to).map(x => ({ id: x.id, date: x.plannedDate.slice(0,10), title: x.source?.title ?? (lang === 'ru' ? 'Доход' : 'Income'), amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'income' as const, status: x.status })),
     ...calendarExpenses.filter(x => matchesMember(x.memberId ?? x.member?.id) && !x.obligationOccurrence).map(x => ({ id: x.id, date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
-    ...monthObligations.map(x => ({ id: x.id, date: x.dueDate.slice(0,10), title: x.obligation.title, amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'obligation' as const, status: x.status })),
+    ...monthObligations.map(x => ({ id: x.id, date: x.dueDate.slice(0,10), title: x.obligation.title, amount: x.status === 'PAID' ? Number(x.actualAmount ?? x.plannedAmount) : Math.max(0, Number(x.plannedAmount) - Number(x.actualAmount ?? 0)), kind: 'obligation' as const, status: x.status })),
   ].sort((a,b) => a.date.localeCompare(b.date));
   const selectedCalendarEvents = calendarEvents.filter(item => item.date === selectedCalendarDate);
   const monthParts = ranges.from.split('-').map(Number);
