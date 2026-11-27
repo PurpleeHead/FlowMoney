@@ -1,0 +1,107 @@
+name: nummioX CI
+
+on:
+  push:
+    branches: [feature/personal-finance-rework, feature/telegram-mini-app, feature/nummiox-branding, feature/household-collaboration, feature/nummiox-ui-polish, feature/nummiox-responsive-polish, fix/render-trust-proxy]
+  pull_request:
+    branches: [main, feature/telegram-mini-app, feature/nummiox-branding, feature/household-collaboration, feat/personal-and-household-spaces]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flowmoney-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-test:
+    name: Validate, build and test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: flowmoney
+          POSTGRES_PASSWORD: flowmoney
+          POSTGRES_DB: flowmoney
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowmoney -d flowmoney"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://flowmoney:flowmoney@localhost:5432/flowmoney
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Report dependency audit
+        run: |
+          npm audit --json > npm-audit.json || true
+          node -e "const a=require('./npm-audit.json'); const v=a.metadata?.vulnerabilities ?? {}; console.log(JSON.stringify({summary:v, packages:Object.entries(a.vulnerabilities ?? {}).map(([name,p])=>({name,severity:p.severity,range:p.range,fixAvailable:p.fixAvailable}))},null,2)); if ((v.high ?? 0) + (v.critical ?? 0) > 0) { console.error('High or critical vulnerabilities are not allowed, including in development tooling.'); process.exit(1); }"
+      - name: Audit isolated production dependency trees
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          for (const workspace of ['server', 'client']) {
+            const source = JSON.parse(fs.readFileSync(`${workspace}/package.json`, 'utf8'));
+            const directory = `/tmp/nummiox-${workspace}-production-audit`;
+            fs.mkdirSync(directory, { recursive: true });
+            fs.writeFileSync(
+              `${directory}/package.json`,
+              JSON.stringify({
+                name: `nummiox-${workspace}-production-audit`,
+                version: '1.0.0',
+                private: true,
+                dependencies: source.dependencies ?? {},
+              }, null, 2),
+            );
+          }
+          NODE
+          for workspace in server client; do
+            directory="/tmp/nummiox-${workspace}-production-audit"
+            npm install --prefix "$directory" --package-lock-only --ignore-scripts --no-fund --no-audit
+            npm audit --prefix "$directory" --json > "$directory/audit.json" || true
+            node -e "const a=require('$directory/audit.json'); const v=a.metadata?.vulnerabilities ?? {}; console.log(JSON.stringify({workspace:'$workspace',summary:v,packages:Object.entries(a.vulnerabilities ?? {}).map(([name,p])=>({name,severity:p.severity,range:p.range,fixAvailable:p.fixAvailable}))},null,2)); if ((v.critical ?? 0) + (v.high ?? 0) + (v.moderate ?? 0) > 0) { console.error('Production dependencies must have zero moderate, high, or critical advisories.'); process.exit(1); }"
+          done
+      - name: Validate Prisma schema
+        run: npm run db:validate
+      - name: Generate Prisma Client
+        run: npm run db:generate
+      - name: Apply committed migrations to ephemeral PostgreSQL
+        run: npm run db:migrate
+      - name: Build server and client
+        run: npm run build
+      - name: Run server and client tests
+        run: npm test
+      - name: Validate PowerShell script syntax
+        shell: pwsh
+        run: |
+          $scripts = @(
+            "START-FLOWMONEY.ps1",
+            "UPDATE-DEPENDENCIES.ps1",
+            "BACKUP-LOCAL-FLOWMONEY.ps1",
+            "VERIFY-LOCAL-BACKUP.ps1"
+          )
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD $script),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | Format-List | Out-String | Write-Error
+              exit 1
+            }
+            Write-Host "Parsed $script"
+          }

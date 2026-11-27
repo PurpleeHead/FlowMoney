@@ -1,4 +1,4 @@
-name: Deploy FlowMoney demo to GitHub Pages
+name: Deploy nummioX demo to GitHub Pages
 
 on:
   push:

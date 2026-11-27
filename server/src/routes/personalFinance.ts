@@ -1,0 +1,1184 @@
+import { Router, type Response } from 'express';
+import { z } from 'zod';
+import { prisma } from '../services/prisma.js';
+import { auth } from '../middleware/auth.js';
+import type { AuthedRequest } from '../types.js';
+import { calculateObligationPeriodTotals, generateOccurrences, type Recurrence, type RecurrenceConfig } from '../services/personalFinance.js';
+
+const router = Router();
+router.use(auth);
+
+const dateSchema = z.string()
+  .regex(new RegExp('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
+  .refine(value => {
+    const parsed = new Date(value + 'T00:00:00.000Z');
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, 'Invalid calendar date.');
+const money = z.number().finite().positive().max(1_000_000_000);
+const optionalMember = z.string().cuid().nullable().optional();
+// Category IDs include both Prisma-generated custom IDs and stable system IDs from migrations.
+const optionalCategoryId = z.string().trim().min(1).max(128).nullable().optional();
+const recurrence = z.enum(['ONCE', 'DAILY', 'WEEKLY', 'TWICE_MONTHLY', 'MONTHLY', 'YEARLY']);
+const configSchema = z.object({
+  weekdays: z.array(z.number().int().min(0).max(6)).optional(),
+  intervalWeeks: z.number().int().min(1).max(52).optional(),
+  firstDay: z.number().int().min(1).max(31).optional(),
+  secondDay: z.number().int().min(1).max(31).optional(),
+  day: z.number().int().min(1).max(31).optional(),
+  month: z.number().int().min(1).max(12).optional(),
+}).default({});
+
+function recurrenceConfigError(value: string, config: RecurrenceConfig): string | null {
+  if (value === 'WEEKLY') {
+    const weekdays = config.weekdays;
+    if (weekdays && (!weekdays.length || new Set(weekdays).size !== weekdays.length)) {
+      return 'Choose at least one unique weekday for a weekly schedule.';
+    }
+  }
+  if (value === 'TWICE_MONTHLY') {
+    const firstDay = config.firstDay ?? 1;
+    const secondDay = config.secondDay ?? 15;
+    if (firstDay === secondDay) return 'Twice-monthly dates must be different.';
+  }
+  return null;
+}
+function dateValue(value: string) { return new Date(value + 'T00:00:00.000Z'); }
+function dateString(value: Date) { return value.toISOString().slice(0, 10); }
+function dateStringInTimezone(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value);
+  const part = (name: string) => parts.find(item => item.type === name)?.value ?? '';
+  return part('year') + '-' + part('month') + '-' + part('day');
+}
+function monthStart(value: Date) { return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1)); }
+function monthEnd(value: Date) { return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 0)); }
+function uid(req: AuthedRequest) { return req.user!.id; }
+async function validMember(memberId: string | null | undefined, userId: string) {
+  if (!memberId) return true;
+  return Boolean(await prisma.householdMember.findFirst({ where: { id: memberId, userId, isArchived: false }, select: { id: true } }));
+}
+async function ownedMember(memberId: string, userId: string) {
+  return Boolean(await prisma.householdMember.findFirst({ where: { id: memberId, userId }, select: { id: true } }));
+}
+function memberError(res: Response) { return res.status(400).json({ message: 'Selected household member was not found.' }); }
+function dateQuery(value: unknown, fallback: Date) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return typeof value === 'string' && dateSchema.safeParse(value).success ? dateValue(value) : new Date(Number.NaN);
+}
+const MAX_QUERY_RANGE_DAYS = 366 * 2;
+function isSafeQueryRange(from: Date, to: Date) {
+  return from <= to && to.getTime() - from.getTime() <= MAX_QUERY_RANGE_DAYS * 86400000;
+}
+function isSafeForecastHorizon(today: Date, horizon: Date) {
+  return horizon.getTime() - today.getTime() <= MAX_QUERY_RANGE_DAYS * 86400000;
+}
+async function userDateAt(userId: string, value: Date): Promise<Date> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: user?.timezone ?? 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value);
+  const part = (name: string) => parts.find(item => item.type === name)?.value ?? '';
+  return dateValue(part('year') + '-' + part('month') + '-' + part('day'));
+}
+async function userToday(userId: string): Promise<Date> { return userDateAt(userId, new Date()); }
+function localMidnightUtc(date: Date, timeZone: string): Date {
+  const year = date.getUTCFullYear(), month = date.getUTCMonth(), day = date.getUTCDate();
+  const target = Date.UTC(year, month, day);
+  let candidate = target;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const parts = formatter.formatToParts(new Date(candidate));
+    const part = (name: string) => Number(parts.find(item => item.type === name)?.value ?? 0);
+    const represented = Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second'));
+    const adjustment = target - represented;
+    candidate += adjustment;
+    if (adjustment === 0) break;
+  }
+  return new Date(candidate);
+}
+async function userDateTimeRange(userId: string, from: Date, to: Date): Promise<{ from: Date; toExclusive: Date }> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+  const timeZone = user?.timezone ?? 'Europe/Moscow';
+  const nextDay = new Date(to);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  return { from: localMidnightUtc(from, timeZone), toExclusive: localMidnightUtc(nextDay, timeZone) };
+}
+
+async function createIncomeOccurrences(source: {
+  id: string; userId: string; memberId: string | null; amount: unknown; recurrence: string;
+  recurrenceConfig: unknown; startDate: Date; endDate: Date | null;
+}, from: Date, to: Date) {
+  const end = source.endDate && source.endDate < to ? source.endDate : to;
+  if (end < from) return;
+  const dates = generateOccurrences(source.recurrence as Recurrence, (source.recurrenceConfig ?? {}) as RecurrenceConfig, from, end, source.startDate);
+  if (!dates.length) return;
+  await prisma.incomeEntry.createMany({
+    data: dates.map(plannedDate => ({
+      userId: source.userId, sourceId: source.id, memberId: source.memberId,
+      plannedDate, plannedAmount: Number(source.amount), status: 'PLANNED',
+    })),
+    skipDuplicates: true,
+  });
+}
+async function createObligationOccurrences(obligation: {
+  id: string; userId: string; amount: unknown; recurrence: string;
+  recurrenceConfig: unknown; startDate: Date; endDate: Date | null;
+}, from: Date, to: Date, today: Date) {
+  const end = obligation.endDate && obligation.endDate < to ? obligation.endDate : to;
+  if (end < from) return;
+  const dates = generateOccurrences(obligation.recurrence as Recurrence, (obligation.recurrenceConfig ?? {}) as RecurrenceConfig, from, end, obligation.startDate);
+  if (!dates.length) return;
+  await prisma.obligationOccurrence.createMany({
+    data: dates.map(dueDate => ({
+      userId: obligation.userId, obligationId: obligation.id, dueDate,
+      plannedAmount: Number(obligation.amount), status: dueDate < today ? 'OVERDUE' : 'UPCOMING',
+    })),
+    skipDuplicates: true,
+  });
+}
+
+router.get('/settings', async (req: AuthedRequest, res, next) => {
+  try {
+    // Language and timezone belong to the signed-in person; the opening balance belongs
+    // to the shared ledger owner so family members cannot overwrite each other's preferences.
+    const [personal, ledger] = await Promise.all([
+      prisma.user.findUnique({ where: { id: req.user!.accountId }, select: { timezone: true, locale: true, telegramRemindersEnabled: true, telegramReminderTime: true } }),
+      prisma.user.findUnique({ where: { id: uid(req) }, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } }),
+    ]);
+    if (!personal || !ledger) return res.status(404).json({ message: 'User settings not found.' });
+    return res.json({ ...personal, ...ledger });
+  } catch (error) { return next(error); }
+});
+router.patch('/settings', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ timezone: z.string().trim().min(1).max(80).optional(), locale: z.enum(['ru', 'en']).optional(), telegramRemindersEnabled: z.boolean().optional(), telegramReminderTime: z.string().regex(/^(?:[01]\d|2[0-3]):(?:00|15|30|45)$/).optional(), openingBalance: z.number().finite().min(-1_000_000_000).max(1_000_000_000).optional(), openingBalanceDate: dateSchema.optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid timezone, language or opening balance.' });
+    if (parsed.data.telegramRemindersEnabled === true) {
+      const account = await prisma.user.findUnique({ where: { id: req.user!.accountId }, select: { telegramId: true } });
+      if (!account?.telegramId) return res.status(409).json({ message: 'Link Telegram to this account before enabling reminders.' });
+    }
+    if (parsed.data.timezone) {
+      try { new Intl.DateTimeFormat('en-US', { timeZone: parsed.data.timezone }); }
+      catch { return res.status(400).json({ message: 'Unknown IANA timezone.' }); }
+    }
+    const changesLedger = parsed.data.openingBalance !== undefined || parsed.data.openingBalanceDate !== undefined;
+    if (changesLedger && req.user!.role !== 'OWNER') {
+      return res.status(403).json({ message: 'Only the household owner can change the shared opening balance.' });
+    }
+    if (parsed.data.openingBalanceDate && parsed.data.openingBalanceDate > dateString(await userToday(uid(req)))) return res.status(400).json({ message: 'Opening balance date cannot be in the future.' });
+
+    const personalData: Record<string, unknown> = {};
+    if (parsed.data.timezone !== undefined) personalData.timezone = parsed.data.timezone;
+    if (parsed.data.locale !== undefined) personalData.locale = parsed.data.locale;
+    if (parsed.data.telegramRemindersEnabled !== undefined) personalData.telegramRemindersEnabled = parsed.data.telegramRemindersEnabled;
+    if (parsed.data.telegramReminderTime !== undefined) personalData.telegramReminderTime = parsed.data.telegramReminderTime;
+    const ledgerData: Record<string, unknown> = {};
+    if (parsed.data.openingBalance !== undefined) ledgerData.openingBalance = parsed.data.openingBalance;
+    if (parsed.data.openingBalanceDate !== undefined) ledgerData.openingBalanceDate = dateValue(parsed.data.openingBalanceDate);
+    if (changesLedger) ledgerData.openingBalanceConfigured = true;
+
+    const personal = Object.keys(personalData).length
+      ? await prisma.user.update({ where: { id: req.user!.accountId }, data: personalData as never, select: { timezone: true, locale: true, telegramRemindersEnabled: true, telegramReminderTime: true } })
+      : await prisma.user.findUniqueOrThrow({ where: { id: req.user!.accountId }, select: { timezone: true, locale: true, telegramRemindersEnabled: true, telegramReminderTime: true } });
+    const ledger = changesLedger
+      ? await prisma.user.update({ where: { id: uid(req) }, data: ledgerData as never, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } })
+      : await prisma.user.findUniqueOrThrow({ where: { id: uid(req) }, select: { openingBalance: true, openingBalanceDate: true, openingBalanceConfigured: true } });
+    return res.json({ ...personal, ...ledger });
+  } catch (error) { return next(error); }
+});
+
+router.get('/members', async (req: AuthedRequest, res, next) => {
+  try { return res.json(await prisma.householdMember.findMany({ where: { userId: uid(req) }, orderBy: { createdAt: 'asc' } })); }
+  catch (error) { return next(error); }
+});
+router.post('/members', async (req: AuthedRequest, res, next) => {
+  try {
+    if (req.user!.role !== 'OWNER') return res.status(403).json({ message: 'Only the household owner can manage member profiles.' });
+    const parsed = z.object({ name: z.string().trim().min(1).max(60), color: z.string().max(24).optional() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a household member name.' });
+    return res.status(201).json(await prisma.householdMember.create({ data: { ...parsed.data, userId: uid(req) } }));
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+      return res.status(409).json({ message: 'A household member with this name already exists.' });
+    }
+    return next(error);
+  }
+});
+router.patch('/members/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    if (req.user!.role !== 'OWNER') return res.status(403).json({ message: 'Only the household owner can manage member profiles.' });
+    const parsed = z.object({ name: z.string().trim().min(1).max(60).optional(), color: z.string().max(24).nullable().optional(), isArchived: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid member update.' });
+    // Archive checks and writes must be one serializable transaction. Otherwise an
+    // invitation can be accepted between the access check and the profile update,
+    // leaving an active account linked to an archived profile.
+    const outcome = await prisma.$transaction(async tx => {
+      if (parsed.data.isArchived === true) {
+        const linked = await tx.householdAccess.findFirst({
+          where: { householdId: req.user!.householdId, memberId: String(req.params.id), revokedAt: null },
+          select: { id: true },
+        });
+        if (linked) return { status: 'linked' as const };
+      }
+      const result = await tx.householdMember.updateMany({
+        where: { id: String(req.params.id), userId: uid(req) },
+        data: parsed.data,
+      });
+      if (!result.count) return { status: 'missing' as const };
+      const member = await tx.householdMember.findFirst({
+        where: { id: String(req.params.id), userId: uid(req) },
+      });
+      return { status: 'ok' as const, member };
+    }, { isolationLevel: 'Serializable' });
+    if (outcome.status === 'linked') {
+      return res.status(409).json({ message: 'Revoke the linked account before archiving this profile.' });
+    }
+    if (outcome.status === 'missing') return res.status(404).json({ message: 'Household member not found.' });
+    return res.json(outcome.member);
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2034') {
+      return res.status(409).json({ message: 'This household profile changed while you were updating it. Refresh and try again.' });
+    }
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+      return res.status(409).json({ message: 'A household member with this name already exists.' });
+    }
+    return next(error);
+  }
+});
+
+const incomeSchema = z.object({
+  title: z.string().trim().min(1).max(120), amount: money, recurrence,
+  recurrenceConfig: configSchema, startDate: dateSchema, endDate: dateSchema.nullable().optional(),
+  memberId: optionalMember, note: z.string().max(500).nullable().optional(),
+});
+router.get('/income-sources', async (req: AuthedRequest, res, next) => {
+  try {
+    const now = await userToday(uid(req)), from = dateQuery(req.query.from, monthStart(now));
+    const to = dateQuery(req.query.to, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 3, 0)));
+    if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an income date range no longer than two years.' });
+    const includeArchived = req.query.includeArchived === 'true';
+    const sources = await prisma.incomeSource.findMany({ where: { userId: uid(req), ...(includeArchived ? {} : { isActive: true }) }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
+    for (const source of sources) if (source.isActive) await createIncomeOccurrences(source, from, to);
+    const entries = await prisma.incomeEntry.findMany({
+      where: { userId: uid(req), plannedDate: { gte: from, lte: to } },
+      include: { source: true, member: true }, orderBy: { plannedDate: 'asc' },
+    });
+    return res.json({ sources, entries });
+  } catch (error) { return next(error); }
+});
+router.post('/income-sources', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = incomeSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Check the income name, amount, recurrence and dates.', issues: parsed.error.flatten() });
+    const input = parsed.data, userId = uid(req);
+    const recurrenceError = recurrenceConfigError(input.recurrence, input.recurrenceConfig);
+    if (recurrenceError) return res.status(400).json({ message: recurrenceError });
+    if (input.endDate && input.endDate < input.startDate) return res.status(400).json({ message: 'End date cannot be before start date.' });
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    const source = await prisma.incomeSource.create({
+      data: {
+        ...input, userId, startDate: dateValue(input.startDate),
+        endDate: input.endDate ? dateValue(input.endDate) : null,
+        recurrenceConfig: JSON.parse(JSON.stringify(input.recurrenceConfig)),
+      },
+    });
+    await createIncomeOccurrences(source, source.startDate, new Date(Date.UTC(source.startDate.getUTCFullYear(), source.startDate.getUTCMonth() + 3, 0)));
+    return res.status(201).json(source);
+  } catch (error) { return next(error); }
+});
+router.patch('/income-sources/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = incomeSchema.partial().extend({ isActive: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid income source update.' });
+    const input = parsed.data, userId = uid(req);
+    if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    const existing = await prisma.incomeSource.findFirst({ where: { id: String(req.params.id), userId } });
+    if (!existing) return res.status(404).json({ message: 'Income source not found.' });
+    const effectiveRecurrence = input.recurrence ?? existing.recurrence;
+    const effectiveConfig = input.recurrenceConfig ?? existing.recurrenceConfig as RecurrenceConfig;
+    const recurrenceError = recurrenceConfigError(effectiveRecurrence, effectiveConfig);
+    if (recurrenceError) return res.status(400).json({ message: recurrenceError });
+    const effectiveStart = input.startDate ?? dateString(existing.startDate);
+    const effectiveEnd = input.endDate === undefined ? (existing.endDate ? dateString(existing.endDate) : null) : input.endDate;
+    if (effectiveEnd && effectiveEnd < effectiveStart) return res.status(400).json({ message: 'End date cannot be before start date.' });
+    const data: Record<string, unknown> = { ...input };
+    if (input.startDate) data.startDate = dateValue(input.startDate);
+    if (input.endDate !== undefined) data.endDate = input.endDate ? dateValue(input.endDate) : null;
+    if (input.recurrenceConfig) data.recurrenceConfig = JSON.parse(JSON.stringify(input.recurrenceConfig));
+    const result = await prisma.incomeSource.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
+    if (!result.count) return res.status(404).json({ message: 'Income source not found.' });
+    const today = await userToday(userId);
+    const scheduleChanged = ['amount', 'recurrence', 'recurrenceConfig', 'startDate', 'endDate', 'memberId'].some(key => key in input);
+    const reactivated = input.isActive === true && !existing.isActive;
+    if (input.isActive === false) {
+      // Generated future rows are disposable; remove them so reactivation can safely regenerate them.
+      await prisma.incomeEntry.deleteMany({
+        where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } },
+      });
+    } else if (scheduleChanged || reactivated) {
+      await prisma.incomeEntry.deleteMany({
+        where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } },
+      });
+      const updatedSource = await prisma.incomeSource.findFirst({ where: { id: String(req.params.id), userId } });
+      if (updatedSource?.isActive) {
+        const horizon = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 3, 0));
+        await createIncomeOccurrences(updatedSource, today, horizon);
+      }
+    }
+    return res.json(await prisma.incomeSource.findFirst({ where: { id: String(req.params.id), userId } }));
+  } catch (error) { return next(error); }
+});
+router.delete('/income-sources/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req);
+    const today = await userToday(userId);
+    const result = await prisma.incomeSource.updateMany({ where: { id: String(req.params.id), userId }, data: { isActive: false } });
+    if (!result.count) return res.status(404).json({ message: 'Income source not found.' });
+    await prisma.incomeEntry.deleteMany({ where: { sourceId: String(req.params.id), userId, status: 'PLANNED', plannedDate: { gte: today } } });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+router.patch('/income-entries/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({
+      plannedDate: dateSchema.optional(), plannedAmount: money.optional(), memberId: optionalMember,
+      note: z.string().max(500).nullable().optional(), status: z.enum(['PLANNED', 'SKIPPED']).optional(),
+    }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid planned income update.' });
+    const input = parsed.data, userId = uid(req);
+    if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    const id = String(req.params.id);
+    const existing = await prisma.incomeEntry.findFirst({ where: { id, userId }, include: { source: { select: { isActive: true } } } });
+    if (!existing || (existing.status === 'RECEIVED' && input.status !== 'SKIPPED')) return res.status(404).json({ message: 'Editable planned income not found.' });
+    const data: Record<string, unknown> = { ...input };
+    if (existing.status === 'RECEIVED' && input.status === 'SKIPPED') {
+      data.actualAmount = null;
+      data.receivedAt = null;
+    }
+    if (input.plannedDate) data.plannedDate = dateValue(input.plannedDate);
+    if (input.status === 'PLANNED' && existing.sourceId && !existing.source?.isActive) {
+      return res.status(409).json({ message: 'Reactivate the income source before restoring this planned entry.' });
+    }
+    const activeSourceWhere = input.status === 'PLANNED'
+      ? { OR: [{ sourceId: null }, { source: { is: { isActive: true } } }] }
+      : {};
+    const result = await prisma.incomeEntry.updateMany({
+      where: { id, userId, status: existing.status, ...activeSourceWhere },
+      data: data as never,
+    });
+    if (!result.count) return res.status(409).json({ message: 'Income entry changed while it was being updated.' });
+    return res.json(await prisma.incomeEntry.findFirst({ where: { id: String(req.params.id), userId } }));
+  } catch (error) { return next(error); }
+});
+router.delete('/income-entries/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    // Manual planned income can be removed, but recurring-source entries and received history are immutable here.
+    const result = await prisma.incomeEntry.deleteMany({
+      where: { id: String(req.params.id), userId: uid(req), sourceId: null, status: 'PLANNED' },
+    });
+    if (!result.count) return res.status(404).json({ message: 'Deletable one-time planned income not found.' });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+
+router.post('/income-entries/:id/receive', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ actualAmount: money.optional(), receivedAt: z.string().datetime().optional() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid received amount.' });
+    const userId = uid(req);
+    const entry = await prisma.$transaction(async tx => {
+      const current = await tx.incomeEntry.findFirst({ where: { id: String(req.params.id), userId } });
+      if (!current || current.status === 'RECEIVED') return current;
+      const claimed = await tx.incomeEntry.updateMany({
+        where: { id: current.id, userId, status: { not: 'RECEIVED' } },
+        data: { status: 'RECEIVED', actualAmount: parsed.data.actualAmount ?? current.plannedAmount, receivedAt: parsed.data.receivedAt ? new Date(parsed.data.receivedAt) : new Date() },
+      });
+      // The conditional update is the atomic claim: only one concurrent request may set the received amount.
+      if (!claimed.count) return tx.incomeEntry.findFirst({ where: { id: current.id, userId } });
+      return tx.incomeEntry.findFirst({ where: { id: current.id, userId } });
+    });
+    if (!entry) return res.status(404).json({ message: 'Income entry not found.' });
+    return res.json(entry);
+  } catch (error) { return next(error); }
+});
+router.get('/income-entries', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req), today = await userToday(userId);
+    const from = dateQuery(req.query.from, monthStart(today));
+    const to = dateQuery(req.query.to, new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 3, 0)));
+    if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an income date range no longer than two years.' });
+    const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
+    const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const status = (typeof req.query.status === 'string' ? req.query.status : '') as 'PLANNED' | 'RECEIVED' | 'SKIPPED' | '';
+    if (status && !['PLANNED', 'RECEIVED', 'SKIPPED'].includes(status)) {
+      return res.status(400).json({ message: 'Unknown income entry status.' });
+    }
+    const sources = await prisma.incomeSource.findMany({ where: { userId, isActive: true, ...memberWhere } });
+    for (const source of sources) await createIncomeOccurrences(source, from, to);
+    const entries = await prisma.incomeEntry.findMany({
+      where: { userId, ...memberWhere, plannedDate: { gte: from, lte: to }, ...(status ? { status } : {}) },
+      include: { source: true, member: true },
+      orderBy: [{ plannedDate: 'asc' }, { createdAt: 'asc' }],
+    });
+    return res.json({ entries });
+  } catch (error) { return next(error); }
+});
+
+router.post('/income-entries', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ plannedDate: dateSchema, plannedAmount: money, memberId: optionalMember, note: z.string().max(500).optional() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid income date and amount.' });
+    const input = parsed.data, userId = uid(req);
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    return res.status(201).json(await prisma.incomeEntry.create({
+      data: { userId, ...input, plannedDate: dateValue(input.plannedDate), status: 'PLANNED' },
+    }));
+  } catch (error) { return next(error); }
+});
+
+const expenseSchema = z.object({
+  title: z.string().trim().min(1).max(140), amount: money, date: dateSchema,
+  categoryId: optionalCategoryId, memberId: optionalMember,
+  note: z.string().max(500).nullable().optional(),
+});
+router.get('/expenses', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req);
+    const fromInput = typeof req.query.from === 'string' ? dateSchema.safeParse(req.query.from) : null;
+    const toInput = typeof req.query.to === 'string' ? dateSchema.safeParse(req.query.to) : null;
+    if ((req.query.from !== undefined && (!fromInput || !fromInput.success)) ||
+        (req.query.to !== undefined && (!toInput || !toInput.success))) {
+      return res.status(400).json({ message: 'Use valid calendar dates for the expense range.' });
+    }
+    const from = fromInput?.success ? dateValue(fromInput.data) : null;
+    const to = toInput?.success ? dateValue(toInput.data) : null;
+    if ((from && !to) || (!from && to) || (from && to && !isSafeQueryRange(from, to))) {
+      return res.status(400).json({ message: 'Provide a complete expense date range no longer than two years.' });
+    }
+    const take = req.query.take === undefined ? 100 : Number(req.query.take);
+    const skip = req.query.skip === undefined ? 0 : Number(req.query.skip);
+    if (!Number.isSafeInteger(take) || take < 1 || take > 250 ||
+        !Number.isSafeInteger(skip) || skip < 0 || skip > 100_000) {
+      return res.status(400).json({ message: 'Use take from 1 to 250 and skip from 0 to 100000.' });
+    }
+    const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
+    const categoryId = typeof req.query.categoryId === 'string' ? req.query.categoryId : '';
+    if (categoryId && categoryId !== 'uncategorized' && !(await prisma.expenseCategory.findFirst({
+      where: { id: categoryId, OR: [{ userId }, { userId: null }] },
+    }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const categoryWhere = categoryId === 'uncategorized' ? { categoryId: null } : categoryId ? { categoryId } : {};
+    const where = {
+      userId, ...memberWhere, ...categoryWhere,
+      ...(from && to ? { date: { gte: from, lte: to } } : {}),
+    };
+    const [expenses, total, categories] = await Promise.all([
+      prisma.ledgerExpense.findMany({
+        where, include: { category: true, member: true, obligationOccurrence: true, debtTransaction: true },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }], take, skip,
+      }),
+      prisma.ledgerExpense.count({ where }),
+      prisma.expenseCategory.findMany({
+        where: { OR: [{ userId }, { userId: null }] },
+        orderBy: [{ userId: 'asc' }, { name: 'asc' }],
+      }),
+    ]);
+    return res.json({ expenses, total, page: { take, skip, hasMore: skip + expenses.length < total }, categories });
+  } catch (error) { return next(error); }
+});
+const categorySchema = z.object({ name: z.string().trim().min(1).max(60), slug: z.string().trim().min(1).max(70).regex(new RegExp('^[a-z0-9-]+$')) });
+router.post('/categories', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = categorySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a category name and a lowercase slug.' });
+    return res.status(201).json(await prisma.expenseCategory.create({ data: { ...parsed.data, userId: uid(req) } }));
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+      return res.status(409).json({ message: 'A category with this slug already exists.' });
+    }
+    return next(error);
+  }
+});
+router.patch('/categories/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ name: z.string().trim().min(1).max(60).optional(), isArchived: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid category update.' });
+    const result = await prisma.expenseCategory.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: parsed.data });
+    if (!result.count) return res.status(404).json({ message: 'Custom category not found.' });
+    return res.json(await prisma.expenseCategory.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
+  } catch (error) { return next(error); }
+});
+router.post('/expenses', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = expenseSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Check the expense name, amount and date.', issues: parsed.error.flatten() });
+    const input = parsed.data, userId = uid(req);
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    return res.status(201).json(await prisma.ledgerExpense.create({
+      data: { ...input, userId, date: dateValue(input.date) }, include: { category: true, member: true },
+    }));
+  } catch (error) { return next(error); }
+});
+router.patch('/expenses/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = expenseSchema.partial().safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid expense update.' });
+    const input = parsed.data, userId = uid(req);
+    if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    const data: Record<string, unknown> = { ...input };
+    if (input.date) data.date = dateValue(input.date);
+    const result = await prisma.ledgerExpense.updateMany({ where: { id: String(req.params.id), userId, obligationOccurrence: { is: null }, debtTransaction: { is: null } }, data: data as never });
+    if (!result.count) return res.status(404).json({ message: 'Editable expense not found.' });
+    return res.json(await prisma.ledgerExpense.findFirst({ where: { id: String(req.params.id), userId }, include: { category: true, member: true } }));
+  } catch (error) { return next(error); }
+});
+router.delete('/expenses/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req), expenseId = String(req.params.id);
+    const result = await prisma.$transaction(async tx => {
+      const expense = await tx.ledgerExpense.findFirst({
+        where: { id: expenseId, userId },
+        include: {
+          debtTransaction: true,
+          obligationPayment: { include: { occurrence: true } },
+          obligationOccurrence: true,
+        },
+      });
+      if (!expense) return { kind: 'missing' as const };
+      const payment = expense.obligationPayment;
+      const occurrence = payment?.occurrence ?? expense.obligationOccurrence;
+      const paidAmount = payment ? Number(payment.amount) : occurrence ? Number(expense.amount) : 0;
+
+      if (expense.debtTransaction) {
+        const transaction = expense.debtTransaction;
+        if (transaction.type === 'REVERSED') return { kind: 'reversed' as const };
+        const balanceChange = Number(transaction.balanceChange);
+        const restoredAmount = -balanceChange;
+        const restored = await tx.debt.updateMany({
+          where: { id: transaction.debtId, userId },
+          data: { remainingAmount: { increment: restoredAmount } },
+        });
+        if (!restored.count) return { kind: 'missingDebt' as const };
+        await tx.debtTransaction.update({ where: { id: transaction.id }, data: { type: 'REVERSED' } });
+        await tx.debtTransaction.create({ data: {
+          userId, debtId: transaction.debtId, type: 'REVERSAL',
+          amount: transaction.amount, balanceChange: restoredAmount,
+          date: await userToday(userId), reason: 'Reversal of transaction ' + transaction.id,
+        } });
+      }
+
+      if (occurrence && paidAmount > 0) {
+        const newPaidAmount = Math.max(0, Number(occurrence.actualAmount ?? 0) - paidAmount);
+        const dueDate = new Date(occurrence.dueDate);
+        const today = await userToday(userId);
+        const nextStatus = newPaidAmount >= Number(occurrence.plannedAmount) - 0.000001
+          ? 'PAID'
+          : newPaidAmount > 0 ? 'PARTIAL'
+          : dueDate < today ? 'OVERDUE' : 'UPCOMING';
+        await tx.obligationOccurrence.update({
+          where: { id: occurrence.id },
+          data: {
+            actualAmount: newPaidAmount,
+            status: nextStatus,
+            paidAt: nextStatus === 'PAID' ? occurrence.paidAt : null,
+          },
+        });
+      }
+      await tx.ledgerExpense.delete({ where: { id: expenseId } });
+      return { kind: 'ok' as const };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Expense not found.' });
+    if (result.kind === 'reversed') return res.status(409).json({ message: 'This payment has already been reversed.' });
+    if (result.kind === 'missingDebt') return res.status(409).json({ message: 'Linked debt was not found; expense was not deleted.' });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+
+const obligationSchema = z.object({
+  title: z.string().trim().min(1).max(120), category: z.string().trim().min(1).max(60), amount: money,
+  recurrence, recurrenceConfig: configSchema, startDate: dateSchema, endDate: dateSchema.nullable().optional(),
+  memberId: optionalMember, debtId: z.string().cuid().nullable().optional(), note: z.string().max(500).nullable().optional(),
+});
+router.get('/obligations', async (req: AuthedRequest, res, next) => {
+  try {
+    const now = await userToday(uid(req)), from = dateQuery(req.query.from, monthStart(now));
+    const to = dateQuery(req.query.to, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 4, 0)));
+    if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an obligations date range no longer than two years.' });
+    const userId = uid(req);
+    const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return memberError(res);
+    const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const includeArchived = req.query.includeArchived === 'true';
+    const obligations = await prisma.obligation.findMany({ where: { userId, ...(includeArchived ? {} : { isActive: true }), ...memberWhere }, include: { debt: true }, orderBy: [{ isActive: 'desc' }, { title: 'asc' }] });
+    for (const obligation of obligations) if (obligation.isActive) await createObligationOccurrences(obligation, from, to, now);
+    const today = now;
+    await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
+    const occurrences = await prisma.obligationOccurrence.findMany({
+      where: {
+        userId, ...(req.query.includeSkipped === 'true' ? {} : { status: { not: 'SKIPPED' } }), dueDate: { gte: from, lte: to },
+        ...(memberId ? { obligation: { is: memberWhere } } : {}),
+      },
+      include: { obligation: { include: { debt: true } }, expense: true, payments: { include: { expense: true }, orderBy: { paidAt: 'asc' } } }, orderBy: { dueDate: 'asc' },
+    });
+    return res.json({ obligations, occurrences });
+  } catch (error) { return next(error); }
+});
+router.post('/obligations', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = obligationSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Check the obligation title, amount, recurrence and dates.', issues: parsed.error.flatten() });
+    const input = parsed.data, userId = uid(req);
+    const recurrenceError = recurrenceConfigError(input.recurrence, input.recurrenceConfig);
+    if (recurrenceError) return res.status(400).json({ message: recurrenceError });
+    if (input.endDate && input.endDate < input.startDate) return res.status(400).json({ message: 'End date cannot be before start date.' });
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.debtId && !(await prisma.debt.findFirst({ where: { id: input.debtId, userId, isActive: true } }))) return res.status(400).json({ message: 'Select an active debt belonging to this account.' });
+    const obligation = await prisma.obligation.create({
+      data: { ...input, userId, startDate: dateValue(input.startDate), endDate: input.endDate ? dateValue(input.endDate) : null, recurrenceConfig: JSON.parse(JSON.stringify(input.recurrenceConfig)) },
+    });
+    await createObligationOccurrences(obligation, obligation.startDate, new Date(Date.UTC(obligation.startDate.getUTCFullYear(), obligation.startDate.getUTCMonth() + 4, 0)), await userToday(userId));
+    return res.status(201).json(obligation);
+  } catch (error) { return next(error); }
+});
+router.patch('/obligations/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = obligationSchema.partial().extend({ isActive: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid obligation update.' });
+    const input = parsed.data, userId = uid(req);
+    if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.debtId && !(await prisma.debt.findFirst({ where: { id: input.debtId, userId, isActive: true } }))) return res.status(400).json({ message: 'Select an active debt belonging to this account.' });
+    const existing = await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } });
+    if (!existing) return res.status(404).json({ message: 'Obligation not found.' });
+    const effectiveRecurrence = input.recurrence ?? existing.recurrence;
+    const effectiveConfig = input.recurrenceConfig ?? existing.recurrenceConfig as RecurrenceConfig;
+    const recurrenceError = recurrenceConfigError(effectiveRecurrence, effectiveConfig);
+    if (recurrenceError) return res.status(400).json({ message: recurrenceError });
+    const effectiveStart = input.startDate ?? dateString(existing.startDate);
+    const effectiveEnd = input.endDate === undefined ? (existing.endDate ? dateString(existing.endDate) : null) : input.endDate;
+    if (effectiveEnd && effectiveEnd < effectiveStart) return res.status(400).json({ message: 'End date cannot be before start date.' });
+    const data: Record<string, unknown> = { ...input };
+    if (input.startDate) data.startDate = dateValue(input.startDate);
+    if (input.endDate !== undefined) data.endDate = input.endDate ? dateValue(input.endDate) : null;
+    if (input.recurrenceConfig) data.recurrenceConfig = JSON.parse(JSON.stringify(input.recurrenceConfig));
+    const result = await prisma.obligation.updateMany({ where: { id: String(req.params.id), userId }, data: data as never });
+    if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
+    const today = await userToday(userId);
+    const scheduleChanged = ['amount', 'recurrence', 'recurrenceConfig', 'startDate', 'endDate', 'memberId'].some(key => key in input);
+    const reactivated = input.isActive === true && !existing.isActive;
+    if (input.isActive === false) {
+      // Remove only unpaid generated future rows; paid history and manually skipped rows stay intact.
+      await prisma.obligationOccurrence.deleteMany({
+        where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } },
+      });
+    } else if (scheduleChanged || reactivated) {
+      await prisma.obligationOccurrence.deleteMany({
+        where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } },
+      });
+      const updatedObligation = await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } });
+      if (updatedObligation?.isActive) {
+        const horizon = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 4, 0));
+        await createObligationOccurrences(updatedObligation, today, horizon, today);
+      }
+    }
+    return res.json(await prisma.obligation.findFirst({ where: { id: String(req.params.id), userId } }));
+  } catch (error) { return next(error); }
+});
+router.delete('/obligations/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req);
+    const result = await prisma.obligation.updateMany({ where: { id: String(req.params.id), userId }, data: { isActive: false } });
+    if (!result.count) return res.status(404).json({ message: 'Obligation not found.' });
+    const today = await userToday(userId);
+    await prisma.obligationOccurrence.deleteMany({ where: { obligationId: String(req.params.id), userId, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: today } } });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+router.post('/obligation-occurrences/:id/skip', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.obligationOccurrence.updateMany({
+      where: { id: String(req.params.id), userId: uid(req), status: { in: ['UPCOMING', 'OVERDUE'] } },
+      data: { status: 'SKIPPED' },
+    });
+    if (!result.count) return res.status(404).json({ message: 'Skippable obligation occurrence not found.' });
+    return res.json(await prisma.obligationOccurrence.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
+  } catch (error) { return next(error); }
+});
+router.post('/obligation-occurrences/:id/restore', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req), id = String(req.params.id), today = await userToday(userId);
+    const occurrence = await prisma.obligationOccurrence.findFirst({
+      where: { id, userId }, include: { obligation: true },
+    });
+    if (!occurrence || occurrence.status !== 'SKIPPED') return res.status(404).json({ message: 'Skipped obligation occurrence not found.' });
+    if (!occurrence.obligation.isActive) return res.status(409).json({ message: 'Reactivate the obligation before restoring this occurrence.' });
+    const status = occurrence.dueDate < today ? 'OVERDUE' : 'UPCOMING';
+    const restored = await prisma.obligationOccurrence.updateMany({
+      where: { id, userId, status: 'SKIPPED' }, data: { status },
+    });
+    if (!restored.count) return res.status(409).json({ message: 'Obligation occurrence was changed by another request.' });
+    return res.json(await prisma.obligationOccurrence.findFirst({ where: { id, userId }, include: { obligation: true, expense: true } }));
+  } catch (error) { return next(error); }
+});
+router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ actualAmount: money.optional(), paidAt: z.string().datetime().optional() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid payment amount.' });
+    const userId = uid(req);
+    const paidAt = parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date();
+    const paidDate = await userDateAt(userId, paidAt);
+    const result = await prisma.$transaction(async tx => {
+      const occurrence = await tx.obligationOccurrence.findFirst({ where: { id: String(req.params.id), userId } });
+      if (!occurrence) return { kind: 'missing' as const };
+      const obligation = await tx.obligation.findFirst({ where: { id: occurrence.obligationId, userId }, include: { debt: true } });
+      if (!obligation) return { kind: 'missing' as const };
+      if (!['UPCOMING', 'OVERDUE', 'PARTIAL'].includes(occurrence.status)) return { kind: 'closed' as const };
+      const amount = parsed.data.actualAmount ?? Math.max(0, Number(occurrence.plannedAmount) - Number(occurrence.actualAmount ?? 0));
+      const alreadyPaid = Number(occurrence.actualAmount ?? 0);
+      const newPaidTotal = alreadyPaid + amount;
+      const planned = Number(occurrence.plannedAmount);
+      if (amount <= 0 || newPaidTotal > planned + 0.000001) return { kind: 'overpay' as const, remaining: Math.max(0, planned - alreadyPaid) };
+      if (obligation.debtId && (!obligation.debt || Number(obligation.debt.remainingAmount) < amount)) {
+        return { kind: 'debt_insufficient' as const, remaining: Number(obligation.debt?.remainingAmount ?? 0) };
+      }
+      const expense = await tx.ledgerExpense.create({
+        data: { userId, memberId: obligation.memberId, title: obligation.title, amount, date: paidDate, note: 'Obligation payment' },
+      });
+      const claimed = await tx.obligationOccurrence.updateMany({
+        where: { id: occurrence.id, userId, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, actualAmount: occurrence.actualAmount },
+        data: { status: newPaidTotal + 0.000001 >= planned ? 'PAID' : 'PARTIAL', paidAt: newPaidTotal + 0.000001 >= planned ? paidAt : occurrence.paidAt, actualAmount: newPaidTotal },
+      });
+      if (!claimed.count) throw new Error('Obligation payment changed concurrently. Please retry.');
+      await tx.obligationPayment.create({ data: { userId, occurrenceId: occurrence.id, amount, paidAt, expenseId: expense.id } });
+      if (obligation.debtId) {
+        const changed = await tx.debt.updateMany({
+          where: { id: obligation.debtId, userId, isActive: true, remainingAmount: { gte: amount } },
+          data: { remainingAmount: { decrement: amount } },
+        });
+        if (!changed.count) throw Object.assign(new Error('Debt balance changed. Reload and try again.'), { status: 409 });
+        await tx.debtTransaction.create({ data: {
+          userId, debtId: obligation.debtId, type: 'PAYMENT', amount, balanceChange: -amount,
+          date: paidDate, reason: 'Payment from recurring obligation', expenseId: expense.id,
+        } });
+      }
+      return { kind: 'ok' as const, occurrence: await tx.obligationOccurrence.findFirst({
+        where: { id: occurrence.id, userId },
+        include: { obligation: { include: { debt: true } }, expense: true, payments: { include: { expense: true }, orderBy: { paidAt: 'asc' } } },
+      }) };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Payable obligation occurrence not found.' });
+    if (result.kind === 'closed') return res.status(409).json({ message: 'This obligation occurrence is not payable.' });
+    if (result.kind === 'overpay') return res.status(400).json({ message: `Payment exceeds the remaining scheduled amount of ${result.remaining.toFixed(2)}.` });
+    if (result.kind === 'debt_insufficient') return res.status(409).json({ message: `Payment exceeds the remaining linked debt balance of ${result.remaining.toFixed(2)}.` });
+    return res.json(result.occurrence);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Obligation payment changed concurrently. Please retry.') {
+      const current = await prisma.obligationOccurrence.findFirst({
+        where: { id: String(req.params.id), userId: uid(req), status: 'PAID' },
+        include: { obligation: { include: { debt: true } }, expense: true, payments: { include: { expense: true }, orderBy: { paidAt: 'asc' } } },
+      });
+      if (current) return res.json(current);
+    }
+    return next(error);
+  }
+});
+
+
+const debtSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  category: z.string().trim().min(1).max(60),
+  originalAmount: money,
+  memberId: optionalMember,
+  note: z.string().max(500).nullable().optional(),
+});
+router.get('/debts', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req);
+    const debts = await prisma.debt.findMany({
+      where: { userId, ...(req.query.includeArchived === 'true' ? {} : { isActive: true }) },
+      include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } },
+      orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
+    });
+    return res.json(debts);
+  } catch (error) { return next(error); }
+});
+router.post('/debts', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = debtSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Check the debt title, category and initial amount.' });
+    const input = parsed.data, userId = uid(req);
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    const debt = await prisma.$transaction(async tx => {
+      const created = await tx.debt.create({ data: {
+        userId, memberId: input.memberId ?? null, title: input.title, category: input.category,
+        originalAmount: input.originalAmount, remainingAmount: input.originalAmount, note: input.note ?? null,
+      } });
+      await tx.debtTransaction.create({ data: {
+        userId, debtId: created.id, type: 'OPENING', amount: input.originalAmount,
+        balanceChange: input.originalAmount, date: await userToday(userId), reason: 'Initial debt balance',
+      } });
+      return tx.debt.findFirst({ where: { id: created.id, userId }, include: { member: true, transactions: true } });
+    });
+    return res.status(201).json(debt);
+  } catch (error) { return next(error); }
+});
+router.patch('/debts/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = debtSchema.partial().extend({ isActive: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid debt update.' });
+    const input = parsed.data, userId = uid(req);
+    if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    const result = await prisma.debt.updateMany({
+      where: { id: String(req.params.id), userId },
+      data: { ...input, ...(input.memberId === undefined ? {} : { memberId: input.memberId }) },
+    });
+    if (!result.count) return res.status(404).json({ message: 'Debt not found.' });
+    return res.json(await prisma.debt.findFirst({ where: { id: String(req.params.id), userId }, include: { member: true, transactions: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }));
+  } catch (error) { return next(error); }
+});
+router.post('/debts/:id/payments', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ amount: money, date: dateSchema, note: z.string().max(300).nullable().optional() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid payment amount and date.' });
+    const userId = uid(req), id = String(req.params.id), input = parsed.data;
+    const result = await prisma.$transaction(async tx => {
+      const debt = await tx.debt.findFirst({ where: { id, userId, isActive: true } });
+      if (!debt) return { kind: 'missing' as const };
+      const expense = await tx.ledgerExpense.create({ data: {
+        userId, memberId: debt.memberId, title: debt.title, amount: input.amount,
+        date: dateValue(input.date), note: input.note ?? 'Debt repayment',
+      } });
+      const updated = await tx.debt.updateMany({
+        where: { id, userId, isActive: true, remainingAmount: { gte: input.amount } },
+        data: { remainingAmount: { decrement: input.amount } },
+      });
+      if (!updated.count) {
+        await tx.ledgerExpense.delete({ where: { id: expense.id } });
+        return { kind: 'insufficient' as const };
+      }
+      await tx.debtTransaction.create({ data: {
+        userId, debtId: id, type: 'PAYMENT', amount: input.amount, balanceChange: -input.amount,
+        date: dateValue(input.date), reason: input.note ?? null, expenseId: expense.id,
+      } });
+      return { kind: 'ok' as const, debt: await tx.debt.findFirst({ where: { id, userId }, include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }) };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Active debt not found.' });
+    if (result.kind === 'insufficient') return res.status(409).json({ message: 'Payment exceeds the remaining debt balance.' });
+    return res.status(201).json(result.debt);
+  } catch (error) { return next(error); }
+});
+router.post('/debts/:id/adjust', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({
+      amountChange: z.number().finite().min(-1_000_000_000).max(1_000_000_000).refine(value => value !== 0),
+      date: dateSchema, reason: z.string().trim().min(1).max(200),
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a non-zero signed balance change, date and reason.' });
+    const userId = uid(req), id = String(req.params.id), input = parsed.data;
+    const result = await prisma.$transaction(async tx => {
+      const debt = await tx.debt.findFirst({ where: { id, userId, isActive: true } });
+      if (!debt) return { kind: 'missing' as const };
+      const nextBalance = Number(debt.remainingAmount) + input.amountChange;
+      if (nextBalance < 0) return { kind: 'negative' as const };
+      const changed = await tx.debt.updateMany({
+        where: { id, userId, isActive: true, remainingAmount: debt.remainingAmount },
+        data: { remainingAmount: { increment: input.amountChange } },
+      });
+      if (!changed.count) return { kind: 'conflict' as const };
+      await tx.debtTransaction.create({ data: {
+        userId, debtId: id, type: 'ADJUSTMENT', amount: Math.abs(input.amountChange), balanceChange: input.amountChange,
+        date: dateValue(input.date), reason: input.reason,
+      } });
+      return { kind: 'ok' as const, debt: await tx.debt.findFirst({ where: { id, userId }, include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }) };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Active debt not found.' });
+    if (result.kind === 'negative') return res.status(400).json({ message: 'Debt balance cannot become negative.' });
+    if (result.kind === 'conflict') return res.status(409).json({ message: 'Debt balance changed. Reload and try again.' });
+    return res.json(result.debt);
+  } catch (error) { return next(error); }
+});
+router.delete('/debts/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.debt.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: { isActive: false } });
+    if (!result.count) return res.status(404).json({ message: 'Debt not found.' });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+
+router.get('/balance-adjustments', async (req: AuthedRequest, res, next) => {
+  try {
+    return res.json(await prisma.balanceAdjustment.findMany({
+      where: { userId: uid(req) }, include: { member: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+    }));
+  } catch (error) { return next(error); }
+});
+router.post('/balance-adjustments', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({
+      amount: z.number().finite().min(-1_000_000_000).max(1_000_000_000),
+      date: dateSchema, reason: z.string().trim().min(1).max(160), memberId: optionalMember,
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid signed balance adjustment, date and reason.' });
+    const input = parsed.data, userId = uid(req);
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    return res.status(201).json(await prisma.balanceAdjustment.create({ data: { ...input, userId, date: dateValue(input.date) } }));
+  } catch (error) { return next(error); }
+});
+
+
+const budgetSchema = z.object({
+  periodMonth: dateSchema, limitAmount: money, memberId: optionalMember,
+  categoryId: optionalCategoryId,
+});
+router.get('/budgets', async (req: AuthedRequest, res, next) => {
+  try {
+    const today = await userToday(uid(req));
+    const monthInput = typeof req.query.month === 'string' ? dateSchema.safeParse(req.query.month) : null;
+    if (req.query.month !== undefined && (!monthInput || !monthInput.success)) {
+      return res.status(400).json({ message: 'Use a valid calendar date for the budget month.' });
+    }
+    const month = monthInput?.success ? monthStart(dateValue(monthInput.data)) : monthStart(today);
+    return res.json(await prisma.budget.findMany({
+      where: { userId: uid(req), periodMonth: month }, include: { category: true, member: true },
+      orderBy: [{ memberId: 'asc' }, { categoryId: 'asc' }],
+    }));
+  } catch (error) { return next(error); }
+});
+router.post('/budgets', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = budgetSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid month and budget limit.' });
+    const input = parsed.data, userId = uid(req), month = monthStart(dateValue(input.periodMonth));
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    const existing = await prisma.budget.findFirst({ where: { userId, periodMonth: month, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null } });
+    if (existing) return res.json(await prisma.budget.update({ where: { id: existing.id }, data: { limitAmount: input.limitAmount }, include: { category: true, member: true } }));
+    try {
+      return res.status(201).json(await prisma.budget.create({ data: { userId, periodMonth: month, limitAmount: input.limitAmount, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null }, include: { category: true, member: true } }));
+    } catch (error) {
+      // A concurrent request may create the same nullable scope after the lookup above.
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+        const concurrent = await prisma.budget.findFirst({ where: { userId, periodMonth: month, memberId: input.memberId ?? null, categoryId: input.categoryId ?? null } });
+        if (concurrent) return res.json(await prisma.budget.update({ where: { id: concurrent.id }, data: { limitAmount: input.limitAmount }, include: { category: true, member: true } }));
+      }
+      throw error;
+    }
+  } catch (error) { return next(error); }
+});
+router.patch('/budgets/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = budgetSchema.partial().safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid budget update.' });
+    const input = parsed.data, userId = uid(req);
+    if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
+    const budgetId = String(req.params.id);
+    const existing = await prisma.budget.findFirst({ where: { id: budgetId, userId } });
+    if (!existing) return res.status(404).json({ message: 'Budget not found.' });
+    const periodMonth = input.periodMonth ? monthStart(dateValue(input.periodMonth)) : existing.periodMonth;
+    const memberId = input.memberId !== undefined ? input.memberId : existing.memberId;
+    const categoryId = input.categoryId !== undefined ? input.categoryId : existing.categoryId;
+    const conflicting = await prisma.budget.findFirst({
+      where: { id: { not: budgetId }, userId, periodMonth, memberId, categoryId },
+      select: { id: true },
+    });
+    if (conflicting) return res.status(409).json({ message: 'A budget already exists for this month and scope. Update that budget instead.' });
+    const data: Record<string, unknown> = { ...input, periodMonth, memberId, categoryId };
+    try {
+      await prisma.budget.update({ where: { id: budgetId }, data: data as never });
+    } catch (error) {
+      // Another request may claim the same month/member/category scope after the preflight lookup.
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+        return res.status(409).json({ message: 'A budget already exists for this month and scope. Update that budget instead.' });
+      }
+      throw error;
+    }
+    return res.json(await prisma.budget.findFirst({ where: { id: budgetId, userId }, include: { category: true, member: true } }));
+  } catch (error) { return next(error); }
+});
+router.delete('/budgets/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.budget.deleteMany({ where: { id: String(req.params.id), userId: uid(req) } });
+    if (!result.count) return res.status(404).json({ message: 'Budget not found.' });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+
+const goalSchema = z.object({
+  title: z.string().trim().min(1).max(120), targetAmount: money,
+  currentAmount: z.number().finite().min(0).max(1_000_000_000).optional(),
+  targetDate: dateSchema.nullable().optional(), status: z.enum(['ACTIVE', 'COMPLETED', 'ARCHIVED']).optional(),
+});
+router.get('/savings-goals', async (req: AuthedRequest, res, next) => {
+  try { return res.json(await prisma.savingsGoal.findMany({ where: { userId: uid(req) }, orderBy: [{ status: 'asc' }, { createdAt: 'desc' }] })); }
+  catch (error) { return next(error); }
+});
+router.post('/savings-goals', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = goalSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a goal title and target amount.' });
+    const input = parsed.data;
+    return res.status(201).json(await prisma.savingsGoal.create({
+      data: { ...input, userId: uid(req), targetDate: input.targetDate ? dateValue(input.targetDate) : null },
+    }));
+  } catch (error) { return next(error); }
+});
+router.patch('/savings-goals/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = goalSchema.partial().safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid goal update.' });
+    const input = parsed.data, data: Record<string, unknown> = { ...input };
+    if (input.targetDate !== undefined) data.targetDate = input.targetDate ? dateValue(input.targetDate) : null;
+    const result = await prisma.savingsGoal.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: data as never });
+    if (!result.count) return res.status(404).json({ message: 'Savings goal not found.' });
+    return res.json(await prisma.savingsGoal.findFirst({ where: { id: String(req.params.id), userId: uid(req) } }));
+  } catch (error) { return next(error); }
+});
+router.delete('/savings-goals/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.savingsGoal.deleteMany({ where: { id: String(req.params.id), userId: uid(req) } });
+    if (!result.count) return res.status(404).json({ message: 'Savings goal not found.' });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+
+router.get('/analytics', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req), now = await userToday(uid(req));
+    const from = dateQuery(req.query.from, monthStart(now));
+    const to = dateQuery(req.query.to, monthEnd(now));
+    if (!isSafeQueryRange(from, to)) return res.status(400).json({ message: 'Choose an analytics date range no longer than two years.' });
+    const memberId = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberId && memberId !== 'shared' && !(await ownedMember(memberId, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
+    const memberWhere = memberId === 'shared' ? { memberId: null } : memberId ? { memberId } : {};
+    const analyticsSettings = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+    const analyticsTimeZone = analyticsSettings?.timezone ?? 'Europe/Moscow';
+    const receivedRange = await userDateTimeRange(userId, from, to);
+    const [expenses, incomes, obligations] = await Promise.all([
+      prisma.ledgerExpense.findMany({ where: { userId, ...memberWhere, date: { gte: from, lte: to } }, include: { category: true, member: true } }),
+      prisma.incomeEntry.findMany({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedRange.from, lt: receivedRange.toExclusive } }, include: { member: true } }),
+      prisma.obligationOccurrence.findMany({ where: { userId, ...(memberId ? { obligation: { is: { memberId: memberId === 'shared' ? null : memberId } } } : {}), dueDate: { gte: from, lte: to }, status: { not: 'SKIPPED' } }, include: { obligation: true } }),
+    ]);
+    const categoryTotals = new Map<string, { id: string; slug: string; name: string; amount: number }>();
+    const memberTotals = new Map<string, { id: string | null; name: string; income: number; expenses: number }>();
+    const monthTotals = new Map<string, { income: number; expenses: number }>();
+    for (const item of expenses) {
+      const categoryId = item.category?.id ?? 'uncategorized';
+      const slug = item.category?.slug ?? 'uncategorized';
+      const category = categoryTotals.get(categoryId) ?? { id: categoryId, slug, name: item.category?.name ?? 'Uncategorized', amount: 0 };
+      category.amount += Number(item.amount);
+      categoryTotals.set(categoryId, category);
+      const id = item.memberId ?? null, key = id ?? '__shared__', name = item.member?.name ?? 'Shared';
+      const totals = memberTotals.get(key) ?? { id, name, income: 0, expenses: 0 };
+      totals.expenses += Number(item.amount); memberTotals.set(key, totals);
+      const month = dateString(item.date).slice(0, 7), monthTotal = monthTotals.get(month) ?? { income: 0, expenses: 0 };
+      monthTotal.expenses += Number(item.amount); monthTotals.set(month, monthTotal);
+    }
+    for (const item of incomes) {
+      const amount = Number(item.actualAmount ?? 0), id = item.memberId ?? null, key = id ?? '__shared__', name = item.member?.name ?? 'Shared';
+      const totals = memberTotals.get(key) ?? { id, name, income: 0, expenses: 0 };
+      totals.income += amount; memberTotals.set(key, totals);
+      const month = dateStringInTimezone(item.receivedAt ?? item.plannedDate, analyticsTimeZone).slice(0, 7), monthTotal = monthTotals.get(month) ?? { income: 0, expenses: 0 };
+      monthTotal.income += amount; monthTotals.set(month, monthTotal);
+    }
+    return res.json({
+      totals: { income: incomes.reduce((sum, item) => sum + Number(item.actualAmount ?? 0), 0), expenses: expenses.reduce((sum, item) => sum + Number(item.amount), 0), obligations: obligations.reduce((sum, item) => sum + Number(item.status === 'PAID' ? (item.actualAmount ?? item.plannedAmount) : item.plannedAmount), 0) },
+      categories: [...categoryTotals.values()].sort((a, b) => b.amount - a.amount),
+      members: [...memberTotals.values()].map(totals => ({ ...totals, net: totals.income - totals.expenses })).sort((a, b) => a.name.localeCompare(b.name)),
+      months: [...monthTotals].sort((a, b) => a[0].localeCompare(b[0])).map(([month, totals]) => ({ month, ...totals, net: totals.income - totals.expenses })),
+    });
+  } catch (error) { return next(error); }
+});
+
+router.get('/dashboard', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req), now = await userToday(uid(req));
+    const memberFilter = typeof req.query.memberId === 'string' ? req.query.memberId : '';
+    if (memberFilter && memberFilter !== 'shared' && !(await ownedMember(memberFilter, userId))) return res.status(400).json({ message: 'Selected household member was not found.' });
+    const memberWhere = memberFilter === 'shared' ? { memberId: null } : memberFilter ? { memberId: memberFilter } : {};
+    const obligationMemberWhere = memberFilter ? { obligation: { is: { memberId: memberFilter === 'shared' ? null : memberFilter } } } : {};
+    const obligationPaymentMemberWhere = memberFilter ? {
+      occurrence: { is: { obligation: { is: { memberId: memberFilter === 'shared' ? null : memberFilter } } } },
+    } : {};
+    const from = dateQuery(req.query.from, monthStart(now));
+    const to = dateQuery(req.query.to, monthEnd(now));
+    const requestedHorizon = dateQuery(req.query.horizon, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)));
+    // A historical report period must not move the live forecast horizon backwards in time.
+    const horizon = requestedHorizon < now ? now : requestedHorizon;
+    if (!isSafeQueryRange(from, to) || !isSafeForecastHorizon(now, horizon)) {
+      return res.status(400).json({ message: 'Choose a reporting range and forecast horizon no longer than two years.' });
+    }
+    const openingSettings = await prisma.user.findUnique({ where: { id: userId }, select: { openingBalance: true, openingBalanceDate: true } });
+    const openingDate = openingSettings?.openingBalanceDate ?? new Date(0);
+    const receivedPeriodRange = await userDateTimeRange(userId, from, to);
+    const openingIncomeRange = await userDateTimeRange(userId, openingDate, now);
+    const [sources, obligations] = await Promise.all([
+      prisma.incomeSource.findMany({ where: { userId, isActive: true, ...memberWhere } }),
+      prisma.obligation.findMany({ where: { userId, isActive: true, ...(memberFilter ? { memberId: memberFilter === 'shared' ? null : memberFilter } : {}) } }),
+    ]);
+    // Forecast schedules must be generated from today, even when the selected report month is in the future.
+    // Keep the earlier report start as well so historical period reporting can still find its occurrences.
+    const generationFrom = from < now ? from : now;
+    for (const source of sources) await createIncomeOccurrences(source, generationFrom, horizon);
+    for (const obligation of obligations) await createObligationOccurrences(obligation, generationFrom, horizon, now);
+    const today = now;
+    await prisma.obligationOccurrence.updateMany({ where: { userId, status: 'UPCOMING', dueDate: { lt: today } }, data: { status: 'OVERDUE' } });
+    const inclusiveTo = new Date(to.getTime() + 86400000 - 1);
+    // Actual cash is always measured as of now, independently of the selected reporting period.
+    // Date-only ledger entries use the user's current calendar day; receivedAt is a timestamp.
+    const balanceDateCutoff = new Date(now.getTime() + 86400000 - 1);
+    const balanceTimestampCutoff = new Date();
+    const [receivedAll, receivedPeriod, plannedHorizon, plannedPeriod, allExpenses, periodExpenses, paidObligationsPeriod, forecastObligations, adjustments, monthOccurrences] = await Promise.all([
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: openingIncomeRange.from, lte: balanceTimestampCutoff } }, _sum: { actualAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'RECEIVED', receivedAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } }, _sum: { actualAmount: true } }),
+      // The forecast starts at today, not at the selected reporting period's first day.
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: today, lte: horizon } }, _sum: { plannedAmount: true } }),
+      prisma.incomeEntry.aggregate({ where: { userId, ...memberWhere, status: 'PLANNED', plannedDate: { gte: from, lte: to } }, _sum: { plannedAmount: true } }),
+      prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
+      prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
+      // Sum each payment by its actual payment date, including partial payments.
+      prisma.obligationPayment.aggregate({
+        where: { userId, ...obligationPaymentMemberWhere, paidAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } },
+        _sum: { amount: true },
+      }),
+      prisma.obligationOccurrence.findMany({
+        where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, dueDate: { lte: horizon } },
+        select: { plannedAmount: true, actualAmount: true, status: true },
+      }),
+      prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
+      prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, actualAmount: true, status: true } }),
+    ]);
+    const actualIncome = Number(receivedAll._sum.actualAmount ?? 0);
+    const actualExpenseTotal = Number(allExpenses._sum.amount ?? 0);
+    const householdOpeningBalance = memberFilter ? 0 : Number(openingSettings?.openingBalance ?? 0);
+    const actualBalance = householdOpeningBalance + Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenseTotal;
+    const plannedIncome = Number(plannedHorizon._sum.plannedAmount ?? 0);
+    const unpaidObligations = forecastObligations.reduce((sum, item) => {
+      const paid = item.status === 'PARTIAL' ? Number(item.actualAmount ?? 0) : 0;
+      return sum + Math.max(0, Number(item.plannedAmount) - paid);
+    }, 0);
+    const { due: dueTotal, paid: paidMonth, unpaid: unpaidMonth } = calculateObligationPeriodTotals(monthOccurrences);
+    const receivedThisMonth = Number(receivedPeriod._sum.actualAmount ?? 0);
+    const plannedThisMonth = Number(plannedPeriod._sum.plannedAmount ?? 0);
+    const nextPayments = await prisma.obligationOccurrence.findMany({
+      where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, dueDate: { gte: from, lte: horizon } },
+      include: { obligation: true }, orderBy: { dueDate: 'asc' }, take: 10,
+    });
+    return res.json({
+      period: { from: dateString(from), to: dateString(to), horizon: dateString(horizon) },
+      actual: { income: receivedThisMonth, expenses: Number(periodExpenses._sum.amount ?? 0), balance: actualBalance },
+      forecast: { plannedIncome, unpaidObligations, balance: actualBalance + plannedIncome - unpaidObligations },
+      obligations: {
+        due: dueTotal, paid: paidMonth, paidInPeriod: Number(paidObligationsPeriod._sum.amount ?? 0), unpaid: unpaidMonth,
+        coverage: { receivedIncome: receivedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth), surplus: Math.max(0, receivedThisMonth - dueTotal) },
+        plannedCoverage: { income: receivedThisMonth + plannedThisMonth, shortfall: Math.max(0, dueTotal - receivedThisMonth - plannedThisMonth) },
+      },
+      nextPayments,
+    });
+  } catch (error) { return next(error); }
+});
+
+export default router;

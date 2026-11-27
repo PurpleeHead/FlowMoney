@@ -1,0 +1,1222 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { api, getFinanceSpace, getToken, setFinanceSpace, setToken, type FinanceSpace } from './lib/api';
+import { getHouseholdInviteToken } from './lib/householdInvites';
+import { householdErrorMessage } from './lib/householdErrors';
+import { calculateMonthlyCashflow } from './lib/monthlyCashflow';
+import ReceiptScanner from './components/ReceiptScanner';
+import './personalFinance.css';
+
+type Lang = 'ru' | 'en';
+type User = { id: string; email: string; displayName?: string; telegramLinked?: boolean };
+type Member = { id: string; name: string; color?: string | null; isArchived: boolean };
+type Category = { id: string; name: string; slug: string; userId: string | null; isArchived: boolean };
+type IncomeSource = { id: string; title: string; amount: number | string; createdAt?: string; recurrence: string; recurrenceConfig: { day?: number; month?: number; weekdays?: number[]; intervalWeeks?: number; firstDay?: number; secondDay?: number }; startDate: string; endDate?: string | null; memberId?: string | null; isActive: boolean };
+type IncomeEntry = { id: string; sourceId?: string | null; createdAt?: string; plannedDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; memberId?: string | null; member?: Member | null; source?: IncomeSource | null };
+type ObligationRecord = { id: string; title: string; category: string; amount: number | string; memberId?: string | null; member?: Member | null; debtId?: string | null; debt?: DebtRecord | null; recurrence: string; recurrenceConfig: { day?: number; month?: number; weekdays?: number[]; intervalWeeks?: number; firstDay?: number; secondDay?: number }; startDate: string; endDate?: string | null; isActive: boolean };
+type ObligationOccurrence = { id: string; dueDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; payments?: Array<{ id: string; amount: number | string; paidAt: string }>; obligation: ObligationRecord };
+type DebtRecord = { id: string; title: string; category: string; originalAmount: number | string; remainingAmount: number | string; memberId?: string | null; member?: Member | null; isActive: boolean; transactions: Array<{ id: string; type: string; amount: number | string; balanceChange: number | string; date: string; reason?: string | null }> };
+type Expense = { id: string; title: string; amount: number | string; date: string; memberId?: string | null; category?: Category | null; member?: Member | null; obligationOccurrence?: { id: string } | null; debtTransaction?: { id: string } | null; note?: string | null };
+type Analytics = { totals: { income: number; expenses: number; obligations: number }; categories: Array<{ id: string; name: string; slug: string; amount: number }>; members: Array<{ id: string | null; name: string; income: number; expenses: number; net: number }>; months: Array<{ month: string; income: number; expenses: number; net: number }> };
+type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | string; member?: Member | null; category?: Category | null; memberId?: string | null; categoryId?: string | null };
+type SavingsGoal = { id: string; title: string; targetAmount: number | string; currentAmount: number | string; targetDate?: string | null; status: string };
+type PendingHouseholdInvite = { alreadyAccepted: boolean; householdName: string; memberName: string; ownerName: string; expiresAt?: string };
+type HouseholdInviteRecord = { id: string; expiresAt: string; acceptedAt: string | null; revokedAt: string | null; member: { id: string; name: string } };
+type FinanceSpaceOption = { id: string; name: string; type: FinanceSpace; role: 'OWNER' | 'MEMBER' };
+type HouseholdInfo = {
+  id: string; name: string; ownerUserId: string; role: 'OWNER' | 'MEMBER';
+  currentUser: { id: string; memberId: string | null };
+  members: Array<{ userId: string; role: string; joinedAt: string; member: { id: string; name: string; color?: string | null } | null; identity: { telegramUsername: string | null; telegramFirstName: string | null } }>;
+};
+type Dashboard = {
+  actual: { income: number; expenses: number; balance: number };
+  forecast: { plannedIncome: number; unpaidObligations: number; balance: number };
+  obligations: { due: number; paid: number; paidInPeriod: number; unpaid: number; coverage: { receivedIncome: number; shortfall: number; surplus: number }; plannedCoverage: { income: number; shortfall: number } };
+  nextPayments: ObligationOccurrence[];
+};
+type Tab = 'overview' | 'income' | 'expenses' | 'obligations' | 'calendar' | 'analytics' | 'budgets' | 'family' | 'settings';
+type ActionDialog = {
+  kind: 'confirm' | 'prompt';
+  title: string;
+  message: string;
+  initialValue?: string;
+  inputType?: 'text' | 'number';
+  destructive?: boolean;
+  submitLabel?: string;
+};
+
+const PF = '/personal-finance';
+
+function clearWebInvitationHash() {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  if (!params.has('invite')) return;
+  window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}`);
+}
+const translations: Record<string, { ru: string; en: string }> = {
+  overview: { ru: 'Обзор', en: 'Overview' }, income: { ru: 'Доходы', en: 'Income' }, expenses: { ru: 'Расходы', en: 'Expenses' }, obligations: { ru: 'Обязательства', en: 'Obligations' }, calendar: { ru: 'Календарь', en: 'Calendar' }, analytics: { ru: 'Аналитика', en: 'Analytics' }, budgets: { ru: 'Бюджеты и цели', en: 'Budgets & goals' }, family: { ru: 'Семья', en: 'Family' }, settings: { ru: 'Настройки', en: 'Settings' },
+  actualBalance: { ru: 'Фактический остаток', en: 'Actual balance' }, forecastBalance: { ru: 'Прогнозный остаток', en: 'Forecast balance' }, received: { ru: 'Получено за месяц', en: 'Received this month' }, spent: { ru: 'Потрачено за месяц', en: 'Spent this month' },
+  planned: { ru: 'Запланировано', en: 'Planned' }, add: { ru: 'Добавить', en: 'Add' }, date: { ru: 'Дата', en: 'Date' }, amount: { ru: 'Сумма, ₽', en: 'Amount, RUB' }, title: { ru: 'Название', en: 'Title' }, member: { ru: 'Кому', en: 'Member' }, shared: { ru: 'Общее', en: 'Shared' }, category: { ru: 'Категория', en: 'Category' }, note: { ru: 'Комментарий', en: 'Note' }, save: { ru: 'Сохранить', en: 'Save' }, cancel: { ru: 'Отмена', en: 'Cancel' }, loading: { ru: 'Загружаем ваши финансы…', en: 'Loading your finances…' }, logout: { ru: 'Выйти', en: 'Sign out' }, signIn: { ru: 'Войти', en: 'Sign in' }, signUp: { ru: 'Создать аккаунт', en: 'Create account' }, email: { ru: 'Электронная почта', en: 'Email' }, password: { ru: 'Пароль (не менее 8 символов)', en: 'Password (at least 8 characters)' },
+  daily: { ru: 'Каждый день', en: 'Daily' }, weekly: { ru: 'Еженедельно', en: 'Weekly' }, twice: { ru: 'Два раза в месяц', en: 'Twice monthly' }, monthly: { ru: 'Ежемесячно', en: 'Monthly' }, yearly: { ru: 'Ежегодно', en: 'Yearly' }, once: { ru: 'Разово', en: 'One-time' }, frequency: { ru: 'Периодичность', en: 'Frequency' }, startDate: { ru: 'Начало', en: 'Start date' }, endDate: { ru: 'Окончание (необязательно)', en: 'End date (optional)' }, firstDay: { ru: 'Первое число', en: 'First day' }, secondDay: { ru: 'Второе число', en: 'Second day' }, day: { ru: 'Число месяца', en: 'Day of month' }, receivedAction: { ru: 'Отметить полученным', en: 'Mark received' }, paidAction: { ru: 'Оплатить', en: 'Mark paid' }, due: { ru: 'К оплате в этом месяце', en: 'Due this month' }, paid: { ru: 'Оплачено', en: 'Paid' }, unpaid: { ru: 'Не оплачено', en: 'Unpaid' }, shortfall: { ru: 'Не хватает', en: 'Shortfall' }, surplus: { ru: 'Остаток после обязательств', en: 'Surplus after obligations' }, upcoming: { ru: 'Ближайшие платежи', en: 'Upcoming payments' }, opening: { ru: 'Начальный остаток / корректировка', en: 'Opening balance / adjustment' }, openingHelp: { ru: 'Укажите сумму со знаком: положительную, если добавляете деньги, отрицательную — если уменьшаете остаток. Начальный остаток учитывается один раз.', en: 'Enter a signed amount: positive adds money, negative reduces it. The opening balance is recorded once as an adjustment.' }, reason: { ru: 'Причина корректировки', en: 'Adjustment reason' }, newMember: { ru: 'Имя участника семьи', en: 'Family member name' }, addMember: { ru: 'Добавить участника', en: 'Add member' }, addCategory: { ru: 'Новая категория', en: 'New category' }, noData: { ru: 'Пока нет записей', en: 'Nothing here yet' },
+   emptyUpcoming: { ru: 'На выбранный месяц пока нет предстоящих платежей.', en: 'There are no upcoming payments for this month yet.' },
+   emptyIncome: { ru: 'Поступлений пока нет. Добавьте источник дохода слева, чтобы начать планирование.', en: 'No income entries yet. Add an income source to start planning.' },
+   emptyExpenses: { ru: 'Расходы за выбранный период не найдены. Попробуйте изменить фильтры или добавьте первый расход.', en: 'No expenses match this period. Adjust the filters or add your first expense.' },
+   emptyObligations: { ru: 'Платежей пока нет. Создайте обязательство слева, чтобы отслеживать сроки и оплату.', en: 'No payment commitments yet. Create one on the left to track due dates and payments.' },
+   emptyCalendar: { ru: 'В этом месяце пока нет запланированных поступлений и платежей.', en: 'No planned income or payments are scheduled for this month yet.' },
+   emptyAnalytics: { ru: 'Недостаточно операций за выбранный период. Добавьте доходы и расходы, чтобы увидеть аналитику.', en: 'There is not enough activity for this period. Add income and expenses to see your analytics.' },
+   emptyBudgets: { ru: 'Бюджетов пока нет. Создайте лимит выше, чтобы контролировать расходы.', en: 'No budgets yet. Create a spending limit above to track expenses.' },
+   emptyGoals: { ru: 'Целей накопления пока нет. Добавьте цель выше и следите за прогрессом.', en: 'No savings goals yet. Add one above and track your progress.' }, forecastInfo: { ru: 'Прогноз учитывает запланированные поступления и неоплаченные обязательства. Не полученные деньги не входят в фактический остаток.', en: 'Forecast includes planned income and unpaid obligations. Unreceived money is excluded from actual balance.' }, coverageInfo: { ru: 'Сравнение полученных доходов с суммой обязательств за выбранный месяц.', en: 'Received income compared with obligations due this month.' }, overdue: { ru: 'Просрочено', en: 'Overdue' }, plannedStatus: { ru: 'Ожидается', en: 'Planned' }, actualStatus: { ru: 'Получено', en: 'Received' }, paidStatus: { ru: 'Оплачено', en: 'Paid' }, addExpense: { ru: 'Новый расход', en: 'New expense' }, addIncome: { ru: 'Новый источник дохода', en: 'New income source' }, addObligation: { ru: 'Новое обязательство', en: 'New obligation' }, signInTitle: { ru: 'Ваш семейный бюджет', en: 'Your family budget' }, signInText: { ru: 'Доходы, расходы и обязательные платежи — в одном месте.', en: 'Income, expenses and recurring commitments in one place.' }, emptyTitle: { ru: 'Пока нет данных', en: 'No data yet' }, refresh: { ru: 'Обновить', en: 'Refresh' }
+};
+function tr(lang: Lang, key: string) { return translations[key]?.[lang] ?? key; }
+function todayInTimezone(timeZone = 'Europe/Moscow') {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+const moscowToday = () => todayInTimezone();
+function monthBounds(timeZone = 'Europe/Moscow', selectedMonth = todayInTimezone(timeZone).slice(0, 7)) {
+  const [year, month] = selectedMonth.split('-').map(Number);
+  const from = `${year}-${String(month).padStart(2, '0')}-01`;
+  const last = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+  const horizon = new Date(Date.UTC(year, month + 3, 0)).toISOString().slice(0, 10);
+  const analyticsFrom = new Date(Date.UTC(year, month - 6, 1)).toISOString().slice(0, 10);
+  return { from, to: last, horizon, analyticsFrom };
+}
+function rub(value: number | string | null | undefined) {
+  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 }).format(Number(value ?? 0));
+}
+function categoryLabel(slug: string, name: string, lang: Lang) {
+  if (lang === 'en') return name;
+  const labels: Record<string, string> = {
+    groceries: 'Продукты', 'cafes-restaurants': 'Кафе и рестораны', coffee: 'Кофе',
+    'transport-taxi': 'Транспорт и такси', fuel: 'Топливо', 'car-repair': 'Ремонт авто',
+    'car-maintenance': 'ТО и обслуживание', 'housing-home': 'Дом и жильё', health: 'Здоровье',
+    entertainment: 'Развлечения', shopping: 'Покупки', subscriptions: 'Подписки',
+    education: 'Образование', travel: 'Путешествия', other: 'Другое', uncategorized: 'Без категории',
+  };
+  return labels[slug] ?? name;
+}
+function categoryName(category: Category, lang: Lang) {
+  return categoryLabel(category.slug, category.name, lang);
+}
+
+function dateLabel(value: string, lang: Lang) {
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  return new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+export default function PersonalFinanceApp() {
+  const [actionDialog, setActionDialog] = useState<ActionDialog | null>(null);
+  const [actionDialogValue, setActionDialogValue] = useState('');
+  const actionDialogResolver = useRef<((value: boolean | string | null) => void) | null>(null);
+  const actionDialogRef = useRef<HTMLElement | null>(null);
+
+  const finishActionDialog = useCallback((value: boolean | string | null) => {
+    const resolve = actionDialogResolver.current;
+    actionDialogResolver.current = null;
+    setActionDialog(null);
+    resolve?.(value);
+  }, []);
+
+  useEffect(() => {
+    if (!actionDialog) return;
+    const dialog = actionDialogRef.current;
+    if (!dialog) return;
+
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+    const getFocusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
+      .filter(element => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true');
+    const initialFocus = actionDialog.kind === 'prompt'
+      ? dialog.querySelector<HTMLInputElement>('input:not([disabled])')
+      : dialog.querySelector<HTMLButtonElement>('button[type="button"]:not([disabled])');
+    (initialFocus ?? getFocusable()[0] ?? dialog).focus();
+
+    const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        finishActionDialog(actionDialog.kind === 'confirm' ? false : null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = getFocusable();
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleDialogKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleDialogKeyDown);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [actionDialog, finishActionDialog]);
+
+  function confirmAction(message: string, title = (lang === 'ru' ? 'Подтвердите действие' : 'Confirm action')): Promise<boolean> {
+    return new Promise(resolve => {
+      setActionDialogValue('');
+      actionDialogResolver.current = value => resolve(value === true);
+      setActionDialog({ kind: 'confirm', title, message, destructive: true });
+    });
+  }
+
+  function promptAction(
+    message: string,
+    initialValue = '',
+    title = (lang === 'ru' ? 'Введите значение' : 'Enter a value'),
+    inputType: 'text' | 'number' = 'text',
+    submitLabel = (lang === 'ru' ? 'Сохранить' : 'Save')
+  ): Promise<string | null> {
+    return new Promise(resolve => {
+      setActionDialogValue(initialValue);
+      actionDialogResolver.current = value => resolve(typeof value === 'string' ? value : null);
+      setActionDialog({ kind: 'prompt', title, message, inputType, submitLabel });
+    });
+  }
+
+  const [lang, setLang] = useState<Lang>('ru');
+  const [timezone, setTimezone] = useState('Europe/Moscow');
+  const [telegramRemindersEnabled, setTelegramRemindersEnabled] = useState(false);
+  const [telegramReminderTime, setTelegramReminderTime] = useState('09:00');
+  const [openingBalance, setOpeningBalance] = useState('0');
+  const [openingBalanceDate, setOpeningBalanceDate] = useState(moscowToday());
+  const [openingBalanceConfigured, setOpeningBalanceConfigured] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(moscowToday().slice(0, 7));
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(moscowToday());
+  const [user, setUser] = useState<User | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [passwordResetToken, setPasswordResetToken] = useState(() => new URLSearchParams(window.location.search).get('token') ?? '');
+  const [passwordResetMode, setPasswordResetMode] = useState<'none' | 'request'>('none');
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
+  const [tab, setTab] = useState<Tab>('overview');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [budgets, setBudgets] = useState<BudgetRecord[]>([]);
+  const [goals, setGoals] = useState<SavingsGoal[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [household, setHousehold] = useState<HouseholdInfo | null>(null);
+  const [financeSpace, setFinanceSpaceState] = useState<FinanceSpace>(() => getFinanceSpace());
+  const [availableSpaces, setAvailableSpaces] = useState<FinanceSpaceOption[]>([]);
+  const [pendingInvite, setPendingInvite] = useState<PendingHouseholdInvite | null>(null);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [inviteMemberId, setInviteMemberId] = useState('');
+  const [ownerProfileId, setOwnerProfileId] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
+  const [invitations, setInvitations] = useState<HouseholdInviteRecord[]>([]);
+  const [filterMember, setFilterMember] = useState('all');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [showSkippedIncome, setShowSkippedIncome] = useState(false);
+  const [showSkippedObligations, setShowSkippedObligations] = useState(false);
+  const [expensePeriod, setExpensePeriod] = useState<'month' | 'all' | 'custom'>('month');
+  const [expenseFrom, setExpenseFrom] = useState(moscowToday().slice(0, 7) + '-01');
+  const [expenseTo, setExpenseTo] = useState(moscowToday());
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
+  const [obligationRecords, setObligationRecords] = useState<ObligationRecord[]>([]);
+  const [obligationOccurrences, setObligationOccurrences] = useState<ObligationOccurrence[]>([]);
+  const [debts, setDebts] = useState<DebtRecord[]>([]);
+  const [debtTitle, setDebtTitle] = useState('');
+  const [debtCategory, setDebtCategory] = useState('Кредитная карта');
+  const [debtInitialAmount, setDebtInitialAmount] = useState('');
+  const [debtMember, setDebtMember] = useState('');
+  const [archivedIncomeSources, setArchivedIncomeSources] = useState<IncomeSource[]>([]);
+  const [archivedObligations, setArchivedObligations] = useState<ObligationRecord[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [calendarExpenses, setCalendarExpenses] = useState<Expense[]>([]);
+  const [hasMoreExpenses, setHasMoreExpenses] = useState(false);
+  const [adjustments, setAdjustments] = useState<Array<{ id: string; amount: number | string; date: string; reason: string }>>([]);
+
+  const [incomeTitle, setIncomeTitle] = useState('');
+  const [incomeAmount, setIncomeAmount] = useState('');
+  const [incomeRecurrence, setIncomeRecurrence] = useState('MONTHLY');
+  const [incomeStart, setIncomeStart] = useState(moscowToday());
+  const [incomeEnd, setIncomeEnd] = useState('');
+  const [incomeDay1, setIncomeDay1] = useState(String(Number(moscowToday().slice(-2))));
+  const [incomeDay2, setIncomeDay2] = useState('15');
+  const [incomeMonth, setIncomeMonth] = useState(String(Number(moscowToday().slice(5, 7))));
+  const [incomeWeekday, setIncomeWeekday] = useState('1');
+  const [incomeIntervalWeeks, setIncomeIntervalWeeks] = useState('1');
+  const [incomeMember, setIncomeMember] = useState('');
+  const [editingIncomeSourceId, setEditingIncomeSourceId] = useState<string | null>(null);
+  const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
+  const [incomeEditDate, setIncomeEditDate] = useState(moscowToday());
+  const [incomeEditAmount, setIncomeEditAmount] = useState('');
+  const [expenseTitle, setExpenseTitle] = useState('');
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDate, setExpenseDate] = useState(moscowToday());
+  const [expenseCategory, setExpenseCategory] = useState('');
+  const [expenseMember, setExpenseMember] = useState('');
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [obligationTitle, setObligationTitle] = useState('');
+  const [obligationCategory, setObligationCategory] = useState('Кредит');
+  const [obligationAmount, setObligationAmount] = useState('');
+  const [obligationRecurrence, setObligationRecurrence] = useState('MONTHLY');
+  const [obligationDate, setObligationDate] = useState(moscowToday());
+  const [obligationEnd, setObligationEnd] = useState('');
+  const [obligationDay, setObligationDay] = useState('13');
+  const [obligationDay2, setObligationDay2] = useState('15');
+  const [obligationMonth, setObligationMonth] = useState(String(Number(moscowToday().slice(5, 7))));
+  const [obligationWeekday, setObligationWeekday] = useState('1');
+  const [obligationIntervalWeeks, setObligationIntervalWeeks] = useState('1');
+  const [obligationMember, setObligationMember] = useState('');
+  const [obligationDebtId, setObligationDebtId] = useState('');
+  const [editingObligationId, setEditingObligationId] = useState<string | null>(null);
+  const [openingAmount, setOpeningAmount] = useState('');
+  const [openingReason, setOpeningReason] = useState('Начальный остаток');
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [budgetLimit, setBudgetLimit] = useState('');
+  const [budgetCategory, setBudgetCategory] = useState('');
+  const [budgetMember, setBudgetMember] = useState('');
+  const [goalTitle, setGoalTitle] = useState('');
+  const [goalTarget, setGoalTarget] = useState('');
+  const [goalCurrent, setGoalCurrent] = useState('0');
+  const [goalDate, setGoalDate] = useState('');
+
+  const ranges = useMemo(() => monthBounds(timezone, selectedMonth), [timezone, selectedMonth]);
+
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp) return;
+    webApp.ready();
+    webApp.expand();
+    webApp.setHeaderColor?.('#F4F5F4');
+    webApp.setBackgroundColor?.('#F4F5F4');
+  }, []);
+  const refresh = useCallback(async () => {
+    const calendarExpenseData = (async () => {
+      const all: Expense[] = [];
+      let skip = 0;
+      let hasMore = true;
+      while (hasMore) {
+        const page = await api<{ expenses: Expense[]; page: { hasMore: boolean } }>(`${PF}/expenses?from=${ranges.from}&to=${ranges.to}&take=250&skip=${skip}`);
+        all.push(...page.expenses);
+        hasMore = page.page.hasMore && page.expenses.length > 0;
+        skip += page.expenses.length;
+      }
+      return all;
+    })();
+    const [dash, income, expenseData, calendarExpenseRows, obligations, debtData, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData, spacesData] = await Promise.all([
+      api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
+      api<{ entries: IncomeEntry[]; sources: IncomeSource[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}&includeArchived=true`),
+      api<{ expenses: Expense[]; total: number; page: { take: number; skip: number; hasMore: boolean }; categories: Category[] }>(`${PF}/expenses?take=100&skip=0`),
+      calendarExpenseData,
+      api<{ occurrences: ObligationOccurrence[]; obligations: ObligationRecord[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}${showSkippedObligations ? '&includeSkipped=true' : ''}&includeArchived=true`),
+      api<DebtRecord[]>(`${PF}/debts`),
+      api<Member[]>(`${PF}/members`),
+      api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`),
+      api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
+      api<BudgetRecord[]>(`${PF}/budgets?month=${ranges.from}`),
+      api<SavingsGoal[]>(`${PF}/savings-goals`),
+      api<{ timezone: string; locale: Lang; openingBalance: number | string; openingBalanceDate: string; openingBalanceConfigured: boolean; telegramRemindersEnabled: boolean; telegramReminderTime: string }>(`${PF}/settings`),
+      api<HouseholdInfo>('/household'),
+      api<{ spaces: FinanceSpaceOption[] }>('/household/spaces'),
+    ]);
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setCalendarExpenses(calendarExpenseRows); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setDebts(debtData); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setAvailableSpaces(spacesData.spaces); setOwnerProfileId(householdData.currentUser.memberId ?? '');
+    const mappedProfile = householdData.currentUser.memberId;
+    if (mappedProfile) {
+      setIncomeMember(current => current || mappedProfile);
+      setExpenseMember(current => current || mappedProfile);
+      setObligationMember(current => current || mappedProfile);
+      setDebtMember(current => current || mappedProfile);
+      setBudgetMember(current => current || mappedProfile);
+    }
+    if (settingsData.timezone !== timezone) { const today = todayInTimezone(settingsData.timezone); setSelectedMonth(today.slice(0, 7)); setSelectedCalendarDate(today); }
+    setTimezone(settingsData.timezone); setLang(settingsData.locale); setOpeningBalance(String(settingsData.openingBalance)); setOpeningBalanceDate(settingsData.openingBalanceDate.slice(0, 10)); setOpeningBalanceConfigured(settingsData.openingBalanceConfigured); setTelegramRemindersEnabled(settingsData.telegramRemindersEnabled); setTelegramReminderTime(settingsData.telegramReminderTime);
+    if (!expenseData.categories.some(x => x.id === expenseCategory && !x.isArchived)) setExpenseCategory(expenseData.categories.find(x => !x.isArchived)?.id ?? '');
+  }, [ranges, expenseCategory, filterMember, showSkippedObligations, timezone]);
+
+  useEffect(() => {
+    if (tab !== 'family' || household?.role !== 'OWNER') { setInvitations([]); return; }
+    let cancelled = false;
+    api<HouseholdInviteRecord[]>('/household/invitations').then(items => {
+      if (!cancelled) setInvitations(items);
+    }).catch(e => {
+      if (!cancelled) setError(householdErrorMessage(e, lang, 'Could not load invitations.'));
+    });
+    return () => { cancelled = true; };
+  }, [tab, household?.id, household?.role, inviteLink]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const bootstrap = async () => {
+      if (passwordResetToken) {
+        // The token is already captured in React state; remove it from the address
+        // bar and browser history immediately so it is not retained in copied URLs.
+        const resetUrl = new URL(window.location.href);
+        if (resetUrl.searchParams.has('token')) {
+          resetUrl.searchParams.delete('token');
+          window.history.replaceState(window.history.state, '', resetUrl.pathname + resetUrl.search + resetUrl.hash);
+        }
+        setToken(null);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+      const initData = window.Telegram?.WebApp?.initData;
+      const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      const invitationToken = getHouseholdInviteToken(window.location.hash, startParam);
+      if (invitationToken) setInviteToken(invitationToken);
+      const loadStartInvitePreview = async () => {
+        if (!invitationToken) return false;
+        try {
+          const preview = await api<PendingHouseholdInvite>('/household/invitations/preview', { method: 'POST', body: JSON.stringify({ token: invitationToken }) });
+          if (preview.alreadyAccepted) {
+            setFinanceSpace('household');
+            setFinanceSpaceState('household');
+            clearWebInvitationHash();
+            setInviteToken(null);
+            setNotice(lang === 'ru' ? `Ты уже присоединился к семье «${preview.householdName}».` : `You already joined ${preview.householdName}.`);
+            return false;
+          }
+          setPendingInvite(preview);
+          return true;
+        } catch (e) {
+          setError(householdErrorMessage(e, lang, 'Invitation could not be loaded.'));
+          return false;
+        }
+      };
+      const existingToken = getToken();
+
+      if (existingToken) {
+        try {
+          const current = await api<User>('/auth/me');
+          if (cancelled) return;
+          setUser(current);
+          if (await loadStartInvitePreview()) { if (!cancelled) setLoading(false); return; }
+          await refresh();
+          if (!cancelled) setLoading(false);
+          return;
+        } catch {
+          // A seven-day nummioX session token may expire while Telegram initData is still valid.
+          // Clear the stale session and transparently issue a fresh one below.
+          setToken(null);
+        }
+      }
+
+      if (initData) {
+        try {
+          const result = await api<{ token: string; user: User }>('/auth/telegram', {
+            method: 'POST',
+            body: JSON.stringify({ initData }),
+          });
+          if (cancelled) return;
+          setToken(result.token);
+          setUser(result.user);
+          if (!(await loadStartInvitePreview())) await refresh();
+        } catch (e) {
+          if (!cancelled) setError(e instanceof Error ? e.message : 'Telegram sign-in failed.');
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+        return;
+      }
+
+      if (!cancelled) setLoading(false);
+    };
+    void bootstrap();
+    return () => { cancelled = true; };
+  }, [refresh, passwordResetToken]);
+
+  async function loadMoreExpenses() {
+    if (!hasMoreExpenses || busy) return;
+    setBusy(true); setError('');
+    try {
+      const page = await api<{ expenses: Expense[]; page: { hasMore: boolean } }>(`${PF}/expenses?take=100&skip=${expenses.length}`);
+      setExpenses(current => [...current, ...page.expenses]);
+      setHasMoreExpenses(page.page.hasMore);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+
+  async function saveOpeningBalance() { const amount = Number(openingBalance); if (!Number.isFinite(amount)) { setError(lang === 'ru' ? 'Введите корректную сумму начального остатка.' : 'Enter a valid opening balance.'); return; } setBusy(true); setError(''); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ openingBalance: amount, openingBalanceDate }) }); await refresh(); setNotice(lang === 'ru' ? 'Начальный остаток сохранён.' : 'Opening balance saved.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function changeLanguage(next: Lang) { setLang(next); if (user) { try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ locale: next }) }); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } } }
+  async function linkTelegramAccount() {
+    const initData = window.Telegram?.WebApp?.initData;
+    if (!initData) {
+      setNotice(lang === 'ru' ? 'Открой nummioX внутри Telegram и войди в этот аккаунт, чтобы подтвердить привязку.' : 'Open nummioX inside Telegram and sign in to this account to verify the link.');
+      return;
+    }
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await api<{ success: boolean; user: { displayName?: string } }>('/auth/telegram/link', {
+        method: 'POST', body: JSON.stringify({ initData }),
+      });
+      setUser(current => current ? { ...current, telegramLinked: true, displayName: result.user.displayName ?? current.displayName } : current);
+      setNotice(lang === 'ru' ? 'Telegram успешно привязан к текущему аккаунту. Теперь можно входить обоими способами.' : 'Telegram is now linked to this account. You can sign in either way.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not link Telegram.'); }
+    finally { setBusy(false); }
+  }
+  async function saveTelegramReminderSettings(enabled: boolean, time: string) {
+    if (enabled && !user?.telegramLinked) {
+      setError(lang === 'ru' ? 'Сначала привяжи Telegram в настройках.' : 'Link Telegram first in settings.');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      const result = await api<{ telegramRemindersEnabled: boolean; telegramReminderTime: string }>(`${PF}/settings`, {
+        method: 'PATCH', body: JSON.stringify({ telegramRemindersEnabled: enabled, telegramReminderTime: time }),
+      });
+      setTelegramRemindersEnabled(result.telegramRemindersEnabled);
+      setTelegramReminderTime(result.telegramReminderTime);
+      setNotice(lang === 'ru' ? 'Настройки напоминаний сохранены.' : 'Reminder settings saved.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save reminder settings.');
+    } finally { setBusy(false); }
+  }
+
+  async function changeTimezone(next: string) { setTimezone(next); const today = todayInTimezone(next); setSelectedMonth(today.slice(0,7)); setSelectedCalendarDate(today); setIncomeStart(today); setExpenseDate(today); setObligationDate(today); try { await api(`${PF}/settings`, { method: 'PATCH', body: JSON.stringify({ timezone: next }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } }
+  async function handlePasswordResetRequest(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await api<{ message: string }>('/auth/password-reset/request', { method: 'POST', body: JSON.stringify({ email }) });
+      setNotice(result.message);
+      setPasswordResetMode('none');
+    } catch (e) { setError(e instanceof Error ? e.message : (lang === 'ru' ? 'Не удалось отправить письмо.' : 'Could not send the email.')); }
+    finally { setBusy(false); }
+  }
+  async function handlePasswordResetConfirm(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    if (password !== passwordConfirmation) {
+      setError(lang === 'ru' ? 'Пароли не совпадают.' : 'Passwords do not match.');
+      setBusy(false);
+      return;
+    }
+    try {
+      const result = await api<{ message: string }>('/auth/password-reset/confirm', { method: 'POST', body: JSON.stringify({ token: passwordResetToken, password }) });
+      setNotice(result.message);
+      setPasswordResetToken('');
+      setPasswordResetMode('none');
+      setPassword('');
+      setPasswordConfirmation('');
+      window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
+      setAuthMode('login');
+    } catch (e) { setError(e instanceof Error ? e.message : (lang === 'ru' ? 'Ссылка недействительна или устарела.' : 'The link is invalid or expired.')); }
+    finally { setBusy(false); }
+  }
+
+  async function handleAuth(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      const result = await api<{ token: string; user: User }>(authMode === 'login' ? '/auth/login' : '/auth/register', { method: 'POST', body: JSON.stringify({ email, password, ...(authMode === 'login' ? { rememberMe } : {}) }) });
+      setToken(result.token);
+      setUser(result.user);
+      const invitationToken = inviteToken
+        || getHouseholdInviteToken(window.location.hash, window.Telegram?.WebApp?.initDataUnsafe?.start_param);
+      if (invitationToken) {
+        setInviteToken(invitationToken);
+        try {
+          const preview = await api<PendingHouseholdInvite>('/household/invitations/preview', {
+            method: 'POST',
+            body: JSON.stringify({ token: invitationToken }),
+          });
+          if (preview.alreadyAccepted) {
+            clearWebInvitationHash();
+            setInviteToken(null);
+            setNotice(lang === 'ru' ? `Ты уже присоединился к семье «${preview.householdName}».` : `You already joined ${preview.householdName}.`);
+            await refresh();
+          } else {
+            setPendingInvite(preview);
+          }
+        } catch (inviteError) {
+          clearWebInvitationHash();
+          setInviteToken(null);
+          setError(householdErrorMessage(inviteError, lang, 'Invitation could not be loaded.'));
+          await refresh();
+        }
+      } else {
+        await refresh();
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось выполнить вход.'); }
+    finally { setBusy(false); setLoading(false); }
+  }
+  async function perform(event: FormEvent, path: string, body: unknown, success: string, method = 'POST') {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try { await api(path, { method, body: JSON.stringify(body) }); await refresh(); setNotice(success); if (path.includes('/expenses/') && method === 'PATCH') setEditingExpenseId(null); if (path.includes('/obligations/') && method === 'PATCH') setEditingObligationId(null); if (path.includes('/income-sources/') && method === 'PATCH') setEditingIncomeSourceId(null); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Не удалось сохранить данные.'); }
+    finally { setBusy(false); }
+  }
+  async function markReceived(id: string, plannedAmount: number | string) {
+    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму, которая действительно поступила.' : 'Enter the amount that was actually received.', String(plannedAmount), lang === 'ru' ? 'Подтверждение поступления' : 'Confirm received income', 'number', lang === 'ru' ? 'Подтвердить поступление' : 'Confirm receipt');
+    if (rawAmount === null) return;
+    const actualAmount = Number(rawAmount.trim().replace(',', '.'));
+    if (!Number.isFinite(actualAmount) || actualAmount <= 0) { setError(lang === 'ru' ? 'Введите положительную фактическую сумму.' : 'Enter a positive actual amount.'); return; }
+    setBusy(true); setError('');
+    try { await api(`${PF}/income-entries/${id}/receive`, { method: 'POST', body: JSON.stringify({ actualAmount }) }); await refresh(); setNotice(lang === 'ru' ? 'Фактическое поступление сохранено.' : 'Actual income saved.'); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function undoReceivedIncome(id: string) {
+    if (!(await confirmAction(
+      lang === 'ru' ? 'Поступление будет отменено и перестанет учитываться в фактическом доходе. Его можно будет вернуть из пропущенных.' : 'This receipt will be cancelled and removed from actual income. You can restore it from skipped entries.',
+      lang === 'ru' ? 'Отменить поступление?' : 'Cancel received income?'
+    ))) return;
+    setBusy(true); setError('');
+    try {
+      await api(`${PF}/income-entries/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'SKIPPED' }) });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Поступление отменено. Фактический баланс пересчитан.' : 'Receipt cancelled. Actual balance recalculated.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+  async function saveIncomeEdit(id: string) {
+    setBusy(true); setError('');
+    try { await api(`${PF}/income-entries/${id}`, { method: 'PATCH', body: JSON.stringify({ plannedDate: incomeEditDate, plannedAmount: Number(incomeEditAmount) }) }); setEditingIncomeId(null); await refresh(); setNotice(lang === 'ru' ? 'Плановый доход обновлён.' : 'Planned income updated.'); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function skipIncomeEntry(id: string) { setBusy(true); try { await api(`${PF}/income-entries/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'SKIPPED' }) }); await refresh(); setNotice(lang === 'ru' ? 'Плановое поступление пропущено.' : 'Planned income skipped.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function restoreIncomeEntry(id: string) { setBusy(true); try { await api(`${PF}/income-entries/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'PLANNED' }) }); await refresh(); setNotice(lang === 'ru' ? 'Поступление возвращено в план.' : 'Income entry restored to plan.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function deleteOneTimeIncome(id: string) {
+    if (!(await confirmAction(lang === 'ru' ? 'Плановое поступление будет удалено. Полученные доходы не затрагиваются.' : 'This planned income entry will be deleted. Received income is not affected.', lang === 'ru' ? 'Удалить поступление?' : 'Delete income entry?'))) return;
+    setBusy(true); setError('');
+    try {
+      await api(`${PF}/income-entries/${id}`, { method: 'DELETE' });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Разовый плановый доход удалён.' : 'One-time planned income deleted.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+  async function reactivateIncomeSource(id: string) { setBusy(true); try { await api(`${PF}/income-sources/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: true }) }); await refresh(); setNotice(lang === 'ru' ? 'Источник дохода восстановлен, будущие поступления добавлены в план.' : 'Income source restored and future entries scheduled.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function reactivateObligation(id: string) { setBusy(true); try { await api(`${PF}/obligations/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: true }) }); await refresh(); setNotice(lang === 'ru' ? 'Обязательство восстановлено, будущие платежи добавлены в график.' : 'Obligation restored and future payments scheduled.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function deleteIncomeSource(id: string) {
+    if (!(await confirmAction(lang === 'ru' ? 'Источник будет архивирован, а будущие поступления по нему перестанут планироваться.' : 'This income source will be archived and future entries will no longer be scheduled.', lang === 'ru' ? 'Архивировать источник дохода?' : 'Archive income source?'))) return;
+    setBusy(true); try { await api(`${PF}/income-sources/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function deleteObligation(id: string) {
+    if (!(await confirmAction(lang === 'ru' ? 'Обязательство будет архивировано. История платежей сохранится.' : 'This obligation will be archived. Payment history will remain.', lang === 'ru' ? 'Архивировать обязательство?' : 'Archive obligation?'))) return;
+    setBusy(true); try { await api(`${PF}/obligations/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function skipObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/skip`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function restoreObligation(id: string) { setBusy(true); try { await api(`${PF}/obligation-occurrences/${id}/restore`, { method: 'POST', body: JSON.stringify({}) }); await refresh(); setNotice(lang === 'ru' ? 'Платёж возвращён в график.' : 'Payment restored to schedule.'); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function recordObligationPayment(id: string, actualAmount: number) {
+    if (!Number.isFinite(actualAmount) || actualAmount <= 0) { setError(lang === 'ru' ? 'Введите положительную сумму.' : 'Enter a positive amount.'); return; }
+    setBusy(true); setError('');
+    try {
+      await api(`${PF}/obligation-occurrences/${id}/pay`, { method: 'POST', body: JSON.stringify({ actualAmount }) });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Платёж сохранён. Остаток обязательства пересчитан.' : 'Payment saved. Remaining obligation recalculated.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function markPaidPartially(id: string) {
+    const rawAmount = await promptAction(lang === 'ru' ? 'Укажи сумму частичного платежа.' : 'Enter the partial payment amount.', '', lang === 'ru' ? 'Частичная оплата' : 'Partial payment', 'number', lang === 'ru' ? 'Внести частично' : 'Pay partially');
+    if (rawAmount === null) return;
+    await recordObligationPayment(id, Number(rawAmount.trim().replace(',', '.')));
+  }
+  async function markPaidFully(id: string, remainingAmount: number) {
+    if (!(await confirmAction(lang === 'ru' ? `Полностью оплатить оставшиеся ${rub(remainingAmount)}?` : `Pay the remaining ${rub(remainingAmount)} in full?`, lang === 'ru' ? 'Полная оплата' : 'Full payment'))) return;
+    await recordObligationPayment(id, remainingAmount);
+  }
+  async function createDebt(event: FormEvent) {
+    event.preventDefault();
+    const originalAmount = Number(debtInitialAmount.trim().replace(',', '.'));
+    if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
+      setError(lang === 'ru' ? 'Укажите начальную сумму долга.' : 'Enter the initial debt amount.');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      await api(`${PF}/debts`, { method: 'POST', body: JSON.stringify({
+        title: debtTitle.trim(), category: debtCategory.trim(), originalAmount, memberId: debtMember || null,
+      }) });
+      setDebtTitle(''); setDebtInitialAmount('');
+      await refresh();
+      setNotice(lang === 'ru' ? 'Долг добавлен. Остаток теперь отслеживается отдельно.' : 'Debt added. Its remaining balance is tracked separately.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+  async function payDebt(debt: DebtRecord) {
+    const raw = await promptAction(lang === 'ru' ? 'Сколько внесли в погашение долга?' : 'How much did you repay?', '', lang === 'ru' ? 'Погашение долга' : 'Debt repayment', 'number', lang === 'ru' ? 'Внести платёж' : 'Record payment');
+    if (raw === null) return;
+    const amount = Number(raw.trim().replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) { setError(lang === 'ru' ? 'Введите положительную сумму.' : 'Enter a positive amount.'); return; }
+    setBusy(true); setError('');
+    try {
+      await api(`${PF}/debts/${debt.id}/payments`, { method: 'POST', body: JSON.stringify({ amount, date: moscowToday() }) });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Погашение записано как расход, остаток долга уменьшен.' : 'Repayment recorded as an expense and debt balance reduced.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+  async function adjustDebt(debt: DebtRecord) {
+    const raw = await promptAction(lang === 'ru' ? 'На сколько изменить долг? Положительное число увеличит долг, отрицательное уменьшит. Например: 5000 или -1000.' : 'Change the debt by this amount. Positive increases it; negative reduces it. Example: 5000 or -1000.', '', lang === 'ru' ? 'Изменение долга' : 'Change debt', 'number', lang === 'ru' ? 'Продолжить' : 'Continue');
+    if (raw === null) return;
+    const amountChange = Number(raw.trim().replace(',', '.'));
+    if (!Number.isFinite(amountChange) || amountChange === 0) { setError(lang === 'ru' ? 'Введите ненулевую сумму изменения.' : 'Enter a non-zero amount.'); return; }
+    const reason = await promptAction(lang === 'ru' ? 'Причина: новая покупка, проценты, комиссия или корректировка.' : 'Reason: new purchase, interest, fee or correction.', '', lang === 'ru' ? 'Причина изменения' : 'Change reason');
+    if (reason === null || !reason.trim()) return;
+    setBusy(true); setError('');
+    try {
+      await api(`${PF}/debts/${debt.id}/adjust`, { method: 'POST', body: JSON.stringify({ amountChange, date: moscowToday(), reason: reason.trim() }) });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Долг изменён, операция сохранена в истории.' : 'Debt changed and transaction saved.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+  async function archiveDebt(debt: DebtRecord) {
+    if (!(await confirmAction(lang === 'ru' ? 'Долг будет скрыт из активного списка. История сохранится.' : 'This debt will be archived. Its history will remain.', lang === 'ru' ? 'Архивировать долг?' : 'Archive debt?'))) return;
+    setBusy(true);
+    try { await api(`${PF}/debts/${debt.id}`, { method: 'DELETE' }); await refresh(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+  async function saveScannedReceipt(items: Array<{name:string;price:number;quantity:number}>, rawText: string) {
+    if (!items.length) return;
+    const rawAmount = await promptAction(
+      lang === 'ru' ? 'Распознанные цены могут быть в другой валюте. Введи итоговую сумму чека в рублях — именно она попадёт в бюджет.' : 'Detected prices may use another currency. Enter the receipt total in RUB; this amount will be added to your budget.',
+      '', lang === 'ru' ? 'Сумма чека в рублях' : 'Receipt total in RUB', 'number', lang === 'ru' ? 'Добавить расход' : 'Add expense'
+    );
+    if (rawAmount === null) return;
+    const amount = Number(rawAmount.trim().replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) { setError(lang === 'ru' ? 'Введи корректную сумму чека в рублях.' : 'Enter a valid receipt total in RUB.'); return; }
+    const names = items.slice(0, 3).map(item => item.name.trim()).filter(Boolean);
+    const title = (lang === 'ru' ? 'Чек: ' : 'Receipt: ') + (names.join(', ') || (lang === 'ru' ? 'покупки' : 'purchases'));
+    const itemSummary = items.map(item => item.name + ' × ' + item.quantity + ': ' + item.price).join('; ');
+    setBusy(true); setError('');
+    try {
+      await api(PF + '/expenses', { method: 'POST', body: JSON.stringify({
+        title: title.slice(0, 140), amount, date: expenseDate,
+        categoryId: expenseCategory || null, memberId: expenseMember || null,
+        note: ('OCR receipt items: ' + itemSummary + '\n\n' + rawText).slice(0, 500),
+      }) });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Чек распознан и добавлен как один расход. Проверь сумму и категорию.' : 'Receipt added as one expense. Review its amount and category.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save receipt expense.'); }
+    finally { setBusy(false); }
+  }
+  async function removeExpense(id: string) {
+    if (!(await confirmAction(lang === 'ru' ? 'Расход будет удалён из финансовой истории.' : 'This expense will be removed from your financial history.', lang === 'ru' ? 'Удалить расход?' : 'Delete expense?'))) return;
+    setBusy(true); try { await api(`${PF}/expenses/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function renameMember(member: Member) { const name = await promptAction(lang === 'ru' ? 'Укажи новое имя участника.' : 'Enter the member’s new name.', member.name, lang === 'ru' ? 'Изменить имя участника' : 'Rename member'); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(householdErrorMessage(e, lang, 'Could not rename member.')); } finally { setBusy(false); } }
+  async function archiveMember(member: Member) { if (!(await confirmAction(lang === 'ru' ? 'Участник исчезнет из активного списка, но старые операции сохранят его привязку.' : 'This member will leave the active list, while historical transactions keep their attribution.', lang === 'ru' ? 'Архивировать участника?' : 'Archive member?'))) return; setBusy(true); try { await api(`${PF}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); await refresh(); if (filterMember === member.id) setFilterMember('all'); } catch (e) { setError(householdErrorMessage(e, lang, 'Could not archive member.')); } finally { setBusy(false); } }
+  async function acceptPendingInvite() {
+    if (!pendingInvite) return;
+    const token = inviteToken
+      || getHouseholdInviteToken(window.location.hash, window.Telegram?.WebApp?.initDataUnsafe?.start_param);
+    if (!token) { setError(lang === 'ru' ? 'Ссылка-приглашение не найдена. Открой её заново.' : 'Invitation link is missing. Reopen it and try again.'); return; }
+    setBusy(true); setError('');
+    try {
+      const result = await api<{ householdName: string; memberName: string }>('/household/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
+      setPendingInvite(null);
+      setInviteToken(null);
+      setFinanceSpace('household');
+      setFinanceSpaceState('household');
+      clearWebInvitationHash();
+      await refresh();
+      setNotice(lang === 'ru' ? `Ты присоединился к семье «${result.householdName}» как ${result.memberName}.` : `Joined ${result.householdName} as ${result.memberName}.`);
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Invitation could not be accepted.')); }
+    finally { setBusy(false); }
+  }
+  async function renameHousehold() {
+    if (!household || household.role !== 'OWNER') return;
+    const name = await promptAction(
+      lang === 'ru' ? 'Укажи новое название общего пространства.' : 'Enter a new name for the shared space.',
+      household.name,
+      lang === 'ru' ? 'Переименовать семью' : 'Rename household',
+    );
+    if (!name?.trim()) return;
+    const normalizedName = name.trim();
+    if (normalizedName.length > 80) {
+      setError(lang === 'ru' ? 'Название не должно превышать 80 символов.' : 'The name must be 80 characters or fewer.');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      const updated = await api<{ id: string; name: string }>('/household', {
+        method: 'PATCH',
+        body: JSON.stringify({ name: normalizedName }),
+      });
+      setHousehold(current => current ? { ...current, name: updated.name } : current);
+      setNotice(lang === 'ru' ? 'Название семьи обновлено.' : 'Household name updated.');
+    } catch (e) {
+      setError(householdErrorMessage(e, lang, 'Could not rename household.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveOwnerProfile() {
+    setBusy(true); setError('');
+    try {
+      await api('/household/profile', { method: 'PATCH', body: JSON.stringify({ memberId: ownerProfileId || null }) });
+      setIncomeMember(ownerProfileId); setExpenseMember(ownerProfileId); setObligationMember(ownerProfileId); setBudgetMember(ownerProfileId);
+      await refresh();
+      setNotice(lang === 'ru' ? 'Твой профиль для учёта сохранён.' : 'Your attribution profile has been saved.');
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Could not save your profile.')); }
+    finally { setBusy(false); }
+  }
+  async function createHouseholdInvite() {
+    if (!inviteMemberId) { setError(lang === 'ru' ? 'Выбери профиль участника для приглашения.' : 'Choose a member profile to invite.'); return; }
+    setBusy(true); setError('');
+    try {
+      const result = await api<{ inviteLink: string }>('/household/invitations', { method: 'POST', body: JSON.stringify({ memberId: inviteMemberId }) });
+      setInviteLink(result.inviteLink);
+      setNotice(lang === 'ru' ? 'Приглашение создано. Отправь ссылку супругу или другому участнику семьи.' : 'Invitation created. Share the link with your family member.');
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Could not create invitation.')); }
+    finally { setBusy(false); }
+  }
+  async function revokeHouseholdInvitation(invitationId: string) {
+    if (!(await confirmAction(lang === 'ru' ? 'Ссылка перестанет работать. Уже принятые приглашения это не затронет.' : 'This invitation link will stop working. Already accepted invitations are not affected.', lang === 'ru' ? 'Отозвать приглашение?' : 'Revoke invitation?'))) return;
+    setBusy(true); setError('');
+    try {
+      await api('/household/invitations/' + encodeURIComponent(invitationId), { method: 'DELETE' });
+      setInvitations(current => current.map(item => item.id === invitationId ? { ...item, revokedAt: new Date().toISOString() } : item));
+      setNotice(lang === 'ru' ? 'Приглашение отозвано.' : 'Invitation revoked.');
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Could not revoke invitation.')); }
+    finally { setBusy(false); }
+  }
+  async function revokeHouseholdAccess(userId: string) {
+    if (!(await confirmAction(lang === 'ru' ? 'Пользователь сразу потеряет доступ к общим доходам, расходам и другим данным семьи. История не удалится.' : 'This user will immediately lose access to shared household finances. No financial records will be deleted.', lang === 'ru' ? 'Отозвать доступ?' : 'Revoke access?'))) return;
+    setBusy(true); setError('');
+    try {
+      await api('/household/access/' + encodeURIComponent(userId), { method: 'DELETE' });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Доступ пользователя отключён.' : 'User access revoked.');
+    } catch (e) { setError(householdErrorMessage(e, lang, 'Could not revoke access.')); }
+    finally { setBusy(false); }
+  }
+  async function addMember(event: FormEvent) {
+    event.preventDefault(); if (!newMemberName.trim()) return; setBusy(true);
+    try { await api(`${PF}/members`, { method: 'POST', body: JSON.stringify({ name: newMemberName.trim() }) }); setNewMemberName(''); await refresh(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function deleteBudget(id: string) { if (!(await confirmAction(lang === 'ru' ? 'Бюджет и его лимит будут удалены.' : 'This budget and its limit will be deleted.', lang === 'ru' ? 'Удалить бюджет?' : 'Delete budget?'))) return; setBusy(true); try { await api(`${PF}/budgets/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function deleteGoal(id: string) { if (!(await confirmAction(lang === 'ru' ? 'Цель накопления и её текущий прогресс будут удалены.' : 'This savings goal and its current progress will be deleted.', lang === 'ru' ? 'Удалить цель?' : 'Delete savings goal?'))) return; setBusy(true); try { await api(`${PF}/savings-goals/${id}`, { method: 'DELETE' }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function addGoalContribution(goal: SavingsGoal) { const raw = await promptAction(lang === 'ru' ? 'Укажи сумму пополнения цели.' : 'Enter the amount to add to this goal.', '', lang === 'ru' ? 'Пополнить накопления' : 'Add to savings', 'number', lang === 'ru' ? 'Пополнить' : 'Add funds'); if (raw === null) return; const amount = Number(raw); if (!Number.isFinite(amount) || amount <= 0) { setError(lang === 'ru' ? 'Введите положительную сумму.' : 'Enter a positive amount.'); return; } setBusy(true); try { await api(`${PF}/savings-goals/${goal.id}`, { method: 'PATCH', body: JSON.stringify({ currentAmount: Number(goal.currentAmount) + amount, status: Number(goal.currentAmount) + amount >= Number(goal.targetAmount) ? 'COMPLETED' : 'ACTIVE' }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function renameCategory(category: Category) { const name = await promptAction(lang === 'ru' ? 'Укажи новое название категории.' : 'Enter the category’s new name.', category.name, lang === 'ru' ? 'Переименовать категорию' : 'Rename category'); if (!name?.trim()) return; setBusy(true); try { await api(`${PF}/categories/${category.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function archiveCategory(category: Category) { if (!(await confirmAction(lang === 'ru' ? 'Категория исчезнет из активного списка, но останется в старых расходах.' : 'This category will leave the active list but remain attached to historical expenses.', lang === 'ru' ? 'Архивировать категорию?' : 'Archive category?'))) return; setBusy(true); try { await api(`${PF}/categories/${category.id}`, { method: 'PATCH', body: JSON.stringify({ isArchived: true }) }); if (filterCategory === category.id) setFilterCategory('all'); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); } }
+  async function addCategory(event: FormEvent) {
+    event.preventDefault(); const name = newCategoryName.trim(); if (!name) return;
+    const slug = name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `category-${Date.now()}`;
+    setBusy(true); try { await api(`${PF}/categories`, { method: 'POST', body: JSON.stringify({ name, slug }) }); setNewCategoryName(''); await refresh(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+
+  if (loading) return <div className="pf-loading" role="status" aria-live="polite" aria-busy="true"><div className="pf-brand">nummio<span>X</span></div><div className="pf-spinner" aria-hidden="true"/><p>{tr(lang, 'loading')}</p></div>;
+  if (!user) return <main className="pf-auth">
+    <div className="pf-auth-card">
+      <div className="pf-brand">nummio<span>X</span></div>
+      <div className="pf-auth-icon">₽</div>
+      {passwordResetToken ? <>
+        <h1>{lang === 'ru' ? 'Новый пароль' : 'Choose a new password'}</h1>
+        <p>{lang === 'ru' ? 'Придумайте новый пароль для входа в nummioX.' : 'Choose a new password for your nummioX account.'}</p>
+        {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
+        {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}</div>}
+        <form onSubmit={handlePasswordResetConfirm} className="pf-form">
+          <label>{lang === 'ru' ? 'Новый пароль (не менее 8 символов)' : 'New password (at least 8 characters)'}<input type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={password} onChange={e => setPassword(e.target.value)} /></label>
+          <label>{lang === 'ru' ? 'Повторите пароль' : 'Confirm password'}<input type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={passwordConfirmation} onChange={e => setPasswordConfirmation(e.target.value)} /></label>
+          <button className="pf-button primary" disabled={busy}>{busy ? '…' : (lang === 'ru' ? 'Сохранить новый пароль' : 'Save new password')}</button>
+        </form>
+      </> : passwordResetMode === 'request' ? <>
+        <h1>{lang === 'ru' ? 'Восстановление пароля' : 'Reset your password'}</h1>
+        <p>{lang === 'ru' ? 'Укажите почту аккаунта. Мы отправим ссылку для создания нового пароля.' : 'Enter your account email and we will send a password reset link.'}</p>
+        {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
+        {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}</div>}
+        <form onSubmit={handlePasswordResetRequest} className="pf-form">
+          <label>{tr(lang, 'email')}<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
+          <button className="pf-button primary" disabled={busy}>{busy ? '…' : (lang === 'ru' ? 'Отправить ссылку' : 'Send reset link')}</button>
+        </form>
+        <button className="pf-link" onClick={() => { setPasswordResetMode('none'); setError(''); setNotice(''); }}>{lang === 'ru' ? 'Вернуться ко входу' : 'Back to sign in'}</button>
+      </> : <>
+        <h1>{tr(lang, 'signInTitle')}</h1><p>{tr(lang, 'signInText')}</p>
+        {inviteToken && <p className="pf-muted">{lang === 'ru' ? 'После входа или регистрации ты сможешь принять приглашение в семейный бюджет.' : 'After signing in or creating an account, you can accept the household invitation.'}</p>}
+        {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
+        {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}</div>}
+        <form onSubmit={handleAuth} className="pf-form">
+          <label>{tr(lang, 'email')}<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
+          <label>{tr(lang, 'password')}<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={8} maxLength={72} required value={password} onChange={e => setPassword(e.target.value)} /></label>
+          {authMode === 'login' && <label className="pf-checkbox-label"><input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} />{lang === 'ru' ? 'Запомнить меня на этом устройстве' : 'Remember me on this device'}</label>}
+          <button className="pf-button primary" disabled={busy}>{busy ? '…' : tr(lang, authMode === 'login' ? 'signIn' : 'signUp')}</button>
+        </form>
+        {authMode === 'login' && <button className="pf-link" onClick={() => { setPasswordResetMode('request'); setError(''); setNotice(''); }}>{lang === 'ru' ? 'Забыли пароль?' : 'Forgot password?'}</button>}
+        <button className="pf-link" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError(''); setNotice(''); }}>{authMode === 'login' ? tr(lang, 'signUp') : tr(lang, 'signIn')}</button>
+      </>}
+    </div>
+  </main>;
+
+  if (pendingInvite && user) return <main className="pf-auth">
+    <div className="pf-auth-card">
+      <div className="pf-brand">nummio<span>X</span></div>
+      <div className="pf-auth-icon">⌂</div>
+      <span className="pf-eyebrow">{lang === 'ru' ? 'ПРИГЛАШЕНИЕ В СЕМЕЙНЫЙ БЮДЖЕТ' : 'HOUSEHOLD INVITATION'}</span>
+      <h1>{lang === 'ru' ? 'Присоединиться к семье?' : 'Join this household?'}</h1>
+      <p>{lang === 'ru' ? `${pendingInvite.ownerName} приглашает тебя в пространство «${pendingInvite.householdName}».` : `${pendingInvite.ownerName} invited you to “${pendingInvite.householdName}”.`}</p>
+      <div className="pf-invite-summary"><strong>{pendingInvite.memberName}</strong><small>{lang === 'ru' ? 'Твой профиль в общем бюджете' : 'Your profile in the shared budget'}</small></div>
+      <p className="pf-muted">{lang === 'ru' ? 'После подтверждения ты получишь доступ к общим доходам, расходам, бюджетам и накоплениям. Твои существующие личные финансовые записи не будут объединяться автоматически.' : 'After confirmation, you will see shared income, expenses, budgets and savings. Existing personal financial records will not be merged automatically.'}</p>
+      {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}</div>}
+      <button className="pf-button primary" disabled={busy} onClick={acceptPendingInvite}>{busy ? '…' : (lang === 'ru' ? 'Принять приглашение' : 'Accept invitation')}</button>
+    </div>
+  </main>;
+
+  const activeMembers = members.filter(member => !member.isArchived);
+  const canManageHousehold = household?.role === 'OWNER' && (financeSpace === 'household' || availableSpaces.length === 1);
+  const memberOptions = <><option value="">{tr(lang, 'shared')}</option>{activeMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</>;
+  const matchesMember = (id?: string | null) => filterMember === 'all' || (filterMember === 'shared' ? !id : id === filterMember);
+  const visibleIncome = incomeEntries
+    .filter(entry => (showSkippedIncome || entry.status !== 'SKIPPED') && matchesMember(entry.memberId ?? entry.member?.id))
+    .sort((left, right) => {
+      const leftCreated = Date.parse(left.source?.createdAt ?? left.createdAt ?? left.plannedDate);
+      const rightCreated = Date.parse(right.source?.createdAt ?? right.createdAt ?? right.plannedDate);
+      return rightCreated - leftCreated || left.plannedDate.localeCompare(right.plannedDate);
+    });
+  const memberExpenses = expenses.filter(item => matchesMember(item.memberId ?? item.member?.id));
+  const validExpenseCustomRange = Boolean(expenseFrom && expenseTo && expenseFrom <= expenseTo);
+  const visibleExpenses = memberExpenses.filter(item => (filterCategory === 'all' || (filterCategory === 'uncategorized' ? !item.category : item.category?.id === filterCategory)) && (expensePeriod === 'all' || (expensePeriod === 'month' ? item.date >= ranges.from && item.date <= ranges.to : validExpenseCustomRange && item.date >= expenseFrom && item.date <= expenseTo)));
+  const visibleObligations = obligationOccurrences.filter(item => matchesMember(item.obligation.memberId) && (showSkippedObligations || item.status !== 'SKIPPED'));
+  const monthIncome = visibleIncome.filter(entry => entry.plannedDate >= ranges.from && entry.plannedDate <= ranges.to);
+  const monthObligations = visibleObligations.filter(item => item.dueDate >= ranges.from && item.dueDate <= ranges.to);
+  const cashflow = dashboard ? calculateMonthlyCashflow({
+    income: dashboard.actual.income,
+    expenses: dashboard.actual.expenses,
+    paidObligations: dashboard.obligations.paidInPeriod,
+    unpaidObligations: dashboard.obligations.unpaid,
+  }) : null;
+  const visibleBudgets = budgets.filter(item => matchesMember(item.memberId));
+  const analyticsMax = analytics ? Math.max(1, ...analytics.months.flatMap(item => [item.income, item.expenses])) : 1;
+  const calendarEvents = [
+    ...visibleIncome.filter(x => x.plannedDate >= ranges.from && x.plannedDate <= ranges.to).map(x => ({ id: x.id, date: x.plannedDate.slice(0,10), title: x.source?.title ?? (lang === 'ru' ? 'Доход' : 'Income'), amount: Number(x.actualAmount ?? x.plannedAmount), kind: 'income' as const, status: x.status })),
+    ...calendarExpenses.filter(x => matchesMember(x.memberId ?? x.member?.id) && !x.obligationOccurrence).map(x => ({ id: x.id, date: x.date.slice(0,10), title: x.title, amount: Number(x.amount), kind: 'expense' as const, status: 'ACTUAL' })),
+    ...monthObligations.map(x => ({ id: x.id, date: x.dueDate.slice(0,10), title: x.obligation.title, amount: x.status === 'PAID' ? Number(x.actualAmount ?? x.plannedAmount) : Math.max(0, Number(x.plannedAmount) - Number(x.actualAmount ?? 0)), kind: 'obligation' as const, status: x.status })),
+  ].sort((a,b) => a.date.localeCompare(b.date));
+  const selectedCalendarEvents = calendarEvents.filter(item => item.date === selectedCalendarDate);
+  const monthParts = ranges.from.split('-').map(Number);
+  const calendarDayCount = new Date(Date.UTC(monthParts[0], monthParts[1], 0)).getUTCDate();
+  const calendarOffset = new Date(Date.UTC(monthParts[0], monthParts[1]-1, 1)).getUTCDay();
+  const calendarCells: Array<number | null> = [...Array(calendarOffset).fill(null), ...Array.from({ length: calendarDayCount }, (_, i) => i + 1)];
+
+  return <div className="pf-shell">
+    <a className="pf-skip-link" href="#pf-main-content">{lang === 'ru' ? 'Перейти к содержимому' : 'Skip to main content'}</a>
+    <aside className="pf-sidebar">
+      <div className="pf-brand">nummio<span>X</span></div>
+      <div className="pf-sidebar-caption">{lang === 'ru' ? 'СЕМЕЙНЫЕ ФИНАНСЫ' : 'HOUSEHOLD FINANCE'}</div>
+      <nav aria-label={lang === 'ru' ? 'Основная навигация' : 'Main navigation'}>{(['overview', 'income', 'expenses', 'obligations', 'calendar', 'analytics', 'budgets', 'family', 'settings'] as Tab[]).map(item => <button key={item} type="button" className={tab === item ? 'active' : ''} aria-current={tab === item ? 'page' : undefined} onClick={() => setTab(item)}><span className="pf-nav-dot" aria-hidden="true"/>{tr(lang, item)}</button>)}</nav>
+      <div className="pf-sidebar-bottom"><div className="pf-avatar">{(user.displayName || user.email)[0].toUpperCase()}</div><div className="pf-user"><strong>{user.displayName || user.email.split('@')[0]}</strong><small>{user.email.endsWith('@telegram.flowmoney.invalid') ? 'Telegram' : user.email}</small></div>{!window.Telegram?.WebApp?.initData && <button className="pf-icon-button" type="button" title={tr(lang, 'logout')} aria-label={tr(lang, 'logout')} onClick={() => { setToken(null); setUser(null); }}>↪</button>}</div>
+    </aside>
+    <main className="pf-main" id="pf-main-content" tabIndex={-1}>
+      <header className="pf-topbar"><div><span className="pf-eyebrow">{financeSpace === 'personal' ? (lang === 'ru' ? 'ЛИЧНЫЕ ФИНАНСЫ' : 'PERSONAL FINANCES') : (lang === 'ru' ? 'СЕМЕЙНЫЙ БЮДЖЕТ' : 'HOUSEHOLD BUDGET')}</span><h1>{tr(lang, tab)}</h1><p>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</p></div><div className="pf-top-actions">{availableSpaces.length > 1 && <select className="pf-member-filter" value={financeSpace} aria-label={lang === 'ru' ? 'Финансовое пространство' : 'Finance space'} onChange={e => { const next = e.target.value as FinanceSpace; setFinanceSpace(next); setFinanceSpaceState(next); void refresh(); }}><option value="personal">{lang === 'ru' ? 'Личные финансы' : 'Personal finances'}</option><option value="household">{lang === 'ru' ? 'Семейный бюджет' : 'Household budget'}</option></select>}<input className="pf-month-filter" type="month" value={selectedMonth} onChange={e => { if (e.target.value) { setSelectedMonth(e.target.value); setSelectedCalendarDate(e.target.value + '-01'); } }} aria-label={lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}/><select className="pf-member-filter" value={filterMember} onChange={e => setFilterMember(e.target.value)} aria-label={tr(lang, 'member')}><option value="all">{lang === 'ru' ? 'Вся семья' : 'Whole household'}</option><option value="shared">{tr(lang, 'shared')}</option>{members.map(m => <option key={m.id} value={m.id}>{m.isArchived ? `${m.name} · ${lang === 'ru' ? 'архив' : 'archived'}` : m.name}</option>)}</select><button className="pf-button ghost" onClick={() => refresh()}>{tr(lang, 'refresh')} ↻</button></div></header>
+      {error && <div className="pf-alert error" role="alert" aria-live="assertive">{error}<button type="button" aria-label={lang === 'ru' ? 'Закрыть сообщение об ошибке' : 'Dismiss error message'} onClick={() => setError('')}>×</button></div>}
+      {notice && <div className="pf-alert success" role="status" aria-live="polite">{notice}<button type="button" aria-label={lang === 'ru' ? 'Закрыть уведомление' : 'Dismiss notification'} onClick={() => setNotice('')}>×</button></div>}
+
+      {tab === 'overview' && dashboard && cashflow && <div className="pf-page pf-overview">
+        <section className="pf-cashflow-hero">
+          <div className="pf-cashflow-main">
+            <span className="pf-eyebrow">{lang === 'ru' ? 'ВАШИ ДЕНЬГИ В ЭТОМ МЕСЯЦЕ' : 'YOUR MONEY THIS MONTH'}</span>
+            <span className="pf-cashflow-label">{lang === 'ru' ? 'Остаток за месяц' : 'Monthly balance'}</span>
+            <strong className={cashflow.availableBalance < 0 ? 'negative' : ''}>{rub(cashflow.availableBalance)}</strong>
+            <p>{lang === 'ru' ? 'Доходы выбранного месяца минус расходы и платежи, которые уже оплачены.' : 'Selected-month income minus expenses and commitments already paid.'}</p>
+            <div className="pf-cashflow-equation">
+              <span><small>{lang === 'ru' ? 'Получено' : 'Received'}</small><b className="positive">+{rub(cashflow.income)}</b></span>
+              <span><small>{lang === 'ru' ? 'Потрачено' : 'Spent'}</small><b>−{rub(cashflow.totalOutflow)}</b></span>
+            </div>
+          </div>
+          <div className="pf-cashflow-reserve">
+            <span className="pf-eyebrow">{lang === 'ru' ? 'ПОСЛЕ ОСТАВШИХСЯ ПЛАТЕЖЕЙ' : 'AFTER UPCOMING PAYMENTS'}</span>
+            <strong className={cashflow.afterPlannedPayments < 0 ? 'negative' : ''}>{rub(cashflow.afterPlannedPayments)}</strong>
+            <p>{lang === 'ru' ? 'Прогнозный остаток, если оплатить все обязательства этого месяца.' : 'Projected balance after paying every remaining commitment this month.'}</p>
+            <div className="pf-reserve-line"><span>{lang === 'ru' ? 'Осталось оплатить' : 'Still to pay'}</span><b>{rub(cashflow.unpaidObligations)}</b></div>
+          </div>
+        </section>
+
+        <section className="pf-overview-metrics">
+          <article className="pf-overview-metric income-metric">
+            <span>{lang === 'ru' ? 'Доход за месяц' : 'Income this month'}</span>
+            <strong className="positive">{rub(cashflow.income)}</strong>
+            <small>{lang === 'ru' ? 'Только фактически полученные деньги' : 'Money actually received'}</small>
+          </article>
+          <article className="pf-overview-metric expense-metric">
+            <span>{lang === 'ru' ? 'Расходы за месяц' : 'Expenses this month'}</span>
+            <strong>{rub(cashflow.totalOutflow)}</strong>
+            <small>{lang === 'ru' ? `В том числе обычные расходы: ${rub(cashflow.regularExpenses)}` : `Including everyday spending: ${rub(cashflow.regularExpenses)}`}</small>
+          </article>
+          <article className="pf-overview-metric obligation-metric">
+            <span>{lang === 'ru' ? 'Обязательные платежи оплачены' : 'Commitments paid'}</span>
+            <strong>{rub(cashflow.paidObligations)}</strong>
+            <small>{lang === 'ru' ? 'Уже вычтены из доступного остатка' : 'Already deducted from available balance'}</small>
+          </article>
+        </section>
+
+        <section className="pf-card pf-obligations-overview">
+          <div className="pf-card-heading">
+            <div>
+              <span className="pf-eyebrow">{lang === 'ru' ? 'ПЛАНИРУЕМЫЕ ПЛАТЕЖИ' : 'PLANNED COMMITMENTS'}</span>
+              <h2>{lang === 'ru' ? 'Обязательные платежи' : 'Required payments'}</h2>
+              <p className="pf-muted">{lang === 'ru' ? 'Отметьте платёж после фактической оплаты. Он будет учтён в расходах автоматически и только один раз.' : 'Mark a payment only after it is actually paid. It will be added to expenses automatically, exactly once.'}</p>
+            </div>
+            <button className="pf-link" onClick={() => setTab('obligations')}>{lang === 'ru' ? 'Все платежи' : 'All payments'} →</button>
+          </div>
+          {monthObligations.length ? <div className="pf-obligation-list">
+            {monthObligations.slice(0, 8).map(item => <div className="pf-obligation-item" key={item.id}>
+              <div className="pf-obligation-date"><strong>{item.dueDate.slice(8, 10)}</strong><small>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'short', timeZone: 'UTC' }).format(new Date(item.dueDate.slice(0,10) + 'T00:00:00.000Z'))}</small></div>
+              <div className="pf-obligation-details">
+                <strong>{item.obligation.title}</strong>
+                <small>{item.obligation.category} · {item.obligation.member?.name ?? tr(lang, 'shared')}</small>
+              </div>
+              <div className="pf-obligation-value">
+                <b>{rub(item.actualAmount ?? 0)} / {rub(item.plannedAmount)}</b>
+                <span className={item.status === 'PAID' ? 'paid' : item.status === 'PARTIAL' ? 'pending' : item.status === 'OVERDUE' ? 'overdue' : 'pending'}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'PARTIAL' ? (lang === 'ru' ? 'Частично оплачено' : 'Partially paid') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : item.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : tr(lang, 'unpaid')}</span>
+              </div>
+              {item.status !== 'PAID' && item.status !== 'SKIPPED' && <button className="pf-button small primary" disabled={busy} onClick={() => markPaidFully(item.id, Math.max(0, Number(item.plannedAmount) - Number(item.actualAmount ?? 0)))}>{lang === 'ru' ? 'Оплачено' : 'Mark paid'}</button>}
+            </div>)}
+          </div> : <p className="pf-empty">{lang === 'ru' ? 'На этот месяц обязательные платежи не запланированы.' : 'No required payments are scheduled for this month.'}</p>}
+          {monthObligations.length > 8 && <button className="pf-button ghost" onClick={() => setTab('obligations')}>{lang === 'ru' ? 'Показать все платежи' : 'Show all payments'}</button>}
+          <div className="pf-obligation-summary">
+            <span>{lang === 'ru' ? 'Оплачено' : 'Paid'} <b>{rub(cashflow.paidObligations)}</b></span>
+            <span>{lang === 'ru' ? 'Осталось' : 'Remaining'} <b>{rub(cashflow.unpaidObligations)}</b></span>
+          </div>
+        </section>
+
+        <section className="pf-overview-footnote">
+          <span className="pf-info-mark">i</span>
+          <p>{lang === 'ru' ? 'Важно: плановые платежи не уменьшают доступный остаток заранее. Сумма списывается из остатка только после нажатия «Оплачено». После подтверждения платёж автоматически попадает в расходы — повторно добавлять его вручную не нужно.' : 'Important: scheduled payments do not reduce your available balance in advance. The amount is deducted only after you mark it as paid. The payment is automatically recorded as an expense, so do not add it manually again.'}</p>
+        </section>
+      </div>}
+
+      {tab === 'income' && <div className="pf-page pf-two-col">
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЛАНИРОВАНИЕ ПОСТУПЛЕНИЙ' : 'INCOME PLANNING'}</span><h2>{editingIncomeSourceId ? (lang === 'ru' ? 'Изменить источник дохода' : 'Edit income source') : tr(lang, 'addIncome')}</h2></div></div>
+          <form className="pf-form" onSubmit={e => perform(e, editingIncomeSourceId ? `${PF}/income-sources/${editingIncomeSourceId}` : `${PF}/income-sources`, { title: incomeTitle, amount: Number(incomeAmount), recurrence: incomeRecurrence, recurrenceConfig: incomeRecurrence === 'WEEKLY' ? { weekdays: [Number(incomeWeekday)], intervalWeeks: Number(incomeIntervalWeeks) } : incomeRecurrence === 'TWICE_MONTHLY' ? { firstDay: Number(incomeDay1), secondDay: Number(incomeDay2) } : incomeRecurrence === 'MONTHLY' ? { day: Number(incomeDay1) } : incomeRecurrence === 'YEARLY' ? { month: Number(incomeMonth), day: Number(incomeDay1) } : {}, startDate: incomeStart, endDate: incomeEnd || null, memberId: incomeMember || null }, editingIncomeSourceId ? (lang === 'ru' ? 'Источник дохода и расписание обновлены.' : 'Income source and schedule updated.') : (lang === 'ru' ? 'Источник дохода добавлен.' : 'Income source added.'), editingIncomeSourceId ? 'PATCH' : 'POST')}>
+            <label>{tr(lang, 'title')}<input required value={incomeTitle} onChange={e => setIncomeTitle(e.target.value)}/></label>
+            <label>{tr(lang, 'amount')}<input type="number" min="0.01" step="0.01" required value={incomeAmount} onChange={e => setIncomeAmount(e.target.value)}/></label>
+            <label>{tr(lang, 'frequency')}<select value={incomeRecurrence} onChange={e => setIncomeRecurrence(e.target.value)}><option value="DAILY">{tr(lang, 'daily')}</option><option value="WEEKLY">{tr(lang, 'weekly')}</option><option value="TWICE_MONTHLY">{tr(lang, 'twice')}</option><option value="MONTHLY">{tr(lang, 'monthly')}</option><option value="YEARLY">{tr(lang, 'yearly')}</option><option value="ONCE">{tr(lang, 'once')}</option></select></label>
+            {incomeRecurrence === 'WEEKLY' && <div className="pf-field-row"><label>{lang === 'ru' ? 'День недели' : 'Weekday'}<select value={incomeWeekday} onChange={e => setIncomeWeekday(e.target.value)}>{(lang === 'ru' ? ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'] : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']).map((d,i)=><option key={d} value={i}>{d}</option>)}</select></label><label>{lang === 'ru' ? 'Каждые N недель' : 'Every N weeks'}<input type="number" min="1" max="52" value={incomeIntervalWeeks} onChange={e=>setIncomeIntervalWeeks(e.target.value)}/></label></div>}
+            {['TWICE_MONTHLY','MONTHLY'].includes(incomeRecurrence) && <div className="pf-field-row"><label>{incomeRecurrence === 'MONTHLY' ? tr(lang, 'day') : tr(lang, 'firstDay')}<input type="number" min="1" max="31" value={incomeDay1} onChange={e => setIncomeDay1(e.target.value)}/></label>{incomeRecurrence === 'TWICE_MONTHLY' && <label>{tr(lang, 'secondDay')}<input type="number" min="1" max="31" value={incomeDay2} onChange={e => setIncomeDay2(e.target.value)}/></label>}</div>}
+            {incomeRecurrence === 'YEARLY' && <div className="pf-field-row"><label>{lang === 'ru' ? 'Месяц' : 'Month'}<input type="number" min="1" max="12" value={incomeMonth} onChange={e=>setIncomeMonth(e.target.value)}/></label><label>{tr(lang, 'day')}<input type="number" min="1" max="31" value={incomeDay1} onChange={e=>setIncomeDay1(e.target.value)}/></label></div>}
+            <div className="pf-field-row"><label>{tr(lang, 'startDate')}<input type="date" required value={incomeStart} onChange={e => setIncomeStart(e.target.value)}/></label><label>{tr(lang, 'endDate')}<input type="date" value={incomeEnd} onChange={e => setIncomeEnd(e.target.value)}/></label></div>
+            <label>{tr(lang, 'member')}<select value={incomeMember} onChange={e => setIncomeMember(e.target.value)}>{memberOptions}</select></label>
+            <div className="pf-form-actions">{editingIncomeSourceId && <button type="button" className="pf-button ghost" onClick={() => setEditingIncomeSourceId(null)}>{tr(lang, 'cancel')}</button>}<button className="pf-button primary" disabled={busy}>{editingIncomeSourceId ? tr(lang, 'save') : tr(lang, 'add')}</button></div>
+          </form>
+        </section>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОЖИДАЕМЫЕ И ФАКТИЧЕСКИЕ' : 'PLANNED AND RECEIVED'}</span><h2>{tr(lang, 'income')}</h2></div><div className="pf-row-action"><button className="pf-link" onClick={() => setShowSkippedIncome(value => !value)}>{showSkippedIncome ? (lang === 'ru' ? 'Скрыть пропущенные' : 'Hide skipped') : (lang === 'ru' ? 'Показать пропущенные' : 'Show skipped')}</button><span className="pf-count">{monthIncome.length}</span></div></div>
+          {visibleIncome.length ? visibleIncome.map(entry => <div className="pf-list-row" key={entry.id}><div><strong>{entry.source?.title ?? (lang === 'ru' ? 'Разовый доход' : 'One-time income')}</strong><small>{dateLabel(entry.plannedDate, lang)} · {entry.member?.name ?? tr(lang, 'shared')}</small><small className={entry.status === 'RECEIVED' ? 'positive' : entry.status === 'SKIPPED' ? 'negative' : ''}>{entry.status === 'RECEIVED' ? tr(lang, 'actualStatus') : entry.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : tr(lang, 'plannedStatus')}</small>{editingIncomeId === entry.id && <div className="pf-inline-edit"><input aria-label={tr(lang, 'date')} type="date" value={incomeEditDate} onChange={e => setIncomeEditDate(e.target.value)}/><input aria-label={tr(lang, 'amount')} type="number" min="0.01" step="0.01" value={incomeEditAmount} onChange={e => setIncomeEditAmount(e.target.value)}/><button className="pf-button small" disabled={busy} onClick={() => saveIncomeEdit(entry.id)}>{tr(lang, 'save')}</button></div>}</div><div className="pf-row-action"><b>{rub(entry.actualAmount ?? entry.plannedAmount)}</b>{entry.status === 'RECEIVED' && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отменить поступление' : 'Undo received income'} aria-label={lang === 'ru' ? 'Отменить поступление' : 'Undo received income'} onClick={() => undoReceivedIncome(entry.id)}>↶</button>}{entry.status === 'PLANNED' && <><button className="pf-edit" title={lang === 'ru' ? 'Изменить план' : 'Edit plan'} aria-label={lang === 'ru' ? 'Изменить план' : 'Edit plan'} onClick={() => { setEditingIncomeId(entry.id); setIncomeEditDate(entry.plannedDate.slice(0,10)); setIncomeEditAmount(String(entry.plannedAmount)); }}>✎</button><button className="pf-button small" disabled={busy} onClick={() => markReceived(entry.id, entry.plannedAmount)}>{tr(lang, 'receivedAction')}</button><button className="pf-delete" title={lang === 'ru' ? 'Пропустить поступление' : 'Skip income'} aria-label={lang === 'ru' ? 'Пропустить поступление' : 'Skip income'} onClick={() => skipIncomeEntry(entry.id)}>×</button>{entry.sourceId && <><button className="pf-edit" title={lang === 'ru' ? 'Изменить источник и расписание' : 'Edit source and schedule'} aria-label={lang === 'ru' ? 'Изменить источник и расписание' : 'Edit source and schedule'} onClick={() => { const source = entry.source!; const config = source.recurrenceConfig ?? {}; setEditingIncomeSourceId(source.id); setEditingIncomeId(null); setIncomeTitle(source.title); setIncomeAmount(String(source.amount)); setIncomeRecurrence(source.recurrence); setIncomeStart(source.startDate.slice(0, 10)); setIncomeEnd(source.endDate?.slice(0, 10) ?? ''); setIncomeDay1(String(config.day ?? config.firstDay ?? Number(source.startDate.slice(8, 10)))); setIncomeDay2(String(config.secondDay ?? 15)); setIncomeMonth(String(config.month ?? Number(source.startDate.slice(5, 7)))); setIncomeWeekday(String(config.weekdays?.[0] ?? 1)); setIncomeIntervalWeeks(String(config.intervalWeeks ?? 1)); setIncomeMember(source.memberId ?? ''); }}>⚙</button><button className="pf-delete" title={lang === 'ru' ? 'Отключить источник' : 'Archive source'} aria-label={lang === 'ru' ? 'Отключить источник' : 'Archive source'} onClick={() => deleteIncomeSource(entry.sourceId!)}>⨯</button></>}{!entry.sourceId && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Удалить разовый доход' : 'Delete one-time income'} aria-label={lang === 'ru' ? 'Удалить разовый доход' : 'Delete one-time income'} onClick={() => deleteOneTimeIncome(entry.id)}>⌫</button>}</>}{entry.status === 'SKIPPED' && <button className="pf-button small" disabled={busy} onClick={() => restoreIncomeEntry(entry.id)}>{lang === 'ru' ? 'Вернуть' : 'Restore'}</button>}</div></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyIncome')}</p>}
+        </section>
+        {archivedIncomeSources.length > 0 && <section className="pf-card pf-archive-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'АРХИВ' : 'ARCHIVE'}</span><h2>{lang === 'ru' ? 'Отключённые источники дохода' : 'Archived income sources'}</h2></div><span className="pf-count">{archivedIncomeSources.length}</span></div>{archivedIncomeSources.map(source => <div className="pf-list-row" key={source.id}><div><strong>{source.title}</strong><small>{rub(source.amount)} · {source.recurrence}</small></div><button className="pf-button small" disabled={busy} onClick={() => reactivateIncomeSource(source.id)}>{lang === 'ru' ? 'Восстановить' : 'Restore'}</button></div>)}</section>}
+      </div>}
+
+      {tab === 'expenses' && <div className="pf-page pf-two-col">
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'УЧЁТ ПОКУПОК' : 'TRANSACTION TRACKING'}</span><h2>{editingExpenseId ? (lang === 'ru' ? 'Изменить расход' : 'Edit expense') : tr(lang, 'addExpense')}</h2></div></div>
+          <form className="pf-form" onSubmit={e => perform(e, editingExpenseId ? `${PF}/expenses/${editingExpenseId}` : `${PF}/expenses`, { title: expenseTitle, amount: Number(expenseAmount), date: expenseDate, categoryId: expenseCategory || null, memberId: expenseMember || null }, editingExpenseId ? (lang === 'ru' ? 'Расход обновлён.' : 'Expense updated.') : (lang === 'ru' ? 'Расход добавлен.' : 'Expense added.'), editingExpenseId ? 'PATCH' : 'POST')}>
+            <label>{tr(lang, 'title')}<input required value={expenseTitle} onChange={e => setExpenseTitle(e.target.value)} placeholder={lang === 'ru' ? 'Например, продукты' : 'e.g. Groceries'}/></label>
+            <label>{tr(lang, 'amount')}<input type="number" min="0.01" step="0.01" required value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)}/></label>
+            <label>{tr(lang, 'date')}<input type="date" required value={expenseDate} onChange={e => setExpenseDate(e.target.value)}/></label>
+            <label>{tr(lang, 'category')}<select value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)}>{categories.map(c=><option key={c.id} value={c.id}>{categoryName(c, lang)}</option>)}</select></label>
+            <label>{tr(lang, 'member')}<select value={expenseMember} onChange={e => setExpenseMember(e.target.value)}>{memberOptions}</select></label>
+            <div className="pf-form-actions">{editingExpenseId && <button type="button" className="pf-button ghost" onClick={() => { setEditingExpenseId(null); setExpenseTitle(''); setExpenseAmount(''); setExpenseDate(moscowToday()); }}>{tr(lang, 'cancel')}</button>}<button className="pf-button primary" disabled={busy}>{tr(lang, 'save')}</button></div>
+          </form>
+          <ReceiptScanner lang={lang} onSave={saveScannedReceipt}/>
+          <form className="pf-inline-form category-create" onSubmit={addCategory}><label>{tr(lang, 'addCategory')}<input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder={lang === 'ru' ? 'Например, Питомцы' : 'e.g. Pets'}/></label><button className="pf-button ghost" aria-label={lang === 'ru' ? 'Добавить категорию' : 'Add category'} disabled={busy}>+</button></form>{categories.filter(category=>Boolean(category.userId)).map(category=><div className="pf-category-manage" key={category.id}><span>{category.name}</span><div><button className="pf-edit" aria-label={lang === 'ru' ? 'Переименовать категорию' : 'Rename category'} onClick={()=>renameCategory(category)}>✎</button><button className="pf-delete" aria-label={lang === 'ru' ? 'Архивировать категорию' : 'Archive category'} onClick={()=>archiveCategory(category)}>×</button></div></div>)}
+        </section>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ИСТОРИЯ ОПЕРАЦИЙ' : 'TRANSACTION HISTORY'}</span><h2>{tr(lang, 'expenses')}</h2></div><span className="pf-count">{visibleExpenses.length}</span></div><div className="pf-expense-filters"><select className="pf-member-filter" value={expensePeriod} onChange={e=>{const next=e.target.value as 'month'|'all'|'custom';setExpensePeriod(next);if(next==='custom'){setExpenseFrom(ranges.from);setExpenseTo(ranges.to);}}}><option value="month">{lang === 'ru' ? 'Выбранный месяц' : 'Selected month'}</option><option value="all">{lang === 'ru' ? 'Вся история' : 'All history'}</option><option value="custom">{lang === 'ru' ? 'Произвольный период' : 'Custom date range'}</option></select><select className="pf-member-filter" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}><option value="all">{lang === 'ru' ? 'Все категории' : 'All categories'}</option><option value="uncategorized">{lang === 'ru' ? 'Без категории' : 'Uncategorized'}</option>{categories.map(x=><option key={x.id} value={x.id}>{categoryName(x,lang)}</option>)}</select></div>
+          {expensePeriod === 'custom' && <div className="pf-field-row pf-expense-custom-range"><label>{lang === 'ru' ? 'С даты' : 'From'}<input type="date" value={expenseFrom} onChange={e=>setExpenseFrom(e.target.value)}/></label><label>{lang === 'ru' ? 'По дату' : 'To'}<input type="date" value={expenseTo} onChange={e=>setExpenseTo(e.target.value)}/></label></div>}
+          {expensePeriod === 'custom' && !validExpenseCustomRange && <p className="pf-alert error" role="alert">{lang === 'ru' ? 'Проверьте даты периода.' : 'Check the selected date range.'}</p>}
+          {visibleExpenses.length ? visibleExpenses.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category ? categoryName(item.category, lang) : (lang === 'ru' ? 'Без категории' : 'Uncategorized')} · {dateLabel(item.date, lang)} · {item.member?.name ?? tr(lang, 'shared')}</small></div><div className="pf-row-action"><b>−{rub(item.amount)}</b>{!item.obligationOccurrence && !item.debtTransaction && <button className="pf-edit" onClick={() => { setEditingExpenseId(item.id); setExpenseTitle(item.title); setExpenseAmount(String(item.amount)); setExpenseDate(item.date.slice(0,10)); setExpenseCategory(item.category?.id ?? ''); setExpenseMember(item.memberId ?? ''); }} aria-label={lang === 'ru' ? 'Изменить расход' : 'Edit expense'}>✎</button>}<button className="pf-delete" onClick={() => removeExpense(item.id)} aria-label={lang === 'ru' ? 'Удалить расход' : 'Delete expense'}>×</button></div></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyExpenses')}</p>}{hasMoreExpenses && <div className="pf-load-more"><button className="pf-button ghost" disabled={busy} onClick={loadMoreExpenses}>{busy ? (lang === 'ru' ? 'Загрузка…' : 'Loading…') : (lang === 'ru' ? 'Загрузить ещё' : 'Load more')}</button></div>}
+        </section>
+      </div>}
+
+      {tab === 'obligations' && <div className="pf-page pf-two-col">
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'РЕГУЛЯРНЫЕ ПЛАТЕЖИ' : 'RECURRING COMMITMENTS'}</span><h2>{editingObligationId ? (lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation') : tr(lang, 'addObligation')}</h2></div></div>
+          <form className="pf-form" onSubmit={e => perform(e, editingObligationId ? PF + '/obligations/' + editingObligationId : PF + '/obligations', {
+            title: obligationTitle, category: obligationCategory, amount: Number(obligationAmount),
+            recurrence: obligationRecurrence,
+            recurrenceConfig: obligationRecurrence === 'MONTHLY' ? { day: Number(obligationDay) }
+              : obligationRecurrence === 'TWICE_MONTHLY' ? { firstDay: Number(obligationDay), secondDay: Number(obligationDay2) }
+              : obligationRecurrence === 'WEEKLY' ? { weekdays: [Number(obligationWeekday)], intervalWeeks: Number(obligationIntervalWeeks) }
+              : obligationRecurrence === 'YEARLY' ? { month: Number(obligationMonth), day: Number(obligationDay) } : {},
+            startDate: obligationDate, endDate: obligationEnd || null, memberId: obligationMember || null, debtId: obligationDebtId || null,
+          }, editingObligationId ? (lang === 'ru' ? 'Обязательство и расписание обновлены.' : 'Obligation and schedule updated.') : (lang === 'ru' ? 'Обязательство добавлено.' : 'Obligation added.'), editingObligationId ? 'PATCH' : 'POST')}>
+            <label>{tr(lang, 'title')}<input required value={obligationTitle} onChange={e => setObligationTitle(e.target.value)} placeholder={lang === 'ru' ? 'Например, автокредит' : 'e.g. Car loan'}/></label>
+            <label>{tr(lang, 'category')}<input list="pf-obligation-category-options" maxLength={60} required value={obligationCategory} onChange={e => setObligationCategory(e.target.value)} placeholder={lang === 'ru' ? 'Например, Долг' : 'e.g. Debt'} /><datalist id="pf-obligation-category-options">{Array.from(new Set([...(lang === 'ru' ? ['Кредит','Автокредит','Ипотека','Аренда','Коммунальные услуги','Фитнес','Подписки','Долг','Налоги','Страхование','Другое'] : ['Loan','Car loan','Mortgage','Rent','Utilities','Fitness','Subscriptions','Debt','Taxes','Insurance','Other']), ...obligationRecords.map(item => item.category).filter(Boolean)])).map(x=><option key={x} value={x} />)}</datalist></label>
+            <label>{tr(lang, 'amount')}<input type="number" min="0.01" step="0.01" required value={obligationAmount} onChange={e => setObligationAmount(e.target.value)}/></label>
+            <label>{tr(lang, 'frequency')}<select value={obligationRecurrence} onChange={e => setObligationRecurrence(e.target.value)}><option value="MONTHLY">{tr(lang, 'monthly')}</option><option value="TWICE_MONTHLY">{tr(lang, 'twice')}</option><option value="ONCE">{tr(lang, 'once')}</option><option value="WEEKLY">{tr(lang, 'weekly')}</option><option value="YEARLY">{tr(lang, 'yearly')}</option></select></label>
+            {obligationRecurrence === 'MONTHLY' && <label>{tr(lang, 'day')}<input type="number" min="1" max="31" value={obligationDay} onChange={e => setObligationDay(e.target.value)}/></label>}
+            {obligationRecurrence === 'TWICE_MONTHLY' && <div className="pf-field-row"><label>{tr(lang, 'firstDay')}<input type="number" min="1" max="31" value={obligationDay} onChange={e=>setObligationDay(e.target.value)}/></label><label>{tr(lang, 'secondDay')}<input type="number" min="1" max="31" value={obligationDay2} onChange={e=>setObligationDay2(e.target.value)}/></label></div>}
+            {obligationRecurrence === 'YEARLY' && <div className="pf-field-row"><label>{lang === 'ru' ? 'Месяц' : 'Month'}<input type="number" min="1" max="12" value={obligationMonth} onChange={e=>setObligationMonth(e.target.value)}/></label><label>{tr(lang, 'day')}<input type="number" min="1" max="31" value={obligationDay} onChange={e=>setObligationDay(e.target.value)}/></label></div>}
+            {obligationRecurrence === 'WEEKLY' && <div className="pf-field-row"><label>{lang === 'ru' ? 'День недели' : 'Weekday'}<select value={obligationWeekday} onChange={e=>setObligationWeekday(e.target.value)}>{(lang === 'ru' ? ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'] : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']).map((d,i)=><option key={d} value={i}>{d}</option>)}</select></label><label>{lang === 'ru' ? 'Каждые N недель' : 'Every N weeks'}<input type="number" min="1" max="52" value={obligationIntervalWeeks} onChange={e=>setObligationIntervalWeeks(e.target.value)}/></label></div>}
+            <div className="pf-field-row"><label>{tr(lang, 'startDate')}<input type="date" required value={obligationDate} onChange={e => setObligationDate(e.target.value)}/></label><label>{tr(lang, 'endDate')}<input type="date" min={obligationDate} value={obligationEnd} onChange={e => setObligationEnd(e.target.value)}/></label></div>
+            <label>{tr(lang, 'member')}<select value={obligationMember} onChange={e => setObligationMember(e.target.value)}>{memberOptions}</select></label>
+            <label>{lang === 'ru' ? 'Связанный общий долг (необязательно)' : 'Linked outstanding debt (optional)'}<select value={obligationDebtId} onChange={e => setObligationDebtId(e.target.value)}><option value="">{lang === 'ru' ? 'Не связывать' : 'Not linked'}</option>{debts.filter(debt => debt.isActive).map(debt => <option key={debt.id} value={debt.id}>{debt.title} · {rub(debt.remainingAmount)}</option>)}</select></label>
+            <div className="pf-form-actions">{editingObligationId && <button type="button" className="pf-button ghost" onClick={() => { setEditingObligationId(null); setObligationDebtId(''); }}>{tr(lang, 'cancel')}</button>}<button className="pf-button primary" disabled={busy}>{editingObligationId ? tr(lang, 'save') : tr(lang, 'add')}</button></div>
+          </form>
+        </section>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЛАН И ОПЛАТА' : 'DUE AND PAID'}</span><h2>{tr(lang, 'obligations')}</h2></div><div className="pf-row-action"><button className="pf-link" onClick={() => setShowSkippedObligations(value => !value)}>{showSkippedObligations ? (lang === 'ru' ? 'Скрыть пропущенные' : 'Hide skipped') : (lang === 'ru' ? 'Показать пропущенные' : 'Show skipped')}</button><span className="pf-count">{monthObligations.length}</span></div></div>
+          {visibleObligations.length ? visibleObligations.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.obligation.title}</strong><small>{item.obligation.category} · {dateLabel(item.dueDate, lang)}</small><small className={item.status === 'PAID' ? 'positive' : item.status === 'OVERDUE' || item.status === 'SKIPPED' ? 'negative' : ''}>{item.status === 'PAID' ? tr(lang, 'paidStatus') : item.status === 'PARTIAL' ? (lang === 'ru' ? 'Частично оплачено' : 'Partially paid') : item.status === 'OVERDUE' ? tr(lang, 'overdue') : item.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : tr(lang, 'unpaid')}</small></div><div className="pf-row-action"><span><b>{lang === 'ru' ? 'Осталось' : 'Remaining'} {rub(Math.max(0, Number(item.plannedAmount) - Number(item.actualAmount ?? 0)))}</b><small>{lang === 'ru' ? 'Оплачено' : 'Paid'} {rub(item.actualAmount ?? 0)} {lang === 'ru' ? 'из' : 'of'} {rub(item.plannedAmount)}</small></span>{item.status === 'SKIPPED' ? <button className="pf-button small" disabled={busy} onClick={() => restoreObligation(item.id)}>{lang === 'ru' ? 'Вернуть' : 'Restore'}</button> : item.status !== 'PAID' && <><button className="pf-edit" title={lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation'} aria-label={lang === 'ru' ? 'Изменить обязательство' : 'Edit obligation'} onClick={() => {
+                const config = item.obligation.recurrenceConfig ?? {};
+                setEditingObligationId(item.obligation.id); setObligationTitle(item.obligation.title);
+                setObligationCategory(item.obligation.category); setObligationAmount(String(item.obligation.amount ?? item.plannedAmount));
+                setObligationMember(item.obligation.memberId ?? ''); setObligationDebtId(item.obligation.debtId ?? ''); setObligationRecurrence(item.obligation.recurrence);
+                setObligationDate(item.obligation.startDate.slice(0, 10)); setObligationEnd(item.obligation.endDate?.slice(0, 10) ?? '');
+                setObligationDay(String(config.day ?? config.firstDay ?? Number(item.obligation.startDate.slice(8, 10))));
+                setObligationDay2(String(config.secondDay ?? 15)); setObligationMonth(String(config.month ?? Number(item.obligation.startDate.slice(5, 7))));
+                setObligationWeekday(String(config.weekdays?.[0] ?? 1)); setObligationIntervalWeeks(String(config.intervalWeeks ?? 1));
+              }}>✎</button><button className="pf-button small" disabled={busy} onClick={() => markPaidPartially(item.id)}>{lang === 'ru' ? 'Внести частично' : 'Pay partially'}</button><button className="pf-button small primary" disabled={busy} onClick={() => markPaidFully(item.id, Math.max(0, Number(item.plannedAmount) - Number(item.actualAmount ?? 0)))}>{lang === 'ru' ? 'Оплатить полностью' : 'Pay in full'}</button><button className="pf-delete" title={lang === 'ru' ? 'Пропустить этот платёж' : 'Skip this occurrence'} aria-label={lang === 'ru' ? 'Пропустить этот платёж' : 'Skip this occurrence'} onClick={() => skipObligation(item.id)}>⊘</button><button className="pf-delete" title={lang === 'ru' ? 'Отключить обязательство' : 'Archive obligation'} aria-label={lang === 'ru' ? 'Отключить обязательство' : 'Archive obligation'} onClick={() => deleteObligation(item.obligation.id)}>×</button></>}</div></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyObligations')}</p>}
+        </section>
+        {archivedObligations.length > 0 && <section className="pf-card pf-archive-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'АРХИВ' : 'ARCHIVE'}</span><h2>{lang === 'ru' ? 'Отключённые обязательства' : 'Archived obligations'}</h2></div><span className="pf-count">{archivedObligations.length}</span></div>{archivedObligations.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category} · {rub(item.amount)} · {item.recurrence}</small></div><button className="pf-button small" disabled={busy} onClick={() => reactivateObligation(item.id)}>{lang === 'ru' ? 'Восстановить' : 'Restore'}</button></div>)}</section>}
+      </div>}
+
+
+        <section className="pf-card pf-archive-card">
+          <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ДОЛГИ И ПОГАШЕНИЯ' : 'DEBTS AND REPAYMENTS'}</span><h2>{lang === 'ru' ? 'Остатки задолженности' : 'Outstanding balances'}</h2><p className="pf-muted">{lang === 'ru' ? 'Погашения уменьшают остаток и одновременно записываются в расходы.' : 'Repayments reduce the balance and are also recorded as expenses.'}</p></div><span className="pf-count">{debts.filter(debt => debt.isActive).length}</span></div>
+          <form className="pf-form" onSubmit={createDebt}>
+            <label>{tr(lang, 'title')}<input required maxLength={120} value={debtTitle} onChange={e => setDebtTitle(e.target.value)} placeholder={lang === 'ru' ? 'Например, Кредитная карта' : 'e.g. Credit card'} /></label>
+            <label>{tr(lang, 'category')}<input required maxLength={60} value={debtCategory} onChange={e => setDebtCategory(e.target.value)} /></label>
+            <label>{lang === 'ru' ? 'Первоначальная сумма долга, ₽' : 'Initial debt amount, RUB'}<input type="number" min="0.01" step="0.01" required value={debtInitialAmount} onChange={e => setDebtInitialAmount(e.target.value)} /></label>
+            <label>{tr(lang, 'member')}<select value={debtMember} onChange={e => setDebtMember(e.target.value)}>{memberOptions}</select></label>
+            <div className="pf-form-actions"><button className="pf-button primary" disabled={busy}>{lang === 'ru' ? 'Добавить долг' : 'Add debt'}</button></div>
+          </form>
+          <div className="pf-divider" />
+          {debts.filter(debt => debt.isActive).length ? debts.filter(debt => debt.isActive).map(debt => <div className="pf-list-row" key={debt.id}>
+            <div className="pf-list-main">
+              <strong>{debt.title}</strong>
+              <small>{debt.category}{debt.member?.name ? ` · ${debt.member.name}` : ''} · {lang === 'ru' ? 'Было' : 'Original'}: {rub(debt.originalAmount)}</small>
+              <small className={Number(debt.remainingAmount) === 0 ? 'positive' : ''}>{lang === 'ru' ? 'Остаток долга' : 'Remaining balance'}: <b>{rub(debt.remainingAmount)}</b></small>
+              {debt.transactions.slice(0, 4).map(tx => <small key={tx.id}>{dateLabel(tx.date, lang)} · {tx.type === 'PAYMENT' ? (lang === 'ru' ? 'Погашение' : 'Repayment') : tx.type === 'OPENING' ? (lang === 'ru' ? 'Начальный остаток' : 'Opening balance') : (lang === 'ru' ? 'Корректировка' : 'Adjustment')} · {Number(tx.balanceChange) < 0 ? '−' : '+'}{rub(Math.abs(Number(tx.balanceChange)))}{tx.reason ? ` · ${tx.reason}` : ''}</small>)}
+            </div>
+            <div className="pf-row-action">
+              {Number(debt.remainingAmount) > 0 && <button className="pf-button small" disabled={busy} onClick={() => payDebt(debt)}>{lang === 'ru' ? 'Внести платёж' : 'Repay'}</button>}
+              <button className="pf-edit" title={lang === 'ru' ? 'Изменить остаток' : 'Adjust balance'} aria-label={lang === 'ru' ? 'Изменить остаток' : 'Adjust balance'} disabled={busy} onClick={() => adjustDebt(debt)}>✎</button>
+              <button className="pf-delete" title={lang === 'ru' ? 'Архивировать долг' : 'Archive debt'} aria-label={lang === 'ru' ? 'Архивировать долг' : 'Archive debt'} disabled={busy} onClick={() => archiveDebt(debt)}>×</button>
+            </div>
+          </div>) : <p className="pf-empty">{lang === 'ru' ? 'Долги пока не добавлены.' : 'No debts added yet.'}</p>}
+        </section>
+
+
+      {tab === 'calendar' && <div className="pf-page pf-two-col">
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'КАЛЕНДАРЬ ДОМОХОЗЯЙСТВА' : 'HOUSEHOLD CALENDAR'}</span><h2>{new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric', timeZone: timezone }).format(new Date(ranges.from + 'T00:00:00.000Z'))}</h2><p className="pf-muted">{lang === 'ru' ? 'Нажми на дату, чтобы увидеть все операции и платежи.' : 'Select a date to view its transactions and payments.'}</p></div></div>
+          <div className="pf-calendar-grid pf-calendar-weekdays">{(lang === 'ru' ? ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'] : ['Su','Mo','Tu','We','Th','Fr','Sa']).map(day => <span key={day}>{day}</span>)}</div>
+          <div className="pf-calendar-grid">{calendarCells.map((day, index) => {
+            const date = day ? ranges.from.slice(0,8) + String(day).padStart(2,'0') : '';
+            const events = calendarEvents.filter(item => item.date === date);
+            return day ? <button type="button" key={index} className={'pf-calendar-day pf-calendar-day-button ' + (selectedCalendarDate === date ? 'selected' : '')} aria-pressed={selectedCalendarDate === date} aria-label={date + ', ' + events.length + ' ' + (lang === 'ru' ? 'событий' : 'events')} onClick={() => setSelectedCalendarDate(date)}><b>{day}</b>{events.length > 0 && <span>{events.length} {lang === 'ru' ? 'событ.' : 'items'}</span>}<div className="pf-calendar-dots">{events.slice(0,3).map((item,i)=><i key={i} className={item.kind}/>)}</div></button> : <div key={index} className="pf-calendar-day blank" aria-hidden="true"/>;
+          })}</div>
+          <div className="pf-calendar-legend"><span><i className="income"/>{lang === 'ru' ? 'Доход' : 'Income'}</span><span><i className="expense"/>{lang === 'ru' ? 'Расход' : 'Expense'}</span><span><i className="obligation"/>{lang === 'ru' ? 'Обязательный платёж' : 'Commitment'}</span></div>
+        </section>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ВЫБРАННАЯ ДАТА' : 'SELECTED DATE'}</span><h2>{dateLabel(selectedCalendarDate,lang)}</h2></div><span className="pf-count">{selectedCalendarEvents.length}</span></div>
+          {selectedCalendarEvents.length ? selectedCalendarEvents.map(item=><div className="pf-list-row" key={item.id + item.kind}><div><strong>{item.title}</strong><small>{item.kind === 'income' ? (item.status === 'RECEIVED' ? (lang === 'ru' ? 'Доход получен' : 'Income received') : item.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : (lang === 'ru' ? 'Ожидаемый доход' : 'Expected income')) : item.kind === 'expense' ? (lang === 'ru' ? 'Фактический расход' : 'Actual expense') : item.status === 'PAID' ? tr(lang,'paidStatus') : item.status === 'SKIPPED' ? (lang === 'ru' ? 'Пропущено' : 'Skipped') : item.status === 'OVERDUE' ? tr(lang,'overdue') : (lang === 'ru' ? 'Предстоящий платёж' : 'Upcoming payment')}</small></div><div className="pf-row-action"><b className={item.kind === 'income' ? 'positive' : ''}>{item.kind === 'income' ? '+' : '−'}{rub(item.amount)}</b>{item.kind === 'income' && item.status === 'PLANNED' && <button className="pf-button small" disabled={busy} onClick={() => markReceived(item.id,item.amount)}>{tr(lang,'receivedAction')}</button>}{item.kind === 'obligation' && item.status !== 'PAID' && item.status !== 'SKIPPED' && <button className="pf-button small" disabled={busy} onClick={() => markPaidFully(item.id,item.amount)}>{tr(lang,'paidAction')}</button>}</div></div>) : <p className="pf-empty" role="status" aria-live="polite">{lang === 'ru' ? 'На эту дату операций и обязательных платежей нет.' : 'No transactions or commitments on this date.'}</p>}
+          <div className="pf-form-actions"><button className="pf-button ghost" onClick={() => { setTab('expenses'); setExpensePeriod('custom'); setExpenseFrom(selectedCalendarDate); setExpenseTo(selectedCalendarDate); }}>{lang === 'ru' ? 'Расходы за эту дату' : 'Expenses on this date'}</button></div>
+        </section>
+      </div>}
+
+      {tab === 'analytics' && analytics && <div className="pf-page pf-analytics">
+        <section className="pf-metric-grid"><article><span>{lang === 'ru' ? 'Доходы за период' : 'Income for period'}</span><strong className="positive">{rub(analytics.totals.income)}</strong></article><article><span>{lang === 'ru' ? 'Расходы за период' : 'Expenses for period'}</span><strong>{rub(analytics.totals.expenses)}</strong></article><article><span>{tr(lang,'due')}</span><strong>{rub(analytics.totals.obligations)}</strong></article><article><span>{lang === 'ru' ? 'Разница доходов и расходов' : 'Income minus expenses'}</span><strong>{rub(analytics.totals.income-analytics.totals.expenses)}</strong></article></section>
+        <section className="pf-two-col">
+          <article className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'СТРУКТУРА РАСХОДОВ' : 'EXPENSE BREAKDOWN'}</span><h2>{lang === 'ru' ? 'По категориям' : 'By category'}</h2></div></div>
+            {analytics.categories.length ? analytics.categories.map(item=><div className="pf-category-bar" key={item.id}><div><span>{categoryLabel(item.slug, item.name, lang)}</span><b>{rub(item.amount)}</b></div><div className="pf-coverage-track"><span style={{width: Math.max(2,item.amount/Math.max(...analytics.categories.map(x=>x.amount))*100) + '%'}}/></div></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyAnalytics')}</p>}
+          </article>
+          <article className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'СЕМЕЙНЫЕ ДАННЫЕ' : 'HOUSEHOLD DATA'}</span><h2>{lang === 'ru' ? 'По участникам' : 'By member'}</h2></div></div>
+            {analytics.members.length ? analytics.members.map(item=><div className="pf-list-row" key={item.id ?? 'shared'}><div><strong>{item.name}</strong><small>{lang === 'ru' ? 'Доходы' : 'Income'}: {rub(item.income)} · {lang === 'ru' ? 'Расходы' : 'Expenses'}: {rub(item.expenses)}</small></div><b className={item.net >= 0 ? 'positive' : 'negative'}>{rub(item.net)}</b></div>) : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyAnalytics')}</p>}
+          </article>
+        </section>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ДИНАМИКА' : 'TREND'}</span><h2>{lang === 'ru' ? 'Доходы и расходы по месяцам' : 'Monthly income and expenses'}</h2></div></div>
+          {analytics.months.length ? <><div className="pf-trend-legend"><span><i className="income"/> {lang === 'ru' ? 'Доходы' : 'Income'}</span><span><i className="expense"/> {lang === 'ru' ? 'Расходы' : 'Expenses'}</span></div>{analytics.months.map(item=><div className="pf-trend-row" key={item.month}><div className="pf-trend-label"><strong>{item.month}</strong><b className={item.net >= 0 ? 'positive' : 'negative'}>{rub(item.net)}</b></div><div className="pf-trend-bar income"><span style={{width:(item.income/analyticsMax*100)+'%'}}/></div><div className="pf-trend-bar expense"><span style={{width:(item.expenses/analyticsMax*100)+'%'}}/></div><small>{lang === 'ru' ? 'Доходы' : 'Income'}: {rub(item.income)} · {lang === 'ru' ? 'Расходы' : 'Expenses'}: {rub(item.expenses)}</small></div>)}</> : <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyAnalytics')}</p>}
+        </section>
+      </div>}
+
+      {tab === 'budgets' && <div className="pf-page pf-two-col">
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ЛИМИТЫ РАСХОДОВ' : 'SPENDING LIMITS'}</span><h2>{lang === 'ru' ? 'Месячный бюджет' : 'Monthly budget'}</h2></div></div>
+          <form className="pf-form" onSubmit={e => perform(e, PF + '/budgets', { periodMonth: ranges.from, limitAmount: Number(budgetLimit), categoryId: budgetCategory || null, memberId: budgetMember || null }, lang === 'ru' ? 'Бюджет сохранён.' : 'Budget saved.')}>
+            <label>{tr(lang,'amount')}<input type="number" min="0.01" step="0.01" required value={budgetLimit} onChange={e=>setBudgetLimit(e.target.value)}/></label>
+            <label>{tr(lang,'category')}<select value={budgetCategory} onChange={e=>setBudgetCategory(e.target.value)}><option value="">{lang === 'ru' ? 'Все категории' : 'All categories'}</option>{categories.map(x=><option key={x.id} value={x.id}>{categoryName(x,lang)}</option>)}</select></label>
+            <label>{tr(lang,'member')}<select value={budgetMember} onChange={e=>setBudgetMember(e.target.value)}>{memberOptions}</select></label>
+            <button className="pf-button primary" disabled={busy}>{tr(lang,'save')}</button>
+          </form>
+          {visibleBudgets.map(item=>{const used=memberExpenses.filter(x=>x.date>=ranges.from&&x.date<=ranges.to&&(!item.categoryId||x.category?.id===item.categoryId)&&((x.memberId??null)===(item.memberId??null))).reduce((sum,x)=>sum+Number(x.amount),0);const limit=Number(item.limitAmount);const progress=limit>0?Math.min(100,used/limit*100):0;return <div className="pf-budget-item" key={item.id}><div className="pf-list-row"><div><strong>{item.category ? categoryName(item.category,lang) : (lang === 'ru' ? 'Общий бюджет' : 'Overall budget')}</strong><small>{item.member?.name ?? tr(lang,'shared')}</small></div><div className="pf-row-action"><b>{rub(used)} / {rub(limit)}</b><button className="pf-delete" aria-label={lang === 'ru' ? 'Удалить бюджет' : 'Delete budget'} onClick={()=>deleteBudget(item.id)}>×</button></div></div><div className="pf-coverage-track"><span style={{width:progress+'%',background:used>limit?'#ff8796':undefined}}/></div></div>})}
+          {!visibleBudgets.length && <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyBudgets')}</p>}
+        </section>
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'НАКОПЛЕНИЯ' : 'SAVINGS'}</span><h2>{lang === 'ru' ? 'Финансовая цель' : 'Savings goal'}</h2></div></div>
+          <form className="pf-form" onSubmit={e=>perform(e,PF+'/savings-goals',{title:goalTitle,targetAmount:Number(goalTarget),currentAmount:Number(goalCurrent),targetDate:goalDate||null},lang === 'ru' ? 'Цель добавлена.' : 'Goal added.')}>
+            <label>{tr(lang,'title')}<input required value={goalTitle} onChange={e=>setGoalTitle(e.target.value)}/></label>
+            <div className="pf-field-row"><label>{lang === 'ru' ? 'Целевая сумма' : 'Target amount'}<input type="number" min="0.01" step="0.01" required value={goalTarget} onChange={e=>setGoalTarget(e.target.value)}/></label><label>{lang === 'ru' ? 'Уже накоплено' : 'Already saved'}<input type="number" min="0" step="0.01" value={goalCurrent} onChange={e=>setGoalCurrent(e.target.value)}/></label></div>
+            <label>{lang === 'ru' ? 'Желаемая дата' : 'Target date'}<input type="date" value={goalDate} onChange={e=>setGoalDate(e.target.value)}/></label>
+            <button className="pf-button primary" disabled={busy}>{tr(lang,'add')}</button>
+          </form>
+          {goals.map(goal=>{const progress=Math.min(100,Number(goal.currentAmount)/Number(goal.targetAmount)*100);return <div className="pf-goal" key={goal.id}><div><strong>{goal.title}</strong><b>{rub(goal.currentAmount)} / {rub(goal.targetAmount)}</b></div><div className="pf-coverage-track"><span style={{width: progress + '%'}}/></div><div className="pf-goal-bottom"><small>{Math.round(progress)}% {lang === 'ru' ? 'накоплено' : 'saved'}{goal.targetDate ? ' · '+dateLabel(goal.targetDate,lang) : ''}</small><div className="pf-row-action"><button className="pf-button small" disabled={busy || goal.status === 'COMPLETED'} onClick={()=>addGoalContribution(goal)}>{lang === 'ru' ? 'Пополнить' : 'Add funds'}</button><button className="pf-delete" aria-label={lang === 'ru' ? 'Удалить цель' : 'Delete goal'} onClick={()=>deleteGoal(goal.id)}>×</button></div></div></div>})}
+          {!goals.length && <p className="pf-empty" role="status" aria-live="polite">{tr(lang, 'emptyGoals')}</p>}
+        </section>
+      </div>}
+
+      {tab === 'settings' && <div className="pf-page">
+        <section className="pf-card pf-settings-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПЕРСОНАЛИЗАЦИЯ' : 'PREFERENCES'}</span><h2>{tr(lang,'settings')}</h2></div></div>
+          <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Язык интерфейса' : 'Interface language'}</strong><small>{lang === 'ru' ? 'Язык названий и подсказок' : 'Labels and helper text language'}</small></span><select value={lang} onChange={e=>changeLanguage(e.target.value as Lang)}><option value="ru">Русский</option><option value="en">English</option></select></label>
+          <div className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Подключение Telegram' : 'Telegram connection'}</strong><small>{user.telegramLinked ? (lang === 'ru' ? 'Этот аккаунт уже связан с подтверждённым Telegram ID.' : 'This account is linked to a verified Telegram ID.') : (lang === 'ru' ? 'Для безопасной привязки открой приложение внутри Telegram и войди в этот аккаунт.' : 'To link securely, open the app inside Telegram and sign in to this account.')}</small></span>{user.telegramLinked ? <span className="pf-status-pill">{lang === 'ru' ? 'Подключён' : 'Connected'}</span> : <button className="pf-button small" disabled={busy || !window.Telegram?.WebApp?.initData} onClick={linkTelegramAccount}>{lang === 'ru' ? 'Подключить Telegram' : 'Link Telegram'}</button>}</div>
+          <div className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Напоминания о платежах в Telegram' : 'Telegram payment reminders'}</strong><small>{lang === 'ru' ? 'Сообщение за день до срока оплаты. Настройка действует только для твоего аккаунта.' : 'A message one day before a payment is due. This setting applies only to your account.'}</small></span><input type="checkbox" checked={telegramRemindersEnabled} disabled={busy || !user.telegramLinked} onChange={e=>saveTelegramReminderSettings(e.target.checked, telegramReminderTime)}/></div>
+          {telegramRemindersEnabled && <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Время напоминания' : 'Reminder time'}</strong><small>{lang === 'ru' ? 'По выбранному выше часовому поясу' : 'Uses the time zone selected above'}</small></span><select value={telegramReminderTime} disabled={busy} onChange={e=>saveTelegramReminderSettings(true, e.target.value)}>{['07:00','08:00','09:00','10:00','12:00','18:00','20:00'].map(value=><option key={value} value={value}>{value}</option>)}</select></label>}
+          <label className="pf-setting-row"><span><strong>{lang === 'ru' ? 'Часовой пояс' : 'Time zone'}</strong><small>{lang === 'ru' ? 'Используется для текущей даты и календаря платежей' : 'Used for today and payment calendar dates'}</small></span><select value={timezone} onChange={e=>changeTimezone(e.target.value)}>{[['Europe/Moscow','Москва (UTC+3)'],['Europe/Minsk','Минск (UTC+3)'],['Europe/Warsaw','Варшава'],['Europe/Berlin','Берлин'],['Europe/London','Лондон'],['Asia/Dubai','Дубай'],['Asia/Bangkok','Бангкок'],['Asia/Ho_Chi_Minh','Хошимин'],['UTC','UTC']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+          {canManageHousehold && <div className="pf-opening-balance"><div><strong>{lang === 'ru' ? 'Начальный остаток' : 'Opening balance'}</strong><small>{lang === 'ru' ? 'Сколько денег было на счетах и наличными на дату начала учёта' : 'Money held across accounts and cash on the start date'}</small></div><div className="pf-opening-fields"><label>{lang === 'ru' ? 'Сумма, ₽' : 'Amount, RUB'}<input type="number" step="0.01" value={openingBalance} onChange={e=>setOpeningBalance(e.target.value)}/></label><label>{lang === 'ru' ? 'Дата начала учёта' : 'Tracking start date'}<input type="date" max={todayInTimezone(timezone)} value={openingBalanceDate} onChange={e=>setOpeningBalanceDate(e.target.value)}/></label></div><button className="pf-button" disabled={busy || !openingBalanceDate} onClick={saveOpeningBalance}>{lang === 'ru' ? 'Сохранить начальный остаток' : 'Save opening balance'}</button><p className="pf-muted">{lang === 'ru' ? 'Фактический баланс будет считать доходы, расходы и корректировки только начиная с этой даты, чтобы не учитывать старую историю повторно.' : 'The actual balance includes income, expenses and adjustments from this date onward, avoiding double-counting older history.'}</p></div>}<div className="pf-opening-balance">
+            <div><strong>{lang === 'ru' ? 'Корректировка общего баланса' : 'Overall balance adjustment'}</strong><small>{lang === 'ru' ? 'Разовая поправка для исторического баланса. Не меняет расчёт доходов и расходов выбранного месяца.' : 'A one-time adjustment for the historical balance. It does not change selected-month income or expenses.'}</small></div>
+            <form className="pf-inline-form" onSubmit={e => perform(e, `${PF}/balance-adjustments`, { amount: Number(openingAmount), date: moscowToday(), reason: openingReason }, lang === 'ru' ? 'Корректировка сохранена.' : 'Adjustment saved.')}>
+              <label>{tr(lang, 'amount')}<input type="number" step="0.01" required value={openingAmount} onChange={e => setOpeningAmount(e.target.value)} placeholder="0.00"/></label>
+              <label>{tr(lang, 'reason')}<input required value={openingReason} onChange={e => setOpeningReason(e.target.value)}/></label>
+              <button className="pf-button primary" disabled={busy}>{tr(lang, 'save')}</button>
+            </form>
+            {adjustments.length > 0 && <small className="pf-muted">{lang === 'ru' ? 'Сохранено корректировок:' : 'Saved adjustments:'} {adjustments.length}</small>}
+          </div><p className="pf-muted">{lang === 'ru' ? 'Суммы хранятся в рублях. Смена часового пояса влияет на формирование будущих дат, но не пересчитывает уже записанные операции.' : 'Amounts are stored in RUB. Changing the timezone affects future date generation but does not rewrite existing transactions.'}</p>
+        </section>
+      </div>}
+
+      {tab === 'family' && <div className="pf-page pf-two-col">
+        <section className="pf-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОБЩЕЕ ПРОСТРАНСТВО' : 'SHARED SPACE'}</span><div className="pf-row-action"><h2>{household?.name ?? tr(lang, 'family')}</h2>{canManageHousehold && <button className="pf-edit" aria-label={lang === 'ru' ? 'Переименовать семью' : 'Rename household'} disabled={busy} onClick={renameHousehold}>✎</button>}</div></div><span className="pf-count">{household?.members.length ?? 0}</span></div>
+          <p className="pf-muted">{lang === 'ru' ? 'Все участники этого пространства видят одни и те же доходы, расходы, счета, бюджеты и накопления. У каждого свой аккаунт nummioX — вход по электронной почте или через Telegram.' : 'Everyone in this space shares the same income, expenses, accounts, budgets and savings. Each person has their own nummioX account and can sign in with email or Telegram.'}</p>
+          <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПРОФИЛИ ДЛЯ УЧЁТА' : 'ATTRIBUTION PROFILES'}</span><h2>{lang === 'ru' ? 'Кто совершил операцию' : 'Who made the transaction'}</h2></div></div>
+          {canManageHousehold && <form className="pf-inline-form" onSubmit={addMember}><label>{tr(lang, 'newMember')}<input required value={newMemberName} onChange={e => setNewMemberName(e.target.value)}/></label><button className="pf-button primary" disabled={busy}>{tr(lang, 'addMember')}</button></form>}
+          {activeMembers.map(m => <div className="pf-list-row" key={m.id}><div><strong>{m.name}</strong><small>{lang === 'ru' ? 'Профиль для распределения доходов и расходов' : 'Profile for attributing income and expenses'}</small></div>{canManageHousehold && <div className="pf-row-action"><span className="pf-member-dot"/><button className="pf-edit" aria-label={lang === 'ru' ? 'Переименовать профиль' : 'Rename profile'} onClick={()=>renameMember(m)}>✎</button><button className="pf-delete" aria-label={lang === 'ru' ? 'Архивировать профиль' : 'Archive profile'} onClick={()=>archiveMember(m)}>×</button></div>}</div>)}
+        </section>
+        <section className="pf-card">
+          {canManageHousehold && <div className="pf-household-sharing">
+            <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ТВОЯ АТРИБУЦИЯ' : 'YOUR PROFILE'}</span><h2>{lang === 'ru' ? 'Как отмечать твои операции' : 'Attribute your activity'}</h2></div></div>
+            <label>{lang === 'ru' ? 'Мой профиль' : 'My profile'}<select value={ownerProfileId} onChange={e=>setOwnerProfileId(e.target.value)}><option value="">{lang === 'ru' ? 'Не выбран — общие операции' : 'Not set — shared transactions'}</option>{activeMembers.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+            <button className="pf-button" disabled={busy} onClick={saveOwnerProfile}>{lang === 'ru' ? 'Сохранить мой профиль' : 'Save my profile'}</button>
+            <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ПРИГЛАШЕНИЕ В СЕМЬЮ' : 'INVITE TO HOUSEHOLD'}</span><h2>{lang === 'ru' ? 'Подключить близкого' : 'Add a family member'}</h2></div></div>
+            <p className="pf-muted">{lang === 'ru' ? 'Выбери профиль, который будет закреплён за аккаунтом приглашённого участника. История и общий баланс останутся едиными.' : 'Choose the profile to link to the invited member’s account. History and balances remain shared.'}</p>
+            <label>{lang === 'ru' ? 'Профиль участника' : 'Member profile'}<select value={inviteMemberId} onChange={e=>setInviteMemberId(e.target.value)}><option value="">{lang === 'ru' ? 'Выбрать профиль' : 'Choose a profile'}</option>{activeMembers.filter(m=>!household.members.some(a=>a.member?.id===m.id)).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+            <button className="pf-button primary" disabled={busy || !inviteMemberId} onClick={createHouseholdInvite}>{lang === 'ru' ? 'Создать ссылку-приглашение' : 'Create invite link'}</button>
+            {inviteLink && <div className="pf-invite-link"><input readOnly value={inviteLink}/><button className="pf-button" onClick={async()=>{try{await navigator.clipboard.writeText(inviteLink);setNotice(lang==='ru'?'Ссылка скопирована.':'Link copied.');}catch{setError(lang==='ru'?'Не удалось скопировать ссылку.':'Could not copy the link.');}}}>{lang === 'ru' ? 'Копировать' : 'Copy'}</button></div>}
+            {invitations.length > 0 && <div className="pf-invitation-list">{invitations.map(invite => {
+              const pending = !invite.acceptedAt && !invite.revokedAt && new Date(invite.expiresAt).getTime() > Date.now();
+              const status = invite.acceptedAt ? (lang === 'ru' ? 'Принято' : 'Accepted') : invite.revokedAt ? (lang === 'ru' ? 'Отозвано' : 'Revoked') : pending ? (lang === 'ru' ? 'Ожидает ответа' : 'Pending') : (lang === 'ru' ? 'Истекло' : 'Expired');
+              return <div className="pf-list-row" key={invite.id}><div><strong>{invite.member.name}</strong><small>{status} · {new Date(invite.expiresAt).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-GB')}</small></div>{pending && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отозвать приглашение' : 'Revoke invitation'} aria-label={lang === 'ru' ? 'Отозвать приглашение' : 'Revoke invitation'} onClick={()=>revokeHouseholdInvitation(invite.id)}>×</button>}</div>;
+            })}</div>}
+          </div>}
+          <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ДОСТУП К БЮДЖЕТУ' : 'BUDGET ACCESS'}</span><h2>{lang === 'ru' ? 'Участники с аккаунтами' : 'Connected accounts'}</h2></div></div>
+          {household?.members.map(access=><div className="pf-list-row" key={access.userId}><div><strong>{access.member?.name ?? (access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец семьи' : 'Household owner') : (lang === 'ru' ? 'Участник' : 'Member'))}</strong><small>{access.identity.telegramUsername ? '@'+access.identity.telegramUsername : access.identity.telegramFirstName ?? (lang === 'ru' ? 'Аккаунт nummioX' : 'nummioX account')} · {access.role === 'OWNER' ? (lang === 'ru' ? 'Владелец' : 'Owner') : (lang === 'ru' ? 'Общий доступ' : 'Shared access')}</small></div>{household.role === 'OWNER' && access.role !== 'OWNER' && <button className="pf-delete" disabled={busy} title={lang === 'ru' ? 'Отключить доступ' : 'Revoke access'} aria-label={lang === 'ru' ? 'Отключить доступ' : 'Revoke access'} onClick={()=>revokeHouseholdAccess(access.userId)}>×</button>}</div>)}
+          <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ОБЩИЕ ПРАВИЛА' : 'HOUSEHOLD RULES'}</span><h2>{lang === 'ru' ? 'Как считается бюджет' : 'How the budget works'}</h2></div></div>
+          <ul className="pf-rules"><li>{lang === 'ru' ? 'Доходы учитываются в фактическом остатке только после отметки «Получено».' : 'Income affects actual balance only after being marked received.'}</li><li>{lang === 'ru' ? 'Обязательство становится расходом один раз после отметки «Оплачено».' : 'An obligation becomes an expense once when marked paid.'}</li><li>{lang === 'ru' ? 'Пустой участник означает общий расход или доход семьи.' : 'An empty member means a shared household item.'}</li><li>{lang === 'ru' ? 'Все суммы ведутся только в рублях.' : 'All amounts are tracked in RUB only.'}</li></ul>
+        </section>
+      </div>}
+      <footer className="pf-footer">nummioX <span>·</span> {lang === 'ru' ? 'Семейные финансы без догадок' : 'Family finances, without guesswork'}</footer>
+      {actionDialog && <div className="pf-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) finishActionDialog(actionDialog.kind === 'confirm' ? false : null); }}>
+        <section ref={actionDialogRef} className="pf-dialog" role="dialog" aria-modal="true" aria-labelledby="pf-dialog-title" aria-describedby="pf-dialog-message" tabIndex={-1}>
+          <div className={`pf-dialog-mark ${actionDialog.destructive ? 'danger' : ''}`} aria-hidden="true">{actionDialog.kind === 'prompt' ? '✎' : '!'}</div>
+          <div className="pf-dialog-copy">
+            <span className="pf-eyebrow">{actionDialog.kind === 'prompt' ? (lang === 'ru' ? 'ДАННЫЕ ОПЕРАЦИИ' : 'TRANSACTION DETAILS') : (lang === 'ru' ? 'ПРОВЕРЬ ДЕЙСТВИЕ' : 'PLEASE CONFIRM')}</span>
+            <h2 id="pf-dialog-title">{actionDialog.title}</h2>
+            <p id="pf-dialog-message">{actionDialog.message}</p>
+          </div>
+          <form onSubmit={event => { event.preventDefault(); finishActionDialog(actionDialog.kind === 'prompt' ? actionDialogValue : true); }}>
+            {actionDialog.kind === 'prompt' && <label className="pf-dialog-field">
+              <span>{actionDialog.inputType === 'number' ? (lang === 'ru' ? 'Сумма, ₽' : 'Amount, RUB') : (lang === 'ru' ? 'Название' : 'Name')}</span>
+              <input autoFocus type={actionDialog.inputType ?? 'text'} inputMode={actionDialog.inputType === 'number' ? 'decimal' : 'text'} step={actionDialog.inputType === 'number' ? '0.01' : undefined} min={actionDialog.inputType === 'number' ? '0.01' : undefined} value={actionDialogValue} onChange={event => setActionDialogValue(event.target.value)} />
+            </label>}
+            <div className="pf-dialog-actions">
+              <button type="button" autoFocus={actionDialog.kind === 'confirm'} className="pf-button ghost" onClick={() => finishActionDialog(actionDialog.kind === 'confirm' ? false : null)}>{tr(lang, 'cancel')}</button>
+              <button type="submit" className={`pf-button ${actionDialog.destructive ? 'danger' : 'primary'}`}>{actionDialog.kind === 'prompt' ? (actionDialog.submitLabel ?? (lang === 'ru' ? 'Сохранить' : 'Save')) : (lang === 'ru' ? 'Подтвердить' : 'Confirm')}</button>
+            </div>
+          </form>
+        </section>
+      </div>}
+    </main>
+  </div>;
+}

@@ -2,10 +2,13 @@ services:
   - type: web
     name: flowmoney-app
     runtime: node
+    branch: main
+    autoDeployTrigger: checksPass
     plan: free
     region: singapore
     buildCommand: npm ci && npm run db:generate && npm run build
-    startCommand: npx prisma migrate deploy --schema server/prisma/schema.prisma && npm start
+    # Migrations are intentionally manual; never mutate a persistent database on service startup.
+    startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
@@ -14,5 +17,9 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        value: nummioX_bot
       - key: CLIENT_ORIGIN
         value: https://flowmoney-app.onrender.com
