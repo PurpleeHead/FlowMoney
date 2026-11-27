@@ -1138,7 +1138,10 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
       prisma.ledgerExpense.aggregate({ where: { userId, ...memberWhere, date: { gte: from, lte: inclusiveTo } }, _sum: { amount: true } }),
       // Separate paid commitments by the date cash actually left the account, not by due date.
       prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: 'PAID', paidAt: { gte: receivedPeriodRange.from, lt: receivedPeriodRange.toExclusive } }, _sum: { actualAmount: true } }),
-      prisma.obligationOccurrence.aggregate({ where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { lte: horizon } }, _sum: { plannedAmount: true } }),
+      prisma.obligationOccurrence.findMany({
+        where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, dueDate: { lte: horizon } },
+        select: { plannedAmount: true, actualAmount: true, status: true },
+      }),
       prisma.balanceAdjustment.aggregate({ where: { userId, ...memberWhere, date: { gte: openingDate, lte: balanceDateCutoff } }, _sum: { amount: true } }),
       prisma.obligationOccurrence.findMany({ where: { userId, ...obligationMemberWhere, status: { not: 'SKIPPED' }, dueDate: { gte: from, lte: to } }, select: { plannedAmount: true, actualAmount: true, status: true } }),
     ]);
@@ -1147,12 +1150,15 @@ router.get('/dashboard', async (req: AuthedRequest, res, next) => {
     const householdOpeningBalance = memberFilter ? 0 : Number(openingSettings?.openingBalance ?? 0);
     const actualBalance = householdOpeningBalance + Number(adjustments._sum.amount ?? 0) + actualIncome - actualExpenseTotal;
     const plannedIncome = Number(plannedHorizon._sum.plannedAmount ?? 0);
-    const unpaidObligations = Number(forecastObligations._sum.plannedAmount ?? 0);
+    const unpaidObligations = forecastObligations.reduce((sum, item) => {
+      const paid = item.status === 'PARTIAL' ? Number(item.actualAmount ?? 0) : 0;
+      return sum + Math.max(0, Number(item.plannedAmount) - paid);
+    }, 0);
     const { due: dueTotal, paid: paidMonth, unpaid: unpaidMonth } = calculateObligationPeriodTotals(monthOccurrences);
     const receivedThisMonth = Number(receivedPeriod._sum.actualAmount ?? 0);
     const plannedThisMonth = Number(plannedPeriod._sum.plannedAmount ?? 0);
     const nextPayments = await prisma.obligationOccurrence.findMany({
-      where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE'] }, dueDate: { gte: from, lte: horizon } },
+      where: { userId, ...obligationMemberWhere, status: { in: ['UPCOMING', 'OVERDUE', 'PARTIAL'] }, dueDate: { gte: from, lte: horizon } },
       include: { obligation: true }, orderBy: { dueDate: 'asc' }, take: 10,
     });
     return res.json({
