@@ -700,6 +700,126 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
   } catch (error) { return next(error); }
 });
 
+
+const debtSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  category: z.string().trim().min(1).max(60),
+  originalAmount: money,
+  memberId: optionalMember,
+  note: z.string().max(500).nullable().optional(),
+});
+router.get('/debts', async (req: AuthedRequest, res, next) => {
+  try {
+    const userId = uid(req);
+    const debts = await prisma.debt.findMany({
+      where: { userId, ...(req.query.includeArchived === 'true' ? {} : { isActive: true }) },
+      include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } },
+      orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
+    });
+    return res.json(debts);
+  } catch (error) { return next(error); }
+});
+router.post('/debts', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = debtSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Check the debt title, category and initial amount.' });
+    const input = parsed.data, userId = uid(req);
+    if (!(await validMember(input.memberId, userId))) return memberError(res);
+    const debt = await prisma.$transaction(async tx => {
+      const created = await tx.debt.create({ data: {
+        userId, memberId: input.memberId ?? null, title: input.title, category: input.category,
+        originalAmount: input.originalAmount, remainingAmount: input.originalAmount, note: input.note ?? null,
+      } });
+      await tx.debtTransaction.create({ data: {
+        userId, debtId: created.id, type: 'OPENING', amount: input.originalAmount,
+        balanceChange: input.originalAmount, date: await userToday(userId), reason: 'Initial debt balance',
+      } });
+      return tx.debt.findFirst({ where: { id: created.id, userId }, include: { member: true, transactions: true } });
+    });
+    return res.status(201).json(debt);
+  } catch (error) { return next(error); }
+});
+router.patch('/debts/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = debtSchema.partial().extend({ isActive: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data ?? {}).length) return res.status(400).json({ message: 'Provide a valid debt update.' });
+    const input = parsed.data, userId = uid(req);
+    if (input.memberId !== undefined && !(await validMember(input.memberId, userId))) return memberError(res);
+    const result = await prisma.debt.updateMany({
+      where: { id: String(req.params.id), userId },
+      data: { ...input, ...(input.memberId === undefined ? {} : { memberId: input.memberId }) },
+    });
+    if (!result.count) return res.status(404).json({ message: 'Debt not found.' });
+    return res.json(await prisma.debt.findFirst({ where: { id: String(req.params.id), userId }, include: { member: true, transactions: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }));
+  } catch (error) { return next(error); }
+});
+router.post('/debts/:id/payments', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({ amount: money, date: dateSchema, note: z.string().max(300).nullable().optional() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid payment amount and date.' });
+    const userId = uid(req), id = String(req.params.id), input = parsed.data;
+    const result = await prisma.$transaction(async tx => {
+      const debt = await tx.debt.findFirst({ where: { id, userId, isActive: true } });
+      if (!debt) return { kind: 'missing' as const };
+      const expense = await tx.ledgerExpense.create({ data: {
+        userId, memberId: debt.memberId, title: debt.title, amount: input.amount,
+        date: dateValue(input.date), note: input.note ?? 'Debt repayment',
+      } });
+      const updated = await tx.debt.updateMany({
+        where: { id, userId, isActive: true, remainingAmount: { gte: input.amount } },
+        data: { remainingAmount: { decrement: input.amount } },
+      });
+      if (!updated.count) {
+        await tx.ledgerExpense.delete({ where: { id: expense.id } });
+        return { kind: 'insufficient' as const };
+      }
+      await tx.debtTransaction.create({ data: {
+        userId, debtId: id, type: 'PAYMENT', amount: input.amount, balanceChange: -input.amount,
+        date: dateValue(input.date), reason: input.note ?? null, expenseId: expense.id,
+      } });
+      return { kind: 'ok' as const, debt: await tx.debt.findFirst({ where: { id, userId }, include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }) };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Active debt not found.' });
+    if (result.kind === 'insufficient') return res.status(409).json({ message: 'Payment exceeds the remaining debt balance.' });
+    return res.status(201).json(result.debt);
+  } catch (error) { return next(error); }
+});
+router.post('/debts/:id/adjust', async (req: AuthedRequest, res, next) => {
+  try {
+    const parsed = z.object({
+      remainingAmount: z.number().finite().min(0).max(1_000_000_000),
+      date: dateSchema, reason: z.string().trim().min(1).max(200),
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Enter a valid new balance, date and reason.' });
+    const userId = uid(req), id = String(req.params.id), input = parsed.data;
+    const result = await prisma.$transaction(async tx => {
+      const debt = await tx.debt.findFirst({ where: { id, userId, isActive: true } });
+      if (!debt) return { kind: 'missing' as const };
+      const delta = input.remainingAmount - Number(debt.remainingAmount);
+      const changed = await tx.debt.updateMany({
+        where: { id, userId, isActive: true, remainingAmount: debt.remainingAmount },
+        data: { remainingAmount: input.remainingAmount },
+      });
+      if (!changed.count) return { kind: 'conflict' as const };
+      await tx.debtTransaction.create({ data: {
+        userId, debtId: id, type: 'ADJUSTMENT', amount: Math.abs(delta), balanceChange: delta,
+        date: dateValue(input.date), reason: input.reason,
+      } });
+      return { kind: 'ok' as const, debt: await tx.debt.findFirst({ where: { id, userId }, include: { member: true, transactions: { include: { expense: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] } } }) };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Active debt not found.' });
+    if (result.kind === 'conflict') return res.status(409).json({ message: 'Debt balance changed. Reload and try again.' });
+    return res.json(result.debt);
+  } catch (error) { return next(error); }
+});
+router.delete('/debts/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    const result = await prisma.debt.updateMany({ where: { id: String(req.params.id), userId: uid(req) }, data: { isActive: false } });
+    if (!result.count) return res.status(404).json({ message: 'Debt not found.' });
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
+
 router.get('/balance-adjustments', async (req: AuthedRequest, res, next) => {
   try {
     return res.json(await prisma.balanceAdjustment.findMany({

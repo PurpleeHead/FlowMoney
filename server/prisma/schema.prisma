@@ -35,6 +35,8 @@ model User {
   ledgerExpenses LedgerExpense[]
   obligations Obligation[]
   obligationOccurrences ObligationOccurrence[]
+  debts Debt[]
+  debtTransactions DebtTransaction[]
   balanceAdjustments BalanceAdjustment[]
   budgets Budget[]
   savingsGoals SavingsGoal[]
@@ -123,6 +125,7 @@ model HouseholdMember {
   incomeEntries IncomeEntry[]
   ledgerExpenses LedgerExpense[]
   obligations Obligation[]
+  debts Debt[]
   balanceAdjustments BalanceAdjustment[]
   budgets Budget[]
   householdAccess HouseholdAccess[]
@@ -207,6 +210,7 @@ model LedgerExpense {
   member      HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
   category    ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   obligationOccurrence ObligationOccurrence?
+  debtTransaction DebtTransaction?
 
   @@index([userId, date])
   @@index([userId, categoryId, date])
@@ -393,4 +397,43 @@ model TelegramReminderDelivery {
   @@unique([userId, occurrenceId])
   @@index([occurrenceId])
   @@index([sentAt])
+}
+
+
+model Debt {
+  id              String   @id @default(cuid())
+  userId          String
+  memberId        String?
+  title           String
+  category        String
+  originalAmount  Decimal  @db.Decimal(14, 2)
+  remainingAmount Decimal  @db.Decimal(14, 2)
+  isActive        Boolean  @default(true)
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  member          HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  transactions    DebtTransaction[]
+
+  @@index([userId, isActive])
+  @@index([memberId])
+}
+
+model DebtTransaction {
+  id             String   @id @default(cuid())
+  userId         String
+  debtId         String
+  type           String
+  amount         Decimal  @db.Decimal(14, 2)
+  balanceChange  Decimal  @db.Decimal(14, 2)
+  date           DateTime @db.Date
+  reason         String?
+  expenseId      String?  @unique
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  debt           Debt     @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  expense        LedgerExpense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+
+  @@index([userId, debtId, date])
 }

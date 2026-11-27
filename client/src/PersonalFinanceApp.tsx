@@ -14,6 +14,7 @@ type IncomeSource = { id: string; title: string; amount: number | string; create
 type IncomeEntry = { id: string; sourceId?: string | null; createdAt?: string; plannedDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; memberId?: string | null; member?: Member | null; source?: IncomeSource | null };
 type ObligationRecord = { id: string; title: string; category: string; amount: number | string; memberId?: string | null; member?: Member | null; recurrence: string; recurrenceConfig: { day?: number; month?: number; weekdays?: number[]; intervalWeeks?: number; firstDay?: number; secondDay?: number }; startDate: string; endDate?: string | null; isActive: boolean };
 type ObligationOccurrence = { id: string; dueDate: string; plannedAmount: number | string; status: string; actualAmount?: number | string | null; obligation: ObligationRecord };
+type DebtRecord = { id: string; title: string; category: string; originalAmount: number | string; remainingAmount: number | string; memberId?: string | null; member?: Member | null; isActive: boolean; transactions: Array<{ id: string; type: string; amount: number | string; balanceChange: number | string; date: string; reason?: string | null }> };
 type Expense = { id: string; title: string; amount: number | string; date: string; memberId?: string | null; category?: Category | null; member?: Member | null; obligationOccurrence?: { id: string } | null; note?: string | null };
 type Analytics = { totals: { income: number; expenses: number; obligations: number }; categories: Array<{ id: string; name: string; slug: string; amount: number }>; members: Array<{ id: string | null; name: string; income: number; expenses: number; net: number }>; months: Array<{ month: string; income: number; expenses: number; net: number }> };
 type BudgetRecord = { id: string; periodMonth: string; limitAmount: number | string; member?: Member | null; category?: Category | null; memberId?: string | null; categoryId?: string | null };
@@ -231,6 +232,11 @@ export default function PersonalFinanceApp() {
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
   const [obligationRecords, setObligationRecords] = useState<ObligationRecord[]>([]);
   const [obligationOccurrences, setObligationOccurrences] = useState<ObligationOccurrence[]>([]);
+  const [debts, setDebts] = useState<DebtRecord[]>([]);
+  const [debtTitle, setDebtTitle] = useState('');
+  const [debtCategory, setDebtCategory] = useState('Кредитная карта');
+  const [debtInitialAmount, setDebtInitialAmount] = useState('');
+  const [debtMember, setDebtMember] = useState('');
   const [archivedIncomeSources, setArchivedIncomeSources] = useState<IncomeSource[]>([]);
   const [archivedObligations, setArchivedObligations] = useState<ObligationRecord[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -307,12 +313,13 @@ export default function PersonalFinanceApp() {
       }
       return all;
     })();
-    const [dash, income, expenseData, calendarExpenseRows, obligations, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData, spacesData] = await Promise.all([
+    const [dash, income, expenseData, calendarExpenseRows, obligations, debtData, memberData, adjustmentData, analyticsData, budgetData, goalData, settingsData, householdData, spacesData] = await Promise.all([
       api<Dashboard>(`${PF}/dashboard?from=${ranges.from}&to=${ranges.to}&horizon=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
       api<{ entries: IncomeEntry[]; sources: IncomeSource[] }>(`${PF}/income-sources?from=${ranges.from}&to=${ranges.horizon}&includeArchived=true`),
       api<{ expenses: Expense[]; total: number; page: { take: number; skip: number; hasMore: boolean }; categories: Category[] }>(`${PF}/expenses?take=100&skip=0`),
       calendarExpenseData,
       api<{ occurrences: ObligationOccurrence[]; obligations: ObligationRecord[] }>(`${PF}/obligations?from=${ranges.from}&to=${ranges.horizon}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}${showSkippedObligations ? '&includeSkipped=true' : ''}&includeArchived=true`),
+      api<DebtRecord[]>(`${PF}/debts`),
       api<Member[]>(`${PF}/members`),
       api<Array<{ id: string; amount: number | string; date: string; reason: string }>>(`${PF}/balance-adjustments`),
       api<Analytics>(`${PF}/analytics?from=${ranges.analyticsFrom}&to=${ranges.to}${filterMember !== 'all' ? `&memberId=${filterMember}` : ''}`),
@@ -322,12 +329,13 @@ export default function PersonalFinanceApp() {
       api<HouseholdInfo>('/household'),
       api<{ spaces: FinanceSpaceOption[] }>('/household/spaces'),
     ]);
-    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setCalendarExpenses(calendarExpenseRows); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setAvailableSpaces(spacesData.spaces); setOwnerProfileId(householdData.currentUser.memberId ?? '');
+    setDashboard(dash); setIncomeEntries(income.entries); setArchivedIncomeSources(income.sources.filter(source => !source.isActive)); setArchivedObligations(obligations.obligations.filter(item => !item.isActive)); setExpenses(expenseData.expenses); setCalendarExpenses(calendarExpenseRows); setHasMoreExpenses(expenseData.page.hasMore); setCategories(expenseData.categories.filter(x => !x.isArchived)); setObligationRecords(obligations.obligations); setObligationOccurrences(obligations.occurrences); setDebts(debtData); setMembers(memberData); setAdjustments(adjustmentData); setAnalytics(analyticsData); setBudgets(budgetData); setGoals(goalData); setHousehold(householdData); setAvailableSpaces(spacesData.spaces); setOwnerProfileId(householdData.currentUser.memberId ?? '');
     const mappedProfile = householdData.currentUser.memberId;
     if (mappedProfile) {
       setIncomeMember(current => current || mappedProfile);
       setExpenseMember(current => current || mappedProfile);
       setObligationMember(current => current || mappedProfile);
+      setDebtMember(current => current || mappedProfile);
       setBudgetMember(current => current || mappedProfile);
     }
     if (settingsData.timezone !== timezone) { const today = todayInTimezone(settingsData.timezone); setSelectedMonth(today.slice(0, 7)); setSelectedCalendarDate(today); }
@@ -604,6 +612,59 @@ export default function PersonalFinanceApp() {
     setBusy(true); setError('');
     try { await api(`${PF}/obligation-occurrences/${id}/pay`, { method: 'POST', body: JSON.stringify({ actualAmount }) }); await refresh(); setNotice(lang === 'ru' ? 'Фактический платёж сохранён и учтён в расходах один раз.' : 'Actual payment saved and recorded as one expense.'); }
     catch (e) { setError(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+  }
+  async function createDebt(event: FormEvent) {
+    event.preventDefault();
+    const originalAmount = Number(debtInitialAmount.trim().replace(',', '.'));
+    if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
+      setError(lang === 'ru' ? 'Укажите начальную сумму долга.' : 'Enter the initial debt amount.');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      await api(`${PF}/debts`, { method: 'POST', body: JSON.stringify({
+        title: debtTitle.trim(), category: debtCategory.trim(), originalAmount, memberId: debtMember || null,
+      }) });
+      setDebtTitle(''); setDebtInitialAmount('');
+      await refresh();
+      setNotice(lang === 'ru' ? 'Долг добавлен. Остаток теперь отслеживается отдельно.' : 'Debt added. Its remaining balance is tracked separately.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+  async function payDebt(debt: DebtRecord) {
+    const raw = await promptAction(lang === 'ru' ? 'Сколько внесли в погашение долга?' : 'How much did you repay?', '', lang === 'ru' ? 'Погашение долга' : 'Debt repayment', 'number', lang === 'ru' ? 'Внести платёж' : 'Record payment');
+    if (raw === null) return;
+    const amount = Number(raw.trim().replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) { setError(lang === 'ru' ? 'Введите положительную сумму.' : 'Enter a positive amount.'); return; }
+    setBusy(true); setError('');
+    try {
+      await api(`${PF}/debts/${debt.id}/payments`, { method: 'POST', body: JSON.stringify({ amount, date: moscowToday() }) });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Погашение записано как расход, остаток долга уменьшен.' : 'Repayment recorded as an expense and debt balance reduced.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+  async function adjustDebt(debt: DebtRecord) {
+    const raw = await promptAction(lang === 'ru' ? 'Укажи новый остаток долга.' : 'Enter the new remaining balance.', String(debt.remainingAmount), lang === 'ru' ? 'Корректировка долга' : 'Adjust debt balance', 'number', lang === 'ru' ? 'Продолжить' : 'Continue');
+    if (raw === null) return;
+    const remainingAmount = Number(raw.trim().replace(',', '.'));
+    if (!Number.isFinite(remainingAmount) || remainingAmount < 0) { setError(lang === 'ru' ? 'Остаток не может быть отрицательным.' : 'Balance cannot be negative.'); return; }
+    const reason = await promptAction(lang === 'ru' ? 'Почему изменился остаток? Например: начислены проценты.' : 'Why did the balance change? e.g. Interest charged.', '', lang === 'ru' ? 'Причина корректировки' : 'Adjustment reason');
+    if (reason === null || !reason.trim()) return;
+    setBusy(true); setError('');
+    try {
+      await api(`${PF}/debts/${debt.id}/adjust`, { method: 'POST', body: JSON.stringify({ remainingAmount, date: moscowToday(), reason: reason.trim() }) });
+      await refresh();
+      setNotice(lang === 'ru' ? 'Остаток долга скорректирован, изменение сохранено в истории.' : 'Debt balance adjusted and change saved to history.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
+  }
+  async function archiveDebt(debt: DebtRecord) {
+    if (!(await confirmAction(lang === 'ru' ? 'Долг будет скрыт из активного списка. История сохранится.' : 'This debt will be archived. Its history will remain.', lang === 'ru' ? 'Архивировать долг?' : 'Archive debt?'))) return;
+    setBusy(true);
+    try { await api(`${PF}/debts/${debt.id}`, { method: 'DELETE' }); await refresh(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { setBusy(false); }
   }
   async function saveScannedReceipt(items: Array<{name:string;price:number;quantity:number}>, rawText: string) {
     if (!items.length) return;
@@ -994,6 +1055,32 @@ export default function PersonalFinanceApp() {
         </section>
         {archivedObligations.length > 0 && <section className="pf-card pf-archive-card"><div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'АРХИВ' : 'ARCHIVE'}</span><h2>{lang === 'ru' ? 'Отключённые обязательства' : 'Archived obligations'}</h2></div><span className="pf-count">{archivedObligations.length}</span></div>{archivedObligations.map(item => <div className="pf-list-row" key={item.id}><div><strong>{item.title}</strong><small>{item.category} · {rub(item.amount)} · {item.recurrence}</small></div><button className="pf-button small" disabled={busy} onClick={() => reactivateObligation(item.id)}>{lang === 'ru' ? 'Восстановить' : 'Restore'}</button></div>)}</section>}
       </div>}
+
+
+        <section className="pf-card pf-archive-card">
+          <div className="pf-card-heading"><div><span className="pf-eyebrow">{lang === 'ru' ? 'ДОЛГИ И ПОГАШЕНИЯ' : 'DEBTS AND REPAYMENTS'}</span><h2>{lang === 'ru' ? 'Остатки задолженности' : 'Outstanding balances'}</h2><p className="pf-muted">{lang === 'ru' ? 'Погашения уменьшают остаток и одновременно записываются в расходы.' : 'Repayments reduce the balance and are also recorded as expenses.'}</p></div><span className="pf-count">{debts.filter(debt => debt.isActive).length}</span></div>
+          <form className="pf-form" onSubmit={createDebt}>
+            <label>{tr(lang, 'title')}<input required maxLength={120} value={debtTitle} onChange={e => setDebtTitle(e.target.value)} placeholder={lang === 'ru' ? 'Например, Кредитная карта' : 'e.g. Credit card'} /></label>
+            <label>{tr(lang, 'category')}<input required maxLength={60} value={debtCategory} onChange={e => setDebtCategory(e.target.value)} /></label>
+            <label>{lang === 'ru' ? 'Первоначальная сумма долга, ₽' : 'Initial debt amount, RUB'}<input type="number" min="0.01" step="0.01" required value={debtInitialAmount} onChange={e => setDebtInitialAmount(e.target.value)} /></label>
+            <label>{tr(lang, 'member')}<select value={debtMember} onChange={e => setDebtMember(e.target.value)}>{memberOptions}</select></label>
+            <div className="pf-form-actions"><button className="pf-button primary" disabled={busy}>{lang === 'ru' ? 'Добавить долг' : 'Add debt'}</button></div>
+          </form>
+          <div className="pf-divider" />
+          {debts.filter(debt => debt.isActive).length ? debts.filter(debt => debt.isActive).map(debt => <div className="pf-list-row" key={debt.id}>
+            <div className="pf-list-main">
+              <strong>{debt.title}</strong>
+              <small>{debt.category}{debt.member?.name ? ` · ${debt.member.name}` : ''} · {lang === 'ru' ? 'Было' : 'Original'}: {rub(debt.originalAmount)}</small>
+              <small className={Number(debt.remainingAmount) === 0 ? 'positive' : ''}>{lang === 'ru' ? 'Остаток долга' : 'Remaining balance'}: <b>{rub(debt.remainingAmount)}</b></small>
+              {debt.transactions.slice(0, 4).map(tx => <small key={tx.id}>{dateLabel(tx.date, lang)} · {tx.type === 'PAYMENT' ? (lang === 'ru' ? 'Погашение' : 'Repayment') : tx.type === 'OPENING' ? (lang === 'ru' ? 'Начальный остаток' : 'Opening balance') : (lang === 'ru' ? 'Корректировка' : 'Adjustment')} · {Number(tx.balanceChange) < 0 ? '−' : '+'}{rub(Math.abs(Number(tx.balanceChange)))}{tx.reason ? ` · ${tx.reason}` : ''}</small>)}
+            </div>
+            <div className="pf-row-action">
+              {Number(debt.remainingAmount) > 0 && <button className="pf-button small" disabled={busy} onClick={() => payDebt(debt)}>{lang === 'ru' ? 'Внести платёж' : 'Repay'}</button>}
+              <button className="pf-edit" title={lang === 'ru' ? 'Изменить остаток' : 'Adjust balance'} aria-label={lang === 'ru' ? 'Изменить остаток' : 'Adjust balance'} disabled={busy} onClick={() => adjustDebt(debt)}>✎</button>
+              <button className="pf-delete" title={lang === 'ru' ? 'Архивировать долг' : 'Archive debt'} aria-label={lang === 'ru' ? 'Архивировать долг' : 'Archive debt'} disabled={busy} onClick={() => archiveDebt(debt)}>×</button>
+            </div>
+          </div>) : <p className="pf-empty">{lang === 'ru' ? 'Долги пока не добавлены.' : 'No debts added yet.'}</p>}
+        </section>
 
 
       {tab === 'calendar' && <div className="pf-page pf-two-col">
