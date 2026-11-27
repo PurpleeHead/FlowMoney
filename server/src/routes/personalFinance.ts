@@ -476,7 +476,7 @@ router.get('/expenses', async (req: AuthedRequest, res, next) => {
     };
     const [expenses, total, categories] = await Promise.all([
       prisma.ledgerExpense.findMany({
-        where, include: { category: true, member: true, obligationOccurrence: true },
+        where, include: { category: true, member: true, obligationOccurrence: true, debtTransaction: true },
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }], take, skip,
       }),
       prisma.ledgerExpense.count({ where }),
@@ -531,7 +531,7 @@ router.patch('/expenses/:id', async (req: AuthedRequest, res, next) => {
     if (input.categoryId && !(await prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isArchived: false, OR: [{ userId }, { userId: null }] } }))) return res.status(400).json({ message: 'Selected category was not found.' });
     const data: Record<string, unknown> = { ...input };
     if (input.date) data.date = dateValue(input.date);
-    const result = await prisma.ledgerExpense.updateMany({ where: { id: String(req.params.id), userId, obligationOccurrence: { is: null } }, data: data as never });
+    const result = await prisma.ledgerExpense.updateMany({ where: { id: String(req.params.id), userId, obligationOccurrence: { is: null }, debtTransaction: { is: null } }, data: data as never });
     if (!result.count) return res.status(404).json({ message: 'Editable expense not found.' });
     return res.json(await prisma.ledgerExpense.findFirst({ where: { id: String(req.params.id), userId }, include: { category: true, member: true } }));
   } catch (error) { return next(error); }
