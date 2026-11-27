@@ -538,8 +538,62 @@ router.patch('/expenses/:id', async (req: AuthedRequest, res, next) => {
 });
 router.delete('/expenses/:id', async (req: AuthedRequest, res, next) => {
   try {
-    const result = await prisma.ledgerExpense.deleteMany({ where: { id: String(req.params.id), userId: uid(req), obligationOccurrence: { is: null } } });
-    if (!result.count) return res.status(404).json({ message: 'Editable expense not found.' });
+    const userId = uid(req), expenseId = String(req.params.id);
+    const result = await prisma.$transaction(async tx => {
+      const expense = await tx.ledgerExpense.findFirst({
+        where: { id: expenseId, userId },
+        include: {
+          debtTransaction: true,
+          obligationPayment: { include: { occurrence: true } },
+          obligationOccurrence: true,
+        },
+      });
+      if (!expense) return { kind: 'missing' as const };
+      const payment = expense.obligationPayment;
+      const occurrence = payment?.occurrence ?? expense.obligationOccurrence;
+      const paidAmount = payment ? Number(payment.amount) : occurrence ? Number(expense.amount) : 0;
+
+      if (expense.debtTransaction) {
+        const transaction = expense.debtTransaction;
+        if (transaction.type === 'REVERSED') return { kind: 'reversed' as const };
+        const balanceChange = Number(transaction.balanceChange);
+        const restoredAmount = -balanceChange;
+        const restored = await tx.debt.updateMany({
+          where: { id: transaction.debtId, userId },
+          data: { remainingAmount: { increment: restoredAmount } },
+        });
+        if (!restored.count) return { kind: 'missingDebt' as const };
+        await tx.debtTransaction.update({ where: { id: transaction.id }, data: { type: 'REVERSED' } });
+        await tx.debtTransaction.create({ data: {
+          userId, debtId: transaction.debtId, type: 'REVERSAL',
+          amount: transaction.amount, balanceChange: restoredAmount,
+          date: await userToday(userId), reason: 'Reversal of transaction ' + transaction.id,
+        } });
+      }
+
+      if (occurrence && paidAmount > 0) {
+        const newPaidAmount = Math.max(0, Number(occurrence.actualAmount ?? 0) - paidAmount);
+        const dueDate = new Date(occurrence.dueDate);
+        const today = await userToday(userId);
+        const nextStatus = newPaidAmount >= Number(occurrence.plannedAmount) - 0.000001
+          ? 'PAID'
+          : newPaidAmount > 0 ? 'PARTIAL'
+          : dueDate < today ? 'OVERDUE' : 'UPCOMING';
+        await tx.obligationOccurrence.update({
+          where: { id: occurrence.id },
+          data: {
+            actualAmount: newPaidAmount,
+            status: nextStatus,
+            paidAt: nextStatus === 'PAID' ? occurrence.paidAt : null,
+          },
+        });
+      }
+      await tx.ledgerExpense.delete({ where: { id: expenseId } });
+      return { kind: 'ok' as const };
+    });
+    if (result.kind === 'missing') return res.status(404).json({ message: 'Expense not found.' });
+    if (result.kind === 'reversed') return res.status(409).json({ message: 'This payment has already been reversed.' });
+    if (result.kind === 'missingDebt') return res.status(409).json({ message: 'Linked debt was not found; expense was not deleted.' });
     return res.status(204).end();
   } catch (error) { return next(error); }
 });
