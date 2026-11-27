@@ -704,7 +704,7 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
           where: { id: obligation.debtId, userId, isActive: true, remainingAmount: { gte: amount } },
           data: { remainingAmount: { decrement: amount } },
         });
-        if (!changed.count) return { kind: 'debt_conflict' as const };
+        if (!changed.count) throw Object.assign(new Error('Debt balance changed. Reload and try again.'), { status: 409 });
         await tx.debtTransaction.create({ data: {
           userId, debtId: obligation.debtId, type: 'PAYMENT', amount, balanceChange: -amount,
           date: paidDate, reason: 'Payment from recurring obligation', expenseId: expense.id,
@@ -719,7 +719,6 @@ router.post('/obligation-occurrences/:id/pay', async (req: AuthedRequest, res, n
     if (result.kind === 'closed') return res.status(409).json({ message: 'This obligation occurrence is not payable.' });
     if (result.kind === 'overpay') return res.status(400).json({ message: `Payment exceeds the remaining scheduled amount of ${result.remaining.toFixed(2)}.` });
     if (result.kind === 'debt_insufficient') return res.status(409).json({ message: `Payment exceeds the remaining linked debt balance of ${result.remaining.toFixed(2)}.` });
-    if (result.kind === 'debt_conflict') return res.status(409).json({ message: 'Debt balance changed. Reload and try again.' });
     return res.json(result.occurrence);
   } catch (error) { return next(error); }
 });
